@@ -28,7 +28,7 @@ export async function GET(request: Request) {
 
         // Get total sum and count
         const [totalRows] = await pool.query(
-            `SELECT SUM(Precio) as total FROM tblDetalleConvocatorias 
+            `SELECT COALESCE(SUM(Precio), 0) as total FROM tblDetalleConvocatorias 
              WHERE EsConvocado = 1 AND IdTemporada = ? AND IdLiga = ? AND Categoria = ?`,
             [seasonId, leagueId, categoria]
         );
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         const total = Array.isArray(totalRows) && totalRows.length > 0 ? (totalRows[0] as any).total || 0 : 0;
 
         const [countRows] = await pool.query(
-            `SELECT COUNT(*) as count FROM tblDetalleConvocatorias 
+            `SELECT COALESCE(COUNT(*), 0) as count FROM tblDetalleConvocatorias 
              WHERE EsConvocado = 1 AND IdTemporada = ? AND IdLiga = ? AND Categoria = ?`,
             [seasonId, leagueId, categoria]
         );

@@ -137,8 +137,8 @@ export default function Home() {
       (filters.fechaInicio === '' || item.FechaInicio?.includes(filters.fechaInicio)) &&
       (filters.fechaFin === '' || item.FechaFin?.includes(filters.fechaFin)) &&
       (filters.cerrada === '' || (item.Cerrada ? 'sí' : 'no').includes(filters.cerrada.toLowerCase())) &&
-      item.JugadoresConvocados.toString().includes(filters.jugadoresConvocados) &&
-      item.Total.toString().includes(filters.total)
+      (item.JugadoresConvocados?.toString() ?? '0').includes(filters.jugadoresConvocados) &&
+      (item.Total?.toString() ?? '0').includes(filters.total)
     );
   });
 
@@ -362,10 +362,10 @@ export default function Home() {
   // Filter and sort players
   const filteredPlayers = players.filter((player) => {
     return (
-      player.IdJugador.toString().includes(playerFilters.idJugador) &&
+      (player.IdJugador?.toString() ?? '').includes(playerFilters.idJugador) &&
       player.Jugador.toLowerCase().includes(playerFilters.jugador.toLowerCase()) &&
       player.Categoria.toLowerCase().includes(playerFilters.categoria.toLowerCase()) &&
-      player.Precio.toString().includes(playerFilters.precio) &&
+      (player.Precio?.toString() ?? '0').includes(playerFilters.precio) &&
       (playerFilters.estado === '' ||
         (playerFilters.estado.toLowerCase() === 'convocado' && player.EsConvocado) ||
         (playerFilters.estado.toLowerCase() === 'eliminado' && player.EsEliminado) ||
@@ -407,7 +407,7 @@ export default function Home() {
   const handleUpdatePrice = async (player: any) => {
     if (!selectedConvocatoria) return;
 
-    const newPrice = prompt(`Ingrese el nuevo precio para ${player.Jugador}:`, player.Precio.toString());
+    const newPrice = prompt(`Ingrese el nuevo precio para ${player.Jugador}:`, (player.Precio ?? 0).toString());
     if (newPrice === null) return;
 
     const precio = Number(newPrice);

@@ -27,8 +27,8 @@ export async function GET() {
                 A.FechaInicio, 
                 A.FechaFin, 
                 A.Cerrada, 
-                SUM(D.EsConvocado) AS JugadoresConvocados,
-                SUM(CASE WHEN D.EsConvocado = 1 THEN D.Precio ELSE 0 END) AS Total
+                COALESCE(SUM(D.EsConvocado), 0) AS JugadoresConvocados,
+                COALESCE(SUM(CASE WHEN D.EsConvocado = 1 THEN D.Precio ELSE 0 END), 0) AS Total
             FROM tblConvocatorias A
             INNER JOIN tblTemporadas B ON A.IdTemporada = B.IdTemporada
             INNER JOIN tblLigas C ON A.IdLiga = C.IdLiga
