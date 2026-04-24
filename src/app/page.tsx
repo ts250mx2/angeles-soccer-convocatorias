@@ -14,6 +14,8 @@ interface ConvocatoriaSummary {
   IdLiga: number;
   Categoria: string;
   Color?: string;
+  IdProfesor?: number;
+  Profesor?: string;
   Liga: string;
   FechaInicio: string;
   FechaFin: string;
@@ -29,9 +31,11 @@ export default function Home() {
   const { user, season, seasonId, setSeason, isInitialized } = useUser();
   const [convocatorias, setConvocatorias] = useState<ConvocatoriaSummary[]>([]);
   const [leagues, setLeagues] = useState<any[]>([]);
+  const [profesores, setProfesores] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filters, setFilters] = useState({
     liga: '',
+    profesor: '',
     categoria: '',
     color: '',
     fechaInicio: '',
@@ -46,10 +50,21 @@ export default function Home() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newConvocatoria, setNewConvocatoria] = useState({
     leagueId: '',
+    idProfesor: '',
     categoria: '',
     fechaInicio: '',
     fechaFin: '',
     color: ''
+  });
+
+  // Edit Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editConvocatoria, setEditConvocatoria] = useState({
+    oldColor: '',
+    newColor: '',
+    fechaInicio: '',
+    fechaFin: '',
+    idProfesor: '' as string | number
   });
 
   // Players Modal State
@@ -94,7 +109,7 @@ export default function Home() {
   const fetchConvocatorias = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/convocatorias/summary');
+      const response = await fetch(`/api/convocatorias/summary?userId=${user?.IdUsuario}&adminLevel=${user?.AdminConvocatorias}`);
       const data = await response.json();
       if (data.success) {
         setConvocatorias(data.data);
@@ -112,10 +127,10 @@ export default function Home() {
 
   // Fetch convocatorias summary on mount
   useEffect(() => {
-    if (isInitialized) {
+    if (isInitialized && user) {
       fetchConvocatorias();
     }
-  }, [isInitialized]);
+  }, [isInitialized, user]);
 
   // Fetch current season and leagues
   useEffect(() => {
@@ -136,6 +151,15 @@ export default function Home() {
         }
       })
       .catch(err => console.error('Error fetching leagues:', err));
+
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setProfesores(data.data);
+        }
+      })
+      .catch(err => console.error('Error fetching professors:', err));
   }, [setSeason]);
 
   const handleSort = (key: string) => {
@@ -152,6 +176,7 @@ export default function Home() {
 
     return (
       item.Liga.toLowerCase().includes(filters.liga.toLowerCase()) &&
+      (item.Profesor?.toLowerCase() ?? '').includes(filters.profesor.toLowerCase()) &&
       item.Categoria.toLowerCase().includes(filters.categoria.toLowerCase()) &&
       (item.Color?.toLowerCase() ?? '').includes(filters.color.toLowerCase()) &&
       (filters.fechaInicio === '' || item.FechaInicio?.includes(filters.fechaInicio)) &&
@@ -209,7 +234,8 @@ export default function Home() {
           categoria: newConvocatoria.categoria,
           fechaInicio: newConvocatoria.fechaInicio,
           fechaFin: newConvocatoria.fechaFin,
-          color: newConvocatoria.color
+          color: newConvocatoria.color,
+          idProfesor: newConvocatoria.idProfesor
         })
       });
 
@@ -219,6 +245,7 @@ export default function Home() {
         setIsCreateModalOpen(false);
         setNewConvocatoria({
           leagueId: '',
+          idProfesor: '',
           categoria: '',
           fechaInicio: '',
           fechaFin: '',
@@ -235,6 +262,55 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error creating convocatoria:', error);
+      alert('Error al procesar la solicitud');
+    }
+  };
+
+  const handleOpenEditModal = (item: ConvocatoriaSummary) => {
+    setSelectedConvocatoria(item);
+    setEditConvocatoria({
+      oldColor: item.Color || '',
+      newColor: item.Color || '',
+      fechaInicio: item.FechaInicio ? item.FechaInicio.substring(0, 10) : '',
+      fechaFin: item.FechaFin ? item.FechaFin.substring(0, 10) : '',
+      idProfesor: item.IdProfesor || ''
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateConvocatoria = async () => {
+    if (!selectedConvocatoria) return;
+    if (!editConvocatoria.fechaInicio || !editConvocatoria.fechaFin) {
+      alert('Las fechas son obligatorias');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/convocatorias/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          seasonId: selectedConvocatoria.IdTemporada,
+          leagueId: selectedConvocatoria.IdLiga,
+          oldCategoria: selectedConvocatoria.Categoria,
+          oldColor: editConvocatoria.oldColor,
+          newColor: editConvocatoria.newColor,
+          fechaInicio: editConvocatoria.fechaInicio,
+          fechaFin: editConvocatoria.fechaFin,
+          idProfesor: editConvocatoria.idProfesor
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert('Convocatoria actualizada exitosamente');
+        setIsEditModalOpen(false);
+        fetchConvocatorias();
+      } else {
+        alert('Error al actualizar: ' + data.message);
+      }
+    } catch (error) {
+      console.error('Error updating convocatoria:', error);
       alert('Error al procesar la solicitud');
     }
   };
@@ -856,6 +932,17 @@ export default function Home() {
                       </th>
                       <th
                         className="py-3 px-4 text-left font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
+                        onClick={() => handleSort('Profesor')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Profesor
+                          {sortConfig?.key === 'Profesor' && (
+                            <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </div>
+                      </th>
+                      <th
+                        className="py-3 px-4 text-left font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
                         onClick={() => handleSort('Categoria')}
                       >
                         <div className="flex items-center gap-2">
@@ -958,6 +1045,15 @@ export default function Home() {
                       <th className="p-2">
                         <input
                           type="text"
+                          value={filters.profesor}
+                          onChange={(e) => setFilters(prev => ({ ...prev, profesor: e.target.value }))}
+                          className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
+                          placeholder="Filtro..."
+                        />
+                      </th>
+                      <th className="p-2">
+                        <input
+                          type="text"
                           value={filters.categoria}
                           onChange={(e) => setFilters(prev => ({ ...prev, categoria: e.target.value }))}
                           className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
@@ -1003,7 +1099,7 @@ export default function Home() {
                   <tbody className="divide-y divide-slate-200">
                     {isLoading ? (
                       <tr>
-                        <td colSpan={9} className="py-12 text-center text-slate-500">
+                        <td colSpan={10} className="py-12 text-center text-slate-500">
                           <div className="flex items-center justify-center gap-2">
                             <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -1020,6 +1116,7 @@ export default function Home() {
                           className="hover:bg-slate-50 hover:shadow-sm transition-all duration-200"
                         >
                           <td className="py-2 px-4 text-xs font-medium">{item.Liga}</td>
+                          <td className="py-2 px-4 text-xs font-medium text-slate-600">{item.Profesor || '-'}</td>
                           <td className="py-2 px-4 text-xs font-semibold">{item.Categoria}</td>
                           <td className="py-2 px-4 text-xs font-medium text-slate-600 italic">
                             {item.Color || '-'}
@@ -1044,7 +1141,7 @@ export default function Home() {
                           <td className="py-2 px-4 text-center text-xs font-bold text-green-700">
                             {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total || 0)}
                           </td>
-                          <td className="py-2 px-4 text-center text-xs font-bold text-orange-700">
+                          <td className="py-2 px-4 text-center text-xs font-bold text-green-700">
                             {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos || 0)}
                           </td>
                           <td className="py-2 px-4 text-center text-xs font-bold text-red-700 bg-red-50/30">
@@ -1059,6 +1156,12 @@ export default function Home() {
                                     className="bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
                                   >
                                     Convocar
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenEditModal(item)}
+                                    className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                                  >
+                                    Editar
                                   </button>
                                   <button
                                     onClick={() => handleCloseConvocatoria(item)}
@@ -1086,7 +1189,7 @@ export default function Home() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={9} className="py-12 text-center text-slate-500">
+                        <td colSpan={10} className="py-12 text-center text-slate-500">
                           No se encontraron convocatorias.
                         </td>
                       </tr>
@@ -1117,6 +1220,22 @@ export default function Home() {
                   {leagues.map((league) => (
                     <option key={league.IdLiga} value={league.IdLiga}>
                       {league.Liga}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Profesor</label>
+                <select
+                  value={newConvocatoria.idProfesor}
+                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, idProfesor: e.target.value }))}
+                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">Seleccione Profesor</option>
+                  {profesores.map((prof) => (
+                    <option key={prof.IdUsuario} value={prof.IdUsuario}>
+                      {prof.Usuario}
                     </option>
                   ))}
                 </select>
@@ -1171,6 +1290,7 @@ export default function Home() {
                   setIsCreateModalOpen(false);
                   setNewConvocatoria({
                     leagueId: '',
+                    idProfesor: '',
                     categoria: '',
                     fechaInicio: '',
                     fechaFin: '',
@@ -1186,6 +1306,81 @@ export default function Home() {
                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors"
               >
                 Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Convocatoria Modal */}
+      {isEditModalOpen && selectedConvocatoria && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg">
+            <h3 className="text-xl font-bold mb-4 text-slate-800">Editar Convocatoria</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Editando: <span className="font-bold">{selectedConvocatoria.Liga} - {selectedConvocatoria.Categoria}</span>
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Profesor</label>
+                <select
+                  value={editConvocatoria.idProfesor}
+                  onChange={(e) => setEditConvocatoria(prev => ({ ...prev, idProfesor: e.target.value }))}
+                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">Seleccione Profesor</option>
+                  {profesores.map((prof) => (
+                    <option key={prof.IdUsuario} value={prof.IdUsuario}>
+                      {prof.Usuario}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Color Distintivo</label>
+                <input
+                  type="text"
+                  value={editConvocatoria.newColor}
+                  onChange={(e) => setEditConvocatoria(prev => ({ ...prev, newColor: e.target.value.toUpperCase() }))}
+                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Fecha Inicio</label>
+                <input
+                  type="date"
+                  value={editConvocatoria.fechaInicio}
+                  onChange={(e) => setEditConvocatoria(prev => ({ ...prev, fechaInicio: e.target.value }))}
+                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Fecha Fin</label>
+                <input
+                  type="date"
+                  value={editConvocatoria.fechaFin}
+                  onChange={(e) => setEditConvocatoria(prev => ({ ...prev, fechaFin: e.target.value }))}
+                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleUpdateConvocatoria}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors"
+              >
+                Actualizar
               </button>
             </div>
           </div>
@@ -1234,8 +1429,8 @@ export default function Home() {
                 <div className="text-base font-medium text-slate-600 bg-blue-50 px-4 py-2 rounded-lg">
                   Total: <span className="text-blue-700 font-bold">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrice)}</span>
                 </div>
-                <div className="text-base font-medium text-slate-600 bg-orange-50 px-4 py-2 rounded-lg">
-                  Pagado: <span className="text-orange-700 font-bold">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPagos)}</span>
+                <div className="text-base font-medium text-slate-600 bg-green-50 px-4 py-2 rounded-lg">
+                  Pagado: <span className="text-green-700 font-bold">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPagos)}</span>
                 </div>
                 <div className="text-base font-medium text-slate-600 bg-red-50 px-4 py-2 rounded-lg">
                   CXC: <span className="text-red-700 font-bold">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC)}</span>
@@ -1462,7 +1657,7 @@ export default function Home() {
                         </td>
                         <td className="py-3 px-4 text-sm">{player.Categoria}</td>
                         <td className="py-3 px-4 text-sm">
-                          {user && (user.AdminConvocatorias ?? 0) >= 2 ? (
+                          {user ? (
                             <button
                               onClick={() => handleUpdatePrice(player)}
                               className="font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer"
@@ -1475,7 +1670,7 @@ export default function Home() {
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-sm font-bold text-orange-700">
+                        <td className="py-3 px-4 text-sm font-bold text-green-700">
                           {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.PagoJugador || 0)}
                         </td>
                         <td className="py-3 px-4 text-sm font-bold text-red-700 bg-red-50/30">

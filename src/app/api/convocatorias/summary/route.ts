@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
         // Get current season
         const [seasonRows] = await pool.query(
@@ -17,12 +17,26 @@ export async function GET() {
 
         const currentSeasonId = (seasonRows[0] as any).IdTemporada;
 
+        const { searchParams } = new URL(request.url);
+        const userId = searchParams.get('userId');
+        const adminLevel = parseInt(searchParams.get('adminLevel') || '0');
+
+        let filterClause = '';
+        const queryParams: any[] = [currentSeasonId];
+
+        if (adminLevel < 2 && userId) {
+            filterClause = ' AND A.IdProfesor = ?';
+            queryParams.push(userId);
+        }
+
         const query = `
             SELECT 
                 A.IdTemporada, 
                 A.IdLiga, 
                 A.Categoria, 
                 A.Color,
+                A.IdProfesor,
+                U.Usuario AS Profesor,
                 B.Temporada, 
                 C.Liga, 
                 A.FechaInicio, 
@@ -35,6 +49,7 @@ export async function GET() {
             FROM tblConvocatorias A
             INNER JOIN tblTemporadas B ON A.IdTemporada = B.IdTemporada
             INNER JOIN tblLigas C ON A.IdLiga = C.IdLiga
+            LEFT JOIN tblUsuarios U ON A.IdProfesor = U.IdUsuario
             LEFT JOIN tblDetalleConvocatorias D ON A.IdTemporada = D.IdTemporada 
                 AND A.IdLiga = D.IdLiga AND A.Categoria = D.Categoria AND A.Color = D.Color
             LEFT JOIN (
@@ -50,13 +65,13 @@ export async function GET() {
                 AND A.IdLiga = PAGOS.IdLiga 
                 AND A.Categoria = PAGOS.Categoria
                 AND A.Color = PAGOS.Color
-            WHERE A.IdTemporada = ? AND A.Status = 0
-            GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, A.Color, B.Temporada, C.Liga, 
+            WHERE A.IdTemporada = ? AND A.Status = 0 ${filterClause}
+            GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, A.Color, A.IdProfesor, U.Usuario, B.Temporada, C.Liga, 
                      A.FechaInicio, A.FechaFin, A.Cerrada, PAGOS.TotalPagos
             ORDER BY C.Liga ASC, A.Categoria ASC
         `;
 
-        const [rows] = await pool.query(query, [currentSeasonId]);
+        const [rows] = await pool.query(query, queryParams);
 
         return NextResponse.json({
             success: true,

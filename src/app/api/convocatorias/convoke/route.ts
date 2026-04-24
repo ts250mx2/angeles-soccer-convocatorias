@@ -5,8 +5,8 @@ export async function POST(request: Request) {
     try {
         const { seasonId, leagueId, playerId, categoria, color } = await request.json();
 
-        if (!seasonId || !leagueId || !playerId || !categoria || !color) {
-            return NextResponse.json({ success: false, message: 'Missing required parameters (including color)' }, { status: 400 });
+        if (!seasonId || !leagueId || !playerId || !categoria) {
+            return NextResponse.json({ success: false, message: 'Missing required parameters' }, { status: 400 });
         }
 
         // Get price from tblProductos
