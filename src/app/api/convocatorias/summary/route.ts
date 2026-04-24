@@ -28,15 +28,29 @@ export async function GET() {
                 A.FechaFin, 
                 A.Cerrada, 
                 COALESCE(SUM(D.EsConvocado), 0) AS JugadoresConvocados,
-                COALESCE(SUM(CASE WHEN D.EsConvocado = 1 THEN D.Precio ELSE 0 END), 0) AS Total
+                COALESCE(SUM(CASE WHEN D.EsConvocado = 1 THEN D.Precio ELSE 0 END), 0) AS Total,
+                COALESCE(PAGOS.TotalPagos, 0) AS Pagos,
+                (COALESCE(SUM(CASE WHEN D.EsConvocado = 1 THEN D.Precio ELSE 0 END), 0) - COALESCE(PAGOS.TotalPagos, 0)) AS CXC
             FROM tblConvocatorias A
             INNER JOIN tblTemporadas B ON A.IdTemporada = B.IdTemporada
             INNER JOIN tblLigas C ON A.IdLiga = C.IdLiga
             LEFT JOIN tblDetalleConvocatorias D ON A.IdTemporada = D.IdTemporada 
                 AND A.IdLiga = D.IdLiga AND A.Categoria = D.Categoria
-            WHERE A.IdTemporada = ?
+            LEFT JOIN (
+                SELECT DC.IdTemporada, DC.IdLiga, DC.Categoria, SUM(P.Pago) as TotalPagos
+                FROM tblPagos P
+                INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+                INNER JOIN tblDetalleConvocatorias DC ON P.IdJugador = DC.IdJugador 
+                    AND P.IdTemporada = DC.IdTemporada
+                    AND PR.IdLiga = DC.IdLiga
+                WHERE P.Status = 0
+                GROUP BY DC.IdTemporada, DC.IdLiga, DC.Categoria
+            ) PAGOS ON A.IdTemporada = PAGOS.IdTemporada 
+                AND A.IdLiga = PAGOS.IdLiga 
+                AND A.Categoria = PAGOS.Categoria
+            WHERE A.IdTemporada = ? AND A.Status = 0
             GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, B.Temporada, C.Liga, 
-                     A.FechaInicio, A.FechaFin, A.Cerrada
+                     A.FechaInicio, A.FechaFin, A.Cerrada, PAGOS.TotalPagos
             ORDER BY C.Liga ASC, A.Categoria ASC
         `;
 

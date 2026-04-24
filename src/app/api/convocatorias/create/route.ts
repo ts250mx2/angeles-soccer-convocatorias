@@ -14,8 +14,8 @@ export async function POST(request: Request) {
 
         // Insert new convocatoria
         const insertQuery = `
-            INSERT INTO tblConvocatorias (IdTemporada, IdLiga, Categoria, FechaInicio, FechaFin, Cerrada, FechaAlta)
-            VALUES (?, ?, ?, ?, ?, 0, NOW())
+            INSERT INTO tblConvocatorias (IdTemporada, IdLiga, Categoria, FechaInicio, FechaFin, Cerrada, Status, FechaAlta)
+            VALUES (?, ?, ?, ?, ?, 0, 0, NOW())
         `;
 
         await pool.query(insertQuery, [seasonId, leagueId, categoria, fechaInicio, fechaFin]);

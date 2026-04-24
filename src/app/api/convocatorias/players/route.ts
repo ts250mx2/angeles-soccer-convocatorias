@@ -17,14 +17,23 @@ export async function GET(request: Request) {
 
         const selectQuery = `
             SELECT A.IdJugador, B.Jugador, B.Categoria, A.Precio, A.EsConvocado, A.EsEliminado,
-                   CASE WHEN A.Categoria <> B.Categoria THEN 1 ELSE 0 END AS EsInvitado
+                   CASE WHEN A.Categoria <> B.Categoria THEN 1 ELSE 0 END AS EsInvitado,
+                   COALESCE(PAGOS.TotalPago, 0) AS PagoJugador,
+                   CASE WHEN A.EsConvocado = 1 THEN (A.Precio - COALESCE(PAGOS.TotalPago, 0)) ELSE 0 END AS CXC
             FROM tblDetalleConvocatorias A 
             INNER JOIN tblJugadores B ON A.IdJugador = B.IdJugador 
+            LEFT JOIN (
+                SELECT P.IdJugador, SUM(P.Pago) as TotalPago
+                FROM tblPagos P
+                INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+                WHERE P.IdTemporada = ? AND PR.IdLiga = ? AND P.Status = 0
+                GROUP BY P.IdJugador
+            ) PAGOS ON A.IdJugador = PAGOS.IdJugador
             WHERE A.IdTemporada = ? AND A.IdLiga = ? AND A.Categoria = ?
             ORDER BY B.Jugador ASC
         `;
 
-        const [rows] = await pool.query(selectQuery, [seasonId, leagueId, categoria]);
+        const [rows] = await pool.query(selectQuery, [seasonId, leagueId, seasonId, leagueId, categoria]);
 
         // Get total sum and count
         const [totalRows] = await pool.query(
@@ -42,8 +51,23 @@ export async function GET(request: Request) {
         );
 
         const count = Array.isArray(countRows) && countRows.length > 0 ? (countRows[0] as any).count || 0 : 0;
+        
+        // Get total payments for the category
+        const [paymentRows] = await pool.query(
+            `SELECT COALESCE(SUM(P.Pago), 0) as totalPagos
+             FROM tblPagos P
+             INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+             INNER JOIN tblDetalleConvocatorias DC ON P.IdJugador = DC.IdJugador 
+                 AND P.IdTemporada = DC.IdTemporada
+                 AND PR.IdLiga = DC.IdLiga
+             WHERE DC.IdTemporada = ? AND DC.IdLiga = ? AND DC.Categoria = ?
+               AND P.Status = 0`,
+            [seasonId, leagueId, categoria]
+        );
+        const totalPagos = Array.isArray(paymentRows) && paymentRows.length > 0 ? (paymentRows[0] as any).totalPagos || 0 : 0;
+        const totalCXC = total - totalPagos;
 
-        return NextResponse.json({ success: true, data: rows, total, count });
+        return NextResponse.json({ success: true, data: rows, total, count, totalPagos, totalCXC });
     } catch (error) {
         console.error('Error fetching players:', error);
         return NextResponse.json(
