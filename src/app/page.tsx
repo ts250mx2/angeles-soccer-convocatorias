@@ -193,11 +193,13 @@ export default function Home() {
     const { key, direction } = sortConfig;
     const getSortValue = (item: ConvocatoriaSummary, key: string) => {
       if (key === 'CXC') return item.Total - item.Pagos;
-      return item[key as keyof ConvocatoriaSummary];
+      const val = item[key as keyof ConvocatoriaSummary];
+      if (val === undefined || val === null) return typeof val === 'number' ? 0 : '';
+      return val;
     };
 
-    const aValue = getSortValue(a, key);
-    const bValue = getSortValue(b, key);
+    const aValue = getSortValue(a, key) ?? '';
+    const bValue = getSortValue(b, key) ?? '';
 
     if (aValue < bValue) {
       return direction === 'asc' ? -1 : 1;
@@ -700,8 +702,8 @@ export default function Home() {
     if (!playerSortConfig) return 0;
     const { key, direction } = playerSortConfig;
 
-    let aValue = a[key];
-    let bValue = b[key];
+    let aValue = a[key] ?? '';
+    let bValue = b[key] ?? '';
 
     // Handle virtual/special columns
     if (key === 'CXC') {
