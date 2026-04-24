@@ -3,23 +3,23 @@ import { pool } from '@/lib/db';
 
 export async function POST(request: Request) {
     try {
-        const { seasonId, leagueId, playerId, categoria } = await request.json();
+        const { seasonId, leagueId, playerId, categoria, color } = await request.json();
 
-        if (!seasonId || !leagueId || !playerId || !categoria) {
+        if (!seasonId || !leagueId || !playerId || !categoria || !color) {
             return NextResponse.json(
-                { success: false, message: 'Faltan parámetros requeridos' },
+                { success: false, message: 'Faltan parámetros requeridos (incluyendo color)' },
                 { status: 400 }
             );
         }
 
         const insertQuery = `
-            INSERT INTO tblDetalleConvocatorias(IdJugador, IdTemporada, IdLiga, Precio, EsConvocado, EsEliminado, Categoria) 
-            SELECT IdJugador, ?, ?, 0, 0, 0, ?
+            INSERT INTO tblDetalleConvocatorias(IdJugador, IdTemporada, IdLiga, Precio, EsConvocado, EsEliminado, Categoria, Color) 
+            SELECT IdJugador, ?, ?, 0, 0, 0, ?, ?
             FROM tblJugadores 
             WHERE IdJugador = ?
         `;
 
-        await pool.query(insertQuery, [seasonId, leagueId, categoria, playerId]);
+        await pool.query(insertQuery, [seasonId, leagueId, categoria, color, playerId]);
 
         return NextResponse.json({
             success: true,

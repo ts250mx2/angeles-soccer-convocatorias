@@ -3,10 +3,10 @@ import { pool } from '@/lib/db';
 
 export async function POST(request: Request) {
     try {
-        const { seasonId, leagueId, playerId, categoria } = await request.json();
+        const { seasonId, leagueId, playerId, categoria, color } = await request.json();
 
-        if (!seasonId || !leagueId || !playerId || !categoria) {
-            return NextResponse.json({ success: false, message: 'Missing required parameters' }, { status: 400 });
+        if (!seasonId || !leagueId || !playerId || !categoria || !color) {
+            return NextResponse.json({ success: false, message: 'Missing required parameters (including color)' }, { status: 400 });
         }
 
         // Get price from tblProductos
@@ -25,8 +25,8 @@ export async function POST(request: Request) {
         const price = (priceRows[0] as any).Precio;
 
         await pool.query(
-            'UPDATE tblDetalleConvocatorias SET Precio = ?, EsConvocado = 1, EsEliminado = 0 WHERE IdJugador = ? AND IdTemporada = ? AND IdLiga = ? AND Categoria = ?',
-            [price, playerId, seasonId, leagueId, categoria]
+            'UPDATE tblDetalleConvocatorias SET Precio = ?, EsConvocado = 1, EsEliminado = 0 WHERE IdJugador = ? AND IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?',
+            [price, playerId, seasonId, leagueId, categoria, color]
         );
 
         return NextResponse.json({ success: true });

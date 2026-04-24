@@ -7,10 +7,11 @@ export async function GET(request: Request) {
         const seasonId = searchParams.get('seasonId');
         const leagueId = searchParams.get('leagueId');
         const categoria = searchParams.get('categoria');
+        const color = searchParams.get('color');
 
-        if (!seasonId || !leagueId || !categoria) {
+        if (!seasonId || !leagueId || !categoria || color === null) {
             return NextResponse.json(
-                { success: false, message: 'Faltan parámetros requeridos' },
+                { success: false, message: 'Faltan parámetros requeridos (incluyendo color)' },
                 { status: 400 }
             );
         }
@@ -22,12 +23,12 @@ export async function GET(request: Request) {
             AND IdJugador NOT IN (
                 SELECT IdJugador 
                 FROM tblDetalleConvocatorias 
-                WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ?
+                WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?
             )
             ORDER BY Jugador ASC
         `;
 
-        const [rows] = await pool.query(query, [seasonId, leagueId, categoria]);
+        const [rows] = await pool.query(query, [seasonId, leagueId, categoria, color]);
 
         return NextResponse.json({ success: true, data: rows });
     } catch (error) {

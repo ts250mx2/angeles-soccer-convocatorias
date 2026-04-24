@@ -22,6 +22,7 @@ export async function GET() {
                 A.IdTemporada, 
                 A.IdLiga, 
                 A.Categoria, 
+                A.Color,
                 B.Temporada, 
                 C.Liga, 
                 A.FechaInicio, 
@@ -35,21 +36,22 @@ export async function GET() {
             INNER JOIN tblTemporadas B ON A.IdTemporada = B.IdTemporada
             INNER JOIN tblLigas C ON A.IdLiga = C.IdLiga
             LEFT JOIN tblDetalleConvocatorias D ON A.IdTemporada = D.IdTemporada 
-                AND A.IdLiga = D.IdLiga AND A.Categoria = D.Categoria
+                AND A.IdLiga = D.IdLiga AND A.Categoria = D.Categoria AND A.Color = D.Color
             LEFT JOIN (
-                SELECT DC.IdTemporada, DC.IdLiga, DC.Categoria, SUM(P.Pago) as TotalPagos
+                SELECT DC.IdTemporada, DC.IdLiga, DC.Categoria, DC.Color, SUM(P.Pago) as TotalPagos
                 FROM tblPagos P
                 INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
                 INNER JOIN tblDetalleConvocatorias DC ON P.IdJugador = DC.IdJugador 
                     AND P.IdTemporada = DC.IdTemporada
                     AND PR.IdLiga = DC.IdLiga
-                WHERE P.Status = 0
-                GROUP BY DC.IdTemporada, DC.IdLiga, DC.Categoria
+                WHERE P.Status = 0 AND DC.EsConvocado = 1
+                GROUP BY DC.IdTemporada, DC.IdLiga, DC.Categoria, DC.Color
             ) PAGOS ON A.IdTemporada = PAGOS.IdTemporada 
                 AND A.IdLiga = PAGOS.IdLiga 
                 AND A.Categoria = PAGOS.Categoria
+                AND A.Color = PAGOS.Color
             WHERE A.IdTemporada = ? AND A.Status = 0
-            GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, B.Temporada, C.Liga, 
+            GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, A.Color, B.Temporada, C.Liga, 
                      A.FechaInicio, A.FechaFin, A.Cerrada, PAGOS.TotalPagos
             ORDER BY C.Liga ASC, A.Categoria ASC
         `;

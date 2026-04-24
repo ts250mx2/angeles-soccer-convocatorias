@@ -3,15 +3,15 @@ import { pool } from '@/lib/db';
 
 export async function POST(request: Request) {
     try {
-        const { seasonId, leagueId, playerId, categoria, precio } = await request.json();
+        const { seasonId, leagueId, playerId, categoria, color, precio } = await request.json();
 
-        if (!seasonId || !leagueId || !playerId || !categoria || precio === undefined) {
-            return NextResponse.json({ success: false, message: 'Missing required parameters' }, { status: 400 });
+        if (!seasonId || !leagueId || !playerId || !categoria || color === undefined || precio === undefined) {
+            return NextResponse.json({ success: false, message: 'Missing required parameters (including color)' }, { status: 400 });
         }
 
         await pool.query(
-            'UPDATE tblDetalleConvocatorias SET Precio = ? WHERE IdJugador = ? AND IdTemporada = ? AND IdLiga = ? AND Categoria = ?',
-            [precio, playerId, seasonId, leagueId, categoria]
+            'UPDATE tblDetalleConvocatorias SET Precio = ? WHERE IdJugador = ? AND IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?',
+            [precio, playerId, seasonId, leagueId, categoria, color]
         );
 
         return NextResponse.json({ success: true });

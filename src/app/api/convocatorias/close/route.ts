@@ -3,11 +3,11 @@ import { pool } from '@/lib/db';
 
 export async function POST(request: Request) {
     try {
-        const { seasonId, leagueId, categoria } = await request.json();
+        const { seasonId, leagueId, categoria, color } = await request.json();
 
-        if (!seasonId || !leagueId || !categoria) {
+        if (!seasonId || !leagueId || !categoria || !color) {
             return NextResponse.json(
-                { success: false, message: 'Faltan parámetros requeridos' },
+                { success: false, message: 'Faltan parámetros requeridos (incluyendo color)' },
                 { status: 400 }
             );
         }
@@ -16,10 +16,10 @@ export async function POST(request: Request) {
         const updateQuery = `
             UPDATE tblConvocatorias 
             SET Cerrada = 1 
-            WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ?
+            WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?
         `;
 
-        await pool.query(updateQuery, [seasonId, leagueId, categoria]);
+        await pool.query(updateQuery, [seasonId, leagueId, categoria, color]);
 
         return NextResponse.json({
             success: true,

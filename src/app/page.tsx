@@ -13,6 +13,7 @@ interface ConvocatoriaSummary {
   IdTemporada: number;
   IdLiga: number;
   Categoria: string;
+  Color?: string;
   Liga: string;
   FechaInicio: string;
   FechaFin: string;
@@ -32,6 +33,7 @@ export default function Home() {
   const [filters, setFilters] = useState({
     liga: '',
     categoria: '',
+    color: '',
     fechaInicio: '',
     fechaFin: '',
     cerrada: '',
@@ -46,7 +48,8 @@ export default function Home() {
     leagueId: '',
     categoria: '',
     fechaInicio: '',
-    fechaFin: ''
+    fechaFin: '',
+    color: ''
   });
 
   // Players Modal State
@@ -64,7 +67,8 @@ export default function Home() {
     categoria: '',
     precio: '',
     estado: '',
-    pago: ''
+    pago: '',
+    cxc: ''
   });
   const [playerSortConfig, setPlayerSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
@@ -149,6 +153,7 @@ export default function Home() {
     return (
       item.Liga.toLowerCase().includes(filters.liga.toLowerCase()) &&
       item.Categoria.toLowerCase().includes(filters.categoria.toLowerCase()) &&
+      (item.Color?.toLowerCase() ?? '').includes(filters.color.toLowerCase()) &&
       (filters.fechaInicio === '' || item.FechaInicio?.includes(filters.fechaInicio)) &&
       (filters.fechaFin === '' || item.FechaFin?.includes(filters.fechaFin)) &&
       (filters.cerrada === '' || (item.Cerrada ? 'sí' : 'no').includes(filters.cerrada.toLowerCase())) &&
@@ -203,7 +208,8 @@ export default function Home() {
           leagueId: newConvocatoria.leagueId,
           categoria: newConvocatoria.categoria,
           fechaInicio: newConvocatoria.fechaInicio,
-          fechaFin: newConvocatoria.fechaFin
+          fechaFin: newConvocatoria.fechaFin,
+          color: newConvocatoria.color
         })
       });
 
@@ -215,7 +221,8 @@ export default function Home() {
           leagueId: '',
           categoria: '',
           fechaInicio: '',
-          fechaFin: ''
+          fechaFin: '',
+          color: ''
         });
         // Refresh the list
         const refreshResponse = await fetch('/api/convocatorias/summary');
@@ -233,7 +240,7 @@ export default function Home() {
   };
 
   const handleCloseConvocatoria = async (item: ConvocatoriaSummary) => {
-    const confirmClose = confirm(`¿Está seguro de cerrar la convocatoria de ${item.Liga} - ${item.Categoria}?`);
+    const confirmClose = confirm(`¿Está seguro de cerrar la convocatoria de ${item.Liga} - ${item.Categoria} (${item.Color})?`);
     if (!confirmClose) return;
 
     try {
@@ -243,7 +250,8 @@ export default function Home() {
         body: JSON.stringify({
           seasonId: item.IdTemporada,
           leagueId: item.IdLiga,
-          categoria: item.Categoria
+          categoria: item.Categoria,
+          color: item.Color
         })
       });
 
@@ -439,7 +447,7 @@ export default function Home() {
   };
 
   const handleDeleteConvocatoria = async (item: ConvocatoriaSummary) => {
-    const confirmDelete = confirm(`¿Está seguro de BORRAR permanentemente la convocatoria de ${item.Liga} - ${item.Categoria}?`);
+    const confirmDelete = confirm(`¿Está seguro de BORRAR permanentemente la convocatoria de ${item.Liga} - ${item.Categoria} (${item.Color})?`);
     if (!confirmDelete) return;
 
     try {
@@ -449,7 +457,8 @@ export default function Home() {
         body: JSON.stringify({
           seasonId: item.IdTemporada,
           leagueId: item.IdLiga,
-          categoria: item.Categoria
+          categoria: item.Categoria,
+          color: item.Color
         })
       });
 
@@ -478,7 +487,7 @@ export default function Home() {
 
     try {
       const response = await fetch(
-        `/api/convocatorias/players?seasonId=${item.IdTemporada}&leagueId=${item.IdLiga}&categoria=${encodeURIComponent(item.Categoria)}`
+        `/api/convocatorias/players?seasonId=${item.IdTemporada}&leagueId=${item.IdLiga}&categoria=${encodeURIComponent(item.Categoria)}&color=${encodeURIComponent(item.Color || '')}`
       );
       const data = await response.json();
       if (data.success) {
@@ -509,7 +518,8 @@ export default function Home() {
           seasonId: selectedConvocatoria.IdTemporada,
           leagueId: selectedConvocatoria.IdLiga,
           playerId: player.IdJugador,
-          categoria: selectedConvocatoria.Categoria
+          categoria: selectedConvocatoria.Categoria,
+          color: selectedConvocatoria.Color
         })
       });
 
@@ -540,7 +550,8 @@ export default function Home() {
           seasonId: selectedConvocatoria.IdTemporada,
           leagueId: selectedConvocatoria.IdLiga,
           playerId: player.IdJugador,
-          categoria: selectedConvocatoria.Categoria
+          categoria: selectedConvocatoria.Categoria,
+          color: selectedConvocatoria.Color
         })
       });
 
@@ -571,7 +582,8 @@ export default function Home() {
           seasonId: selectedConvocatoria.IdTemporada,
           leagueId: selectedConvocatoria.IdLiga,
           playerId: player.IdJugador,
-          categoria: selectedConvocatoria.Categoria
+          categoria: selectedConvocatoria.Categoria,
+          color: selectedConvocatoria.Color
         })
       });
 
@@ -598,12 +610,13 @@ export default function Home() {
       player.Jugador.toLowerCase().includes(playerFilters.jugador.toLowerCase()) &&
       player.Categoria.toLowerCase().includes(playerFilters.categoria.toLowerCase()) &&
       (player.Precio?.toString() ?? '0').includes(playerFilters.precio) &&
+      (player.PagoJugador?.toString() ?? '0').includes(playerFilters.pago) &&
+      ((player.Precio - (player.PagoJugador || 0))?.toString() ?? '0').includes(playerFilters.cxc) &&
       (playerFilters.estado === '' ||
         (playerFilters.estado.toLowerCase() === 'convocado' && player.EsConvocado) ||
         (playerFilters.estado.toLowerCase() === 'eliminado' && player.EsEliminado) ||
         (playerFilters.estado.toLowerCase() === 'disponible' && !player.EsConvocado && !player.EsEliminado)
-      ) &&
-      (player.PagoJugador?.toString() ?? '0').includes(playerFilters.pago)
+      )
     );
   });
 
@@ -661,6 +674,7 @@ export default function Home() {
           leagueId: selectedConvocatoria.IdLiga,
           playerId: player.IdJugador,
           categoria: selectedConvocatoria.Categoria,
+          color: selectedConvocatoria.Color,
           precio
         })
       });
@@ -686,7 +700,7 @@ export default function Home() {
 
     try {
       const response = await fetch(
-        `/api/convocatorias/available-players?seasonId=${selectedConvocatoria.IdTemporada}&leagueId=${selectedConvocatoria.IdLiga}&categoria=${encodeURIComponent(selectedConvocatoria.Categoria)}`
+        `/api/convocatorias/available-players?seasonId=${selectedConvocatoria.IdTemporada}&leagueId=${selectedConvocatoria.IdLiga}&categoria=${encodeURIComponent(selectedConvocatoria.Categoria)}&color=${encodeURIComponent(selectedConvocatoria.Color || '')}`
       );
       const data = await response.json();
       if (data.success) {
@@ -716,7 +730,8 @@ export default function Home() {
           seasonId: selectedConvocatoria.IdTemporada,
           leagueId: selectedConvocatoria.IdLiga,
           playerId: selectedPlayerId,
-          categoria: selectedConvocatoria.Categoria
+          categoria: selectedConvocatoria.Categoria,
+          color: selectedConvocatoria.Color
         })
       });
 
@@ -852,6 +867,17 @@ export default function Home() {
                       </th>
                       <th
                         className="py-3 px-4 text-left font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
+                        onClick={() => handleSort('Color')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Color
+                          {sortConfig?.key === 'Color' && (
+                            <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </div>
+                      </th>
+                      <th
+                        className="py-3 px-4 text-left font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
                         onClick={() => handleSort('FechaInicio')}
                       >
                         <div className="flex items-center gap-2">
@@ -941,6 +967,15 @@ export default function Home() {
                       <th className="p-2">
                         <input
                           type="text"
+                          value={filters.color}
+                          onChange={(e) => setFilters(prev => ({ ...prev, color: e.target.value }))}
+                          className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
+                          placeholder="Filtro..."
+                        />
+                      </th>
+                      <th className="p-2">
+                        <input
+                          type="text"
                           value={filters.fechaInicio}
                           onChange={(e) => setFilters(prev => ({ ...prev, fechaInicio: e.target.value }))}
                           className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
@@ -956,6 +991,8 @@ export default function Home() {
                           placeholder="Sí/No"
                         />
                       </th>
+                      <th className="p-2"></th>
+                      <th className="p-2"></th>
                       <th className="p-2"></th>
                       <th className="p-2"></th>
                       <th className="p-2"></th>
@@ -984,6 +1021,9 @@ export default function Home() {
                         >
                           <td className="py-2 px-4 text-xs font-medium">{item.Liga}</td>
                           <td className="py-2 px-4 text-xs font-semibold">{item.Categoria}</td>
+                          <td className="py-2 px-4 text-xs font-medium text-slate-600 italic">
+                            {item.Color || '-'}
+                          </td>
                           <td className="py-2 px-4 text-xs">
                             {formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}
                           </td>
@@ -1087,9 +1127,20 @@ export default function Home() {
                 <input
                   type="text"
                   value={newConvocatoria.categoria}
-                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, categoria: e.target.value }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
-                  placeholder="Ej: Sub-17, Varonil, etc."
+                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, categoria: e.target.value.toUpperCase() }))}
+                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase"
+                  placeholder="Ej: SUB-17, VARONIL, etc."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Color Distintivo (Rojo, Azul, etc.)</label>
+                <input
+                  type="text"
+                  value={newConvocatoria.color}
+                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, color: e.target.value.toUpperCase() }))}
+                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase"
+                  placeholder="Ej: ROJO, AZUL, BLANCO"
                 />
               </div>
 
@@ -1122,7 +1173,8 @@ export default function Home() {
                     leagueId: '',
                     categoria: '',
                     fechaInicio: '',
-                    fechaFin: ''
+                    fechaFin: '',
+                    color: ''
                   });
                 }}
                 className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded transition-colors"
@@ -1147,8 +1199,13 @@ export default function Home() {
             <div className="p-6 border-b border-slate-200">
               <div className="flex justify-between items-center">
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-800">
+                  <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
                     {selectedConvocatoria.Liga} - {selectedConvocatoria.Categoria}
+                    {selectedConvocatoria.Color && (
+                      <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded border">
+                        Color: {selectedConvocatoria.Color}
+                      </span>
+                    )}
                   </h3>
                   <p className="text-sm text-slate-600 mt-1">
                     {formatDate(selectedConvocatoria.FechaInicio)} - {formatDate(selectedConvocatoria.FechaFin)}
@@ -1313,13 +1370,69 @@ export default function Home() {
                     </tr>
                     {/* Filter Row */}
                     <tr className="bg-slate-100 border-b-2 border-slate-300">
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
+                      <th className="p-2">
+                        <input
+                          type="text"
+                          value={playerFilters.idJugador}
+                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, idJugador: e.target.value }))}
+                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
+                          placeholder="ID..."
+                        />
+                      </th>
+                      <th className="p-2">
+                        <input
+                          type="text"
+                          value={playerFilters.jugador}
+                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, jugador: e.target.value }))}
+                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
+                          placeholder="Jugador..."
+                        />
+                      </th>
+                      <th className="p-2">
+                        <input
+                          type="text"
+                          value={playerFilters.categoria}
+                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, categoria: e.target.value }))}
+                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
+                          placeholder="Cat..."
+                        />
+                      </th>
+                      <th className="p-2">
+                        <input
+                          type="text"
+                          value={playerFilters.precio}
+                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, precio: e.target.value }))}
+                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
+                          placeholder="Precio..."
+                        />
+                      </th>
+                      <th className="p-2">
+                        <input
+                          type="text"
+                          value={playerFilters.pago}
+                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, pago: e.target.value }))}
+                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
+                          placeholder="Pago..."
+                        />
+                      </th>
+                      <th className="p-2">
+                        <input
+                          type="text"
+                          value={playerFilters.cxc}
+                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, cxc: e.target.value }))}
+                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
+                          placeholder="CXC..."
+                        />
+                      </th>
+                      <th className="p-2">
+                        <input
+                          type="text"
+                          value={playerFilters.estado}
+                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, estado: e.target.value }))}
+                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
+                          placeholder="Estado..."
+                        />
+                      </th>
                       <th className="p-2"></th>
                     </tr>
                   </thead>
