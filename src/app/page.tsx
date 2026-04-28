@@ -95,7 +95,7 @@ export default function Home() {
   const [playerSearchQuery, setPlayerSearchQuery] = useState<string>('');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [showClosed, setShowClosed] = useState(false);
-  const [showOnlyConvocados, setShowOnlyConvocados] = useState(false);
+  const [showOnlyConvocados, setShowOnlyConvocados] = useState(true);
   const [showOnlyDebts, setShowOnlyDebts] = useState(true);
 
   // Check if user is logged in, redirect to login if not
@@ -442,14 +442,21 @@ export default function Home() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Detalle');
 
+    const totalPrecio = sortedPlayers.reduce((sum, p) => sum + (p.Precio || 0), 0);
+    const totalPago = sortedPlayers.reduce((sum, p) => sum + (p.PagoJugador || 0), 0);
+    const totalCXC = sortedPlayers.reduce((sum, p) => sum + (p.CXC || 0), 0);
+    const numConvocados = sortedPlayers.filter(p => p.EsConvocado).length;
+
     // Título y Periodo
     const titleCell = worksheet.getCell('A1');
-    titleCell.value = `${selectedConvocatoria.Liga} - ${selectedConvocatoria.Categoria}`;
+    titleCell.value = `${selectedConvocatoria.Liga} - ${selectedConvocatoria.Categoria} ${selectedConvocatoria.Color ? `(${selectedConvocatoria.Color})` : ''}`;
     titleCell.font = { bold: true, size: 16, color: { argb: 'FF1E293B' } };
     
-    const periodCell = worksheet.getCell('A2');
-    periodCell.value = `Periodo: ${formatDate(selectedConvocatoria.FechaInicio)} - ${formatDate(selectedConvocatoria.FechaFin)}`;
-    periodCell.font = { italic: true, size: 11 };
+    worksheet.getCell('A2').value = `Periodo: ${formatDate(selectedConvocatoria.FechaInicio)} - ${formatDate(selectedConvocatoria.FechaFin)}`;
+    worksheet.getCell('A2').font = { italic: true, size: 11 };
+
+    worksheet.getCell('A3').value = `Convocados: ${numConvocados} | Total: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrecio)} | Pagado: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPago)} | CXC: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC)}`;
+    worksheet.getCell('A3').font = { bold: true, size: 11, color: { argb: 'FF1E40AF' } };
 
     // Configurar columnas (sin header automático)
     worksheet.columns = [
@@ -462,8 +469,8 @@ export default function Home() {
       { key: 'estado', width: 15 }
     ];
 
-    // Encabezados (Fila 4)
-    const headerRow = worksheet.getRow(4);
+    // Encabezados (Fila 5)
+    const headerRow = worksheet.getRow(5);
     headerRow.values = ['ID', 'Jugador', 'Categoría', 'Precio', 'Pago', 'CXC', 'Estado'];
     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     headerRow.eachCell((cell) => {
@@ -488,6 +495,22 @@ export default function Home() {
       });
     });
 
+    // Totales
+    const totalRow = worksheet.addRow([
+      '',
+      'TOTALES',
+      '',
+      sortedPlayers.reduce((sum, p) => sum + (p.Precio || 0), 0),
+      sortedPlayers.reduce((sum, p) => sum + (p.PagoJugador || 0), 0),
+      sortedPlayers.reduce((sum, p) => sum + (p.CXC || 0), 0),
+      ''
+    ]);
+    totalRow.font = { bold: true };
+    totalRow.eachCell((cell) => {
+      cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    });
+
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
@@ -500,8 +523,18 @@ export default function Home() {
 
   const exportPlayersToPDF = () => {
     if (!selectedConvocatoria) return;
+    const totalPrecio = sortedPlayers.reduce((sum, p) => sum + (p.Precio || 0), 0);
+    const totalPago = sortedPlayers.reduce((sum, p) => sum + (p.PagoJugador || 0), 0);
+    const totalCXC = sortedPlayers.reduce((sum, p) => sum + (p.CXC || 0), 0);
+    const numConvocados = sortedPlayers.filter(p => p.EsConvocado).length;
+
     const doc = new jsPDF();
-    doc.text(`Detalle de Convocatoria - ${selectedConvocatoria.Liga} - ${selectedConvocatoria.Categoria}`, 14, 15);
+    doc.setFontSize(16);
+    doc.text(`${selectedConvocatoria.Liga} - ${selectedConvocatoria.Categoria} ${selectedConvocatoria.Color ? `(${selectedConvocatoria.Color})` : ''}`, 14, 15);
+    
+    doc.setFontSize(10);
+    doc.text(`Periodo: ${formatDate(selectedConvocatoria.FechaInicio)} - ${formatDate(selectedConvocatoria.FechaFin)}`, 14, 22);
+    doc.text(`Convocados: ${numConvocados} | Total: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrecio)} | Pagado: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPago)} | CXC: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC)}`, 14, 29);
     
     const tableData = sortedPlayers.map(player => [
       player.IdJugador,
@@ -513,10 +546,20 @@ export default function Home() {
       player.EsConvocado ? 'Convocado' : player.EsEliminado ? 'Eliminado' : player.EsInvitado ? 'Invitado' : 'Disponible'
     ]);
 
+    tableData.push([
+      '',
+      'TOTALES',
+      '',
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrecio),
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPago),
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC),
+      ''
+    ]);
+
     autoTable(doc, {
       head: [['ID', 'Jugador', 'Categoría', 'Precio', 'Pago', 'CXC', 'Estado']],
       body: tableData,
-      startY: 20,
+      startY: 35,
       theme: 'grid',
       styles: { fontSize: 8 },
       headStyles: { fillColor: [51, 65, 85] }
@@ -564,6 +607,7 @@ export default function Home() {
     setIsPlayersModalOpen(true);
     setIsLoadingPlayers(true);
     setShowOnlyDebts(true);
+    setShowOnlyConvocados(true);
 
     try {
       const response = await fetch(
