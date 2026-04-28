@@ -96,6 +96,7 @@ export default function Home() {
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [showClosed, setShowClosed] = useState(false);
   const [showOnlyConvocados, setShowOnlyConvocados] = useState(false);
+  const [showOnlyDebts, setShowOnlyDebts] = useState(true);
 
   // Check if user is logged in, redirect to login if not
   useEffect(() => {
@@ -562,6 +563,7 @@ export default function Home() {
     setSelectedConvocatoria(item);
     setIsPlayersModalOpen(true);
     setIsLoadingPlayers(true);
+    setShowOnlyDebts(true);
 
     try {
       const response = await fetch(
@@ -682,6 +684,9 @@ export default function Home() {
   const filteredPlayers = players.filter((player) => {
     // Filter by convocado status if toggle is on
     if (showOnlyConvocados && !player.EsConvocado) return false;
+
+    // Filter by debts if toggle is on
+    if (showOnlyDebts && (player.Precio - (player.PagoJugador || 0)) <= 0) return false;
 
     return (
       (player.IdJugador?.toString() ?? '').includes(playerFilters.idJugador) &&
@@ -1448,6 +1453,17 @@ export default function Home() {
                     />
                     <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                     <span className="ml-2 text-xs font-semibold text-slate-600">Solo Convocados</span>
+                  </label>
+
+                  <label className="relative inline-flex items-center cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={showOnlyDebts}
+                      onChange={(e) => setShowOnlyDebts(e.target.checked)}
+                    />
+                    <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    <span className="ml-2 text-xs font-semibold text-slate-600">Ver adeudos</span>
                   </label>
                 </div>
 
