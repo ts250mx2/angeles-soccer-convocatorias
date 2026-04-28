@@ -534,15 +534,21 @@ export default function Home() {
     
     doc.setFontSize(10);
     doc.text(`Periodo: ${formatDate(selectedConvocatoria.FechaInicio)} - ${formatDate(selectedConvocatoria.FechaFin)}`, 14, 22);
-    doc.text(`Convocados: ${numConvocados} | Total: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrecio)} | Pagado: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPago)} | CXC: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC)}`, 14, 29);
+    
+    const formatCurrencyPDF = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val).replace(/\u00a0/g, ' ');
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Convocados: ${numConvocados}`, 14, 28);
+    doc.text(`Total: ${formatCurrencyPDF(totalPrecio)} | Pagado: ${formatCurrencyPDF(totalPago)} | CXC: ${formatCurrencyPDF(totalCXC)}`, 14, 33);
+    doc.setFont('helvetica', 'normal');
     
     const tableData = sortedPlayers.map(player => [
       player.IdJugador,
       player.Jugador,
       player.Categoria,
-      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio),
-      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.PagoJugador),
-      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.CXC),
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio).replace(/\u00a0/g, ' '),
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.PagoJugador).replace(/\u00a0/g, ' '),
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.CXC).replace(/\u00a0/g, ' '),
       player.EsConvocado ? 'Convocado' : player.EsEliminado ? 'Eliminado' : player.EsInvitado ? 'Invitado' : 'Disponible'
     ]);
 
@@ -550,16 +556,16 @@ export default function Home() {
       '',
       'TOTALES',
       '',
-      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrecio),
-      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPago),
-      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC),
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrecio).replace(/\u00a0/g, ' '),
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPago).replace(/\u00a0/g, ' '),
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC).replace(/\u00a0/g, ' '),
       ''
     ]);
 
     autoTable(doc, {
       head: [['ID', 'Jugador', 'Categoría', 'Precio', 'Pago', 'CXC', 'Estado']],
       body: tableData,
-      startY: 35,
+      startY: 40,
       theme: 'grid',
       styles: { fontSize: 8 },
       headStyles: { fillColor: [51, 65, 85] }
