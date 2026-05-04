@@ -1,7 +1,8 @@
 "use client";
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogOut } from 'lucide-react';
+import { LogOut, Search, ChevronDown, LayoutGrid, List } from 'lucide-react';
+import { useRef } from 'react';
 import { useUser } from '@/contexts/user-context';
 import { useEffect, useState } from 'react';
 import * as XLSX from 'xlsx';
@@ -48,14 +49,27 @@ export default function Home() {
 
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const today = new Date().toISOString().split('T')[0];
   const [newConvocatoria, setNewConvocatoria] = useState({
     leagueId: '',
     idProfesor: '',
     categoria: '',
-    fechaInicio: '',
-    fechaFin: '',
+    fechaInicio: today,
+    fechaFin: today,
     color: ''
   });
+  const [dbCategories, setDbCategories] = useState<string[]>([]);
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [leagueSearchQuery, setLeagueSearchQuery] = useState('');
+  const [isLeagueDropdownOpen, setIsLeagueDropdownOpen] = useState(false);
+  const leagueDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [profesorSearchQuery, setProfesorSearchQuery] = useState('');
+  const [isProfesorDropdownOpen, setIsProfesorDropdownOpen] = useState(false);
+  const profesorDropdownRef = useRef<HTMLDivElement>(null);
 
   // Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -96,7 +110,9 @@ export default function Home() {
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [showClosed, setShowClosed] = useState(false);
   const [showOnlyConvocados, setShowOnlyConvocados] = useState(true);
-  const [showOnlyDebts, setShowOnlyDebts] = useState(true);
+  const [showOnlyDebts, setShowOnlyDebts] = useState(false);
+  const [summarySearchQuery, setSummarySearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
 
   // Check if user is logged in, redirect to login if not
   useEffect(() => {
@@ -161,7 +177,33 @@ export default function Home() {
         }
       })
       .catch(err => console.error('Error fetching professors:', err));
+
+    fetch('/api/convocatorias/categories')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setDbCategories(data.data.map((item: any) => item.Categoria));
+        }
+      })
+      .catch(err => console.error('Error fetching categories:', err));
   }, [setSeason]);
+
+  // Click outside to close category dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
+        setIsCategoryDropdownOpen(false);
+      }
+      if (leagueDropdownRef.current && !leagueDropdownRef.current.contains(event.target as Node)) {
+        setIsLeagueDropdownOpen(false);
+      }
+      if (profesorDropdownRef.current && !profesorDropdownRef.current.contains(event.target as Node)) {
+        setIsProfesorDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -250,8 +292,8 @@ export default function Home() {
           leagueId: '',
           idProfesor: '',
           categoria: '',
-          fechaInicio: '',
-          fechaFin: '',
+          fechaInicio: today,
+          fechaFin: today,
           color: ''
         });
         // Refresh the list
@@ -612,8 +654,8 @@ export default function Home() {
     setSelectedConvocatoria(item);
     setIsPlayersModalOpen(true);
     setIsLoadingPlayers(true);
-    setShowOnlyDebts(true);
-    setShowOnlyConvocados(true);
+    setShowOnlyDebts(false);
+    setShowOnlyConvocados(item.JugadoresConvocados > 0);
 
     try {
       const response = await fetch(
@@ -916,12 +958,12 @@ export default function Home() {
           </Link>
         </div>
       </nav>
-      <main className="p-8">
+      <main className="p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
-          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl p-8 border border-white/20">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold text-slate-800">Resumen de Convocatorias</h2>
-              <div className="flex items-center gap-6">
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl p-4 md:p-8 border border-white/20">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
+              <h2 className="text-2xl md:text-3xl font-bold text-slate-800">Resumen de Convocatorias</h2>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
                 <label className="relative inline-flex items-center cursor-pointer group">
                   <input
                     type="checkbox"
@@ -934,10 +976,10 @@ export default function Home() {
                     Ver Cerradas
                   </span>
                 </label>
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full sm:w-auto">
                   <button
                     onClick={exportToExcel}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg shadow transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -946,7 +988,7 @@ export default function Home() {
                   </button>
                   <button
                     onClick={exportToPDF}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg shadow transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -954,10 +996,26 @@ export default function Home() {
                     PDF
                   </button>
                 </div>
+                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg w-full sm:w-auto justify-center">
+                  <button
+                    onClick={() => setViewMode('cards')}
+                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-1.5 rounded-md transition-all ${viewMode === 'cards' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    <LayoutGrid size={18} />
+                    <span className="text-xs">Tarjetas</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('table')}
+                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-1.5 rounded-md transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    <List size={18} />
+                    <span className="text-xs">Tabla</span>
+                  </button>
+                </div>
                 <button
                   onClick={() => setIsCreateModalOpen(true)}
                   disabled={!user || (user.AdminConvocatorias ?? 0) < 2}
-                  className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-md"
+                  className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   title={!user || (user.AdminConvocatorias ?? 0) < 2 ? "No tienes permisos para crear convocatorias" : ""}
                 >
                   + Nueva Convocatoria
@@ -965,14 +1023,10 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-8">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-bold text-slate-800">
-                  {isLoading ? 'Cargando...' : `${sortedConvocatorias.length} Convocatorias`}
-                </h3>
-              </div>
 
-              <div className="overflow-x-auto shadow-xl rounded-xl border border-slate-200">
+
+              {/* Desktop View Mode Container */}
+              <div className={`${viewMode === 'table' ? 'hidden lg:block' : 'hidden'} overflow-x-auto shadow-xl rounded-xl border border-slate-200`}>
                 <table className="min-w-full bg-white">
                   <thead>
                     <tr className="bg-gradient-to-r from-slate-700 to-slate-800 text-white">
@@ -1254,59 +1308,343 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Cards View (Mobile default, Desktop optional) */}
+              <div className={`${viewMode === 'cards' ? 'block' : 'lg:hidden'} mb-2`}>
+                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2 text-slate-500 font-bold text-[10px] uppercase tracking-wider">
+                    <Search size={14} />
+                    Buscar Convocatoria
+                  </div>
+                  <input 
+                    type="text" 
+                    value={summarySearchQuery}
+                    onChange={(e) => setSummarySearchQuery(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:bg-white focus:border-blue-500 outline-none transition-all"
+                    placeholder="Liga, categoría o profesor..."
+                  />
+                </div>
+              </div>
+
+              <div className={`${viewMode === 'cards' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4' : 'lg:hidden space-y-4'}`}>
+
+                {isLoading ? (
+                  <div className="py-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200 shadow-sm">
+                    <div className="flex flex-col items-center justify-center gap-3">
+                      <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="font-medium">Cargando convocatorias...</span>
+                    </div>
+                  </div>
+                ) : sortedConvocatorias.filter(item => 
+                    item.Liga.toLowerCase().includes(summarySearchQuery.toLowerCase()) || 
+                    item.Categoria.toLowerCase().includes(summarySearchQuery.toLowerCase()) ||
+                    (item.Profesor || '').toLowerCase().includes(summarySearchQuery.toLowerCase())
+                  ).length > 0 ? (
+                  sortedConvocatorias
+                    .filter(item => 
+                      item.Liga.toLowerCase().includes(summarySearchQuery.toLowerCase()) || 
+                      item.Categoria.toLowerCase().includes(summarySearchQuery.toLowerCase()) ||
+                      (item.Profesor || '').toLowerCase().includes(summarySearchQuery.toLowerCase())
+                    )
+                    .map((item, index) => (
+                    <div
+                      key={`${item.IdTemporada}-${item.IdLiga}-${item.Categoria}-${index}`}
+                      className="bg-white rounded-xl border border-slate-200 shadow-md p-4 md:p-3 relative overflow-hidden"
+                    >
+                      {item.Cerrada ? (
+                        <div className="absolute top-0 right-0 bg-red-500 text-white text-[9px] font-bold px-2.5 py-0.5 rounded-bl-lg uppercase tracking-wider">
+                          Cerrada
+                        </div>
+                      ) : (
+                        <div className="absolute top-0 right-0 bg-green-500 text-white text-[9px] font-bold px-2.5 py-0.5 rounded-bl-lg uppercase tracking-wider">
+                          Activa
+                        </div>
+                      )}
+                      
+                      <div className="mb-3">
+                        <div className="text-[9px] md:text-[8px] font-bold text-blue-600 uppercase mb-0.5">{item.Liga}</div>
+                        <h4 className="text-base md:text-sm font-bold text-slate-800 leading-tight">{item.Categoria}</h4>
+                        <div className="text-xs md:text-[11px] text-slate-500 flex items-center gap-1 mt-1">
+                          <span className="font-medium">Profesor:</span> {item.Profesor || '-'}
+                        </div>
+                        {item.Color && (
+                          <div className="text-[10px] md:text-[9px] text-slate-400 mt-0.5 italic">Color: {item.Color}</div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 mb-3 p-2 bg-slate-50 rounded-lg">
+                        <div>
+                          <div className="text-[9px] text-slate-400 uppercase font-bold">Jugadores</div>
+                          <div className="text-xs font-bold text-blue-700">{item.JugadoresConvocados}</div>
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-slate-400 uppercase font-bold">CXC Total</div>
+                          <div className="text-xs font-bold text-red-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CXC || 0)}</div>
+                        </div>
+                        <div className="col-span-2 pt-1 border-t border-slate-200">
+                          <div className="text-[9px] text-slate-400 uppercase font-bold">Periodo</div>
+                          <div className="text-[10px] text-slate-600">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+                        {item.Cerrada === 0 ? (
+                          <>
+                            <button
+                              onClick={() => handleNavigateToConvocatoria(item)}
+                              className="flex-1 bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold py-2 rounded-lg transition-colors shadow-sm"
+                            >
+                              Convocar
+                            </button>
+                            <button
+                              onClick={() => handleOpenEditModal(item)}
+                              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-2 rounded-lg transition-colors shadow-sm"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => handleCloseConvocatoria(item)}
+                              disabled={!user || (user.AdminConvocatorias ?? 0) < 2}
+                              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-bold py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                            >
+                              Cerrar
+                            </button>
+                          </>
+                        ) : (
+                          <div className="w-full text-center py-2 text-slate-400 font-medium text-xs">Esta convocatoria está cerrada</div>
+                        )}
+                        <button
+                          onClick={() => handleDeleteConvocatoria(item)}
+                          disabled={!user || (user.AdminConvocatorias ?? 0) < 2}
+                          className="w-full bg-red-100 hover:bg-red-200 text-red-700 text-[10px] font-bold py-1.5 rounded-lg transition-colors disabled:opacity-50 mt-0.5"
+                        >
+                          Eliminar Permanente
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
+                    No se encontraron convocatorias.
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-slate-100 flex justify-center">
+                <h3 className="text-lg md:text-xl font-bold text-slate-500 italic">
+                  {isLoading ? 'Cargando...' : `${sortedConvocatorias.length} Convocatorias en total`}
+                </h3>
+              </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
 
       {/* Create Convocatoria Modal */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg">
+          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg relative">
+            <button
+              onClick={() => {
+                setIsCreateModalOpen(false);
+                setNewConvocatoria({
+                  leagueId: '',
+                  idProfesor: '',
+                  categoria: '',
+                  fechaInicio: today,
+                  fechaFin: today,
+                  color: ''
+                });
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
             <h3 className="text-xl font-bold mb-4 text-slate-800">Nueva Convocatoria</h3>
 
             <div className="space-y-4">
-              <div>
+              <div className="relative" ref={leagueDropdownRef}>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Liga o Torneo</label>
-                <select
-                  value={newConvocatoria.leagueId}
-                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, leagueId: e.target.value }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                <div 
+                  className="w-full bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg flex justify-between items-center cursor-pointer hover:border-blue-500 transition-all"
+                  onClick={() => setIsLeagueDropdownOpen(!isLeagueDropdownOpen)}
                 >
-                  <option value="">Seleccione una liga</option>
-                  {leagues.map((league) => (
-                    <option key={league.IdLiga} value={league.IdLiga}>
-                      {league.Liga}
-                    </option>
-                  ))}
-                </select>
+                  <span className={newConvocatoria.leagueId ? "text-slate-800 font-medium" : "text-slate-400"}>
+                    {leagues.find(l => l.IdLiga.toString() === newConvocatoria.leagueId.toString())?.Liga || "Seleccione una liga"}
+                  </span>
+                  <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${isLeagueDropdownOpen ? 'rotate-180' : ''}`} />
+                </div>
+
+                {isLeagueDropdownOpen && (
+                  <div className="absolute z-[70] w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-2 sticky top-0 bg-white border-b border-slate-100">
+                      <div className="relative">
+                        <Search className="absolute left-2 top-2.5 text-slate-400" size={14} />
+                        <input
+                          type="text"
+                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-slate-50 border-none rounded-md focus:ring-0 placeholder-slate-400"
+                          placeholder="Buscar liga..."
+                          value={leagueSearchQuery}
+                          onChange={(e) => setLeagueSearchQuery(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="py-1">
+                      {leagues
+                        .filter(l => l.Liga.toLowerCase().includes(leagueSearchQuery.toLowerCase()))
+                        .length > 0 ? (
+                        leagues
+                          .filter(l => l.Liga.toLowerCase().includes(leagueSearchQuery.toLowerCase()))
+                          .map((league) => (
+                            <div
+                              key={league.IdLiga}
+                              className="px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer transition-colors"
+                              onClick={() => {
+                                setNewConvocatoria(prev => ({ ...prev, leagueId: league.IdLiga.toString() }));
+                                setIsLeagueDropdownOpen(false);
+                                setLeagueSearchQuery('');
+                              }}
+                            >
+                              {league.Liga}
+                            </div>
+                          ))
+                      ) : (
+                        <div className="px-4 py-3 text-sm text-slate-500 text-center">No se encontraron ligas</div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div>
+              <div className="relative" ref={profesorDropdownRef}>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Profesor</label>
-                <select
-                  value={newConvocatoria.idProfesor}
-                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, idProfesor: e.target.value }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                <div 
+                  className="w-full bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg flex justify-between items-center cursor-pointer hover:border-blue-500 transition-all"
+                  onClick={() => setIsProfesorDropdownOpen(!isProfesorDropdownOpen)}
                 >
-                  <option value="">Seleccione Profesor</option>
-                  {profesores.map((prof) => (
-                    <option key={prof.IdUsuario} value={prof.IdUsuario}>
-                      {prof.Usuario}
-                    </option>
-                  ))}
-                </select>
+                  <span className={newConvocatoria.idProfesor ? "text-slate-800 font-medium" : "text-slate-400"}>
+                    {profesores.find(p => p.IdUsuario.toString() === newConvocatoria.idProfesor.toString())?.Usuario || "Seleccione Profesor"}
+                  </span>
+                  <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${isProfesorDropdownOpen ? 'rotate-180' : ''}`} />
+                </div>
+
+                {isProfesorDropdownOpen && (
+                  <div className="absolute z-[70] w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-2 sticky top-0 bg-white border-b border-slate-100">
+                      <div className="relative">
+                        <Search className="absolute left-2 top-2.5 text-slate-400" size={14} />
+                        <input
+                          type="text"
+                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-slate-50 border-none rounded-md focus:ring-0 placeholder-slate-400"
+                          placeholder="Buscar profesor..."
+                          value={profesorSearchQuery}
+                          onChange={(e) => setProfesorSearchQuery(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="py-1">
+                      {profesores
+                        .filter(p => p.Usuario.toLowerCase().includes(profesorSearchQuery.toLowerCase()))
+                        .length > 0 ? (
+                        profesores
+                          .filter(p => p.Usuario.toLowerCase().includes(profesorSearchQuery.toLowerCase()))
+                          .map((prof) => (
+                            <div
+                              key={prof.IdUsuario}
+                              className="px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer transition-colors"
+                              onClick={() => {
+                                setNewConvocatoria(prev => ({ ...prev, idProfesor: prof.IdUsuario.toString() }));
+                                setIsProfesorDropdownOpen(false);
+                                setProfesorSearchQuery('');
+                              }}
+                            >
+                              {prof.Usuario}
+                            </div>
+                          ))
+                      ) : (
+                        <div className="px-4 py-3 text-sm text-slate-500 text-center">No se encontraron profesores</div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div>
+              <div className="relative" ref={categoryDropdownRef}>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Categoría</label>
-                <input
-                  type="text"
-                  value={newConvocatoria.categoria}
-                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, categoria: e.target.value.toUpperCase() }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase"
-                  placeholder="Ej: SUB-17, VARONIL, etc."
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={newConvocatoria.categoria}
+                    onFocus={() => setIsCategoryDropdownOpen(true)}
+                    onChange={(e) => {
+                      setNewConvocatoria(prev => ({ ...prev, categoria: e.target.value.toUpperCase() }));
+                      setCategorySearchQuery(e.target.value);
+                      setIsCategoryDropdownOpen(true);
+                    }}
+                    className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 pl-3 pr-10 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase transition-all"
+                    placeholder="Escriba o seleccione categoría"
+                  />
+                  <div 
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer text-slate-400"
+                    onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                  >
+                    <ChevronDown size={18} className={`transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
+                  </div>
+                </div>
+
+                {isCategoryDropdownOpen && (
+                  <div className="absolute z-[60] w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-2 sticky top-0 bg-white border-b border-slate-100">
+                      <div className="relative">
+                        <Search className="absolute left-2 top-2.5 text-slate-400" size={14} />
+                        <input
+                          type="text"
+                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-slate-50 border-none rounded-md focus:ring-0 placeholder-slate-400"
+                          placeholder="Buscar categoría existente..."
+                          value={categorySearchQuery}
+                          onChange={(e) => setCategorySearchQuery(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="py-1">
+                      {dbCategories
+                        .filter(cat => cat.toLowerCase().includes(categorySearchQuery.toLowerCase()))
+                        .length > 0 ? (
+                        dbCategories
+                          .filter(cat => cat.toLowerCase().includes(categorySearchQuery.toLowerCase()))
+                          .map((cat, idx) => (
+                            <div
+                              key={idx}
+                              className="px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer transition-colors flex justify-between items-center group"
+                              onClick={() => {
+                                setNewConvocatoria(prev => ({ ...prev, categoria: cat }));
+                                setCategorySearchQuery('');
+                                setIsCategoryDropdownOpen(false);
+                              }}
+                            >
+                              <span className="font-medium">{cat}</span>
+                              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">Seleccionar</span>
+                            </div>
+                          ))
+                      ) : (
+                        <div className="px-4 py-3 text-sm text-slate-500 text-center">
+                          {categorySearchQuery ? (
+                            <>
+                              No se encontró "<span className="font-semibold">{categorySearchQuery}</span>"
+                              <p className="text-xs mt-1">Puedes seguir escribiendo para crear una nueva.</p>
+                            </>
+                          ) : (
+                            "No hay categorías disponibles"
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1349,8 +1687,8 @@ export default function Home() {
                     leagueId: '',
                     idProfesor: '',
                     categoria: '',
-                    fechaInicio: '',
-                    fechaFin: '',
+                    fechaInicio: today,
+                    fechaFin: today,
                     color: ''
                   });
                 }}
@@ -1372,7 +1710,15 @@ export default function Home() {
       {/* Edit Convocatoria Modal */}
       {isEditModalOpen && selectedConvocatoria && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg">
+          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg relative">
+            <button
+              onClick={() => setIsEditModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
             <h3 className="text-xl font-bold mb-4 text-slate-800">Editar Convocatoria</h3>
             <p className="text-sm text-slate-500 mb-4">
               Editando: <span className="font-bold">{selectedConvocatoria.Liga} - {selectedConvocatoria.Categoria}</span>
@@ -1447,19 +1793,21 @@ export default function Home() {
       {/* Players Modal */}
       {isPlayersModalOpen && selectedConvocatoria && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg w-full max-w-6xl max-h-[90vh] overflow-hidden shadow-lg flex flex-col">
-            <div className="p-6 border-b border-slate-200">
-              <div className="flex justify-between items-center">
+          <div className="bg-white/95 backdrop-blur-sm rounded-lg w-full max-w-6xl h-full md:h-auto max-h-screen md:max-h-[90vh] overflow-hidden shadow-lg flex flex-col">
+            <div className="p-4 md:p-6 border-b border-slate-200">
+              <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                    {selectedConvocatoria.Liga} - {selectedConvocatoria.Categoria}
+                  <h3 className="text-xl md:text-2xl font-bold text-slate-800 flex flex-wrap items-center gap-2 md:gap-3">
+                    {selectedConvocatoria.Liga}
+                    <span className="hidden md:inline text-slate-300">/</span>
+                    {selectedConvocatoria.Categoria}
                     {selectedConvocatoria.Color && (
-                      <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded border">
-                        Color: {selectedConvocatoria.Color}
+                      <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded border">
+                        {selectedConvocatoria.Color}
                       </span>
                     )}
                   </h3>
-                  <p className="text-sm text-slate-600 mt-1">
+                  <p className="text-xs md:text-sm text-slate-600 mt-1">
                     {formatDate(selectedConvocatoria.FechaInicio)} - {formatDate(selectedConvocatoria.FechaFin)}
                   </p>
                 </div>
@@ -1468,10 +1816,9 @@ export default function Home() {
                     setIsPlayersModalOpen(false);
                     setSelectedConvocatoria(null);
                     setPlayers([]);
-                    // Refresh the main summary table
                     await fetchConvocatorias();
                   }}
-                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                  className="text-slate-400 hover:text-slate-600 transition-colors p-1"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1479,21 +1826,29 @@ export default function Home() {
                 </button>
               </div>
 
-              <div className="flex gap-6 items-center mt-4">
-                <div className="text-base font-medium text-slate-600 bg-slate-100 px-4 py-2 rounded-lg">
-                  Convocados: <span className="text-slate-800 font-semibold">{recordCount}</span>
-                </div>
-                <div className="text-base font-medium text-slate-600 bg-blue-50 px-4 py-2 rounded-lg">
-                  Total: <span className="text-blue-700 font-bold">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrice)}</span>
-                </div>
-                <div className="text-base font-medium text-slate-600 bg-green-50 px-4 py-2 rounded-lg">
-                  Pagado: <span className="text-green-700 font-bold">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPagos)}</span>
-                </div>
-                <div className="text-base font-medium text-slate-600 bg-red-50 px-4 py-2 rounded-lg">
-                  CXC: <span className="text-red-700 font-bold">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC)}</span>
+              <div className="flex flex-col lg:flex-row gap-4 lg:items-center mt-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full lg:w-auto">
+                  <div className="text-xs md:text-sm font-medium text-slate-600 bg-slate-100 px-3 py-2 rounded-lg text-center">
+                    Conv.: <span className="text-slate-800 font-bold">{recordCount}</span>
+                  </div>
+                  <div className="text-xs md:text-sm font-medium text-slate-600 bg-blue-50 px-3 py-2 rounded-lg text-center">
+                    Total: <span className="text-blue-700 font-bold text-[10px] md:text-xs">
+                      {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrice)}
+                    </span>
+                  </div>
+                  <div className="text-xs md:text-sm font-medium text-slate-600 bg-green-50 px-3 py-2 rounded-lg text-center">
+                    Pagado: <span className="text-green-700 font-bold text-[10px] md:text-xs">
+                      {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPagos)}
+                    </span>
+                  </div>
+                  <div className="text-xs md:text-sm font-medium text-slate-600 bg-red-50 px-3 py-2 rounded-lg text-center">
+                    CXC: <span className="text-red-700 font-bold text-[10px] md:text-xs">
+                      {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC)}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 ml-4">
+                <div className="flex flex-wrap items-center gap-3 md:gap-4">
                   <label className="relative inline-flex items-center cursor-pointer group">
                     <input
                       type="checkbox"
@@ -1502,7 +1857,7 @@ export default function Home() {
                       onChange={(e) => setShowOnlyConvocados(e.target.checked)}
                     />
                     <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                    <span className="ml-2 text-xs font-semibold text-slate-600">Solo Convocados</span>
+                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-600 whitespace-nowrap">Solo Convocados</span>
                   </label>
 
                   <label className="relative inline-flex items-center cursor-pointer group">
@@ -1513,34 +1868,19 @@ export default function Home() {
                       onChange={(e) => setShowOnlyDebts(e.target.checked)}
                     />
                     <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                    <span className="ml-2 text-xs font-semibold text-slate-600">Ver adeudos</span>
+                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-600 whitespace-nowrap">Ver adeudos</span>
                   </label>
                 </div>
 
-                <div className="flex gap-2 ml-4">
-                  <button
-                    onClick={exportPlayersToExcel}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors"
-                  >
-                    Excel
-                  </button>
-                  <button
-                    onClick={exportPlayersToPDF}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow transition-colors"
-                  >
-                    PDF
-                  </button>
+                <div className="flex gap-2 w-full lg:w-auto">
+                  <button onClick={exportPlayersToExcel} className="flex-1 lg:flex-none bg-green-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg shadow-sm">Excel</button>
+                  <button onClick={exportPlayersToPDF} className="flex-1 lg:flex-none bg-red-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg shadow-sm">PDF</button>
+                  <button onClick={handleOpenInviteModal} className="flex-[2] lg:flex-none bg-purple-600 text-white text-[10px] font-bold py-2 px-4 rounded-lg shadow-sm">+ Invitar</button>
                 </div>
-                <button
-                  onClick={handleOpenInviteModal}
-                  className="ml-auto bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
-                >
-                  + Invitar Jugador
-                </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-6">
+            <div className="flex-1 overflow-auto p-4 md:p-6 bg-slate-50/50">
               {isLoadingPlayers ? (
                 <div className="flex items-center justify-center py-12">
                   <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1549,7 +1889,10 @@ export default function Home() {
                   </svg>
                 </div>
               ) : (
-                <table className="min-w-full bg-white">
+                <>
+                  {/* Desktop Table View */}
+                  <div className="hidden lg:block overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white">
+                    <table className="min-w-full bg-white">
                   <thead className="sticky top-0 bg-white">
                     <tr className="bg-gradient-to-r from-slate-700 to-slate-800 text-white">
                       <th
@@ -1782,7 +2125,68 @@ export default function Home() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                    </table>
+                  </div>
+
+                  {/* Mobile Card View */}
+                  <div className="lg:hidden space-y-3 pb-20">
+                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                      <div className="flex items-center gap-2 mb-2 text-slate-600 font-bold text-xs uppercase tracking-wider">
+                        <Search size={14} />
+                        Buscador Rápido
+                      </div>
+                      <input 
+                        type="text" 
+                        value={playerFilters.jugador}
+                        onChange={(e) => setPlayerFilters(prev => ({ ...prev, jugador: e.target.value }))}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none shadow-sm"
+                        placeholder="Nombre del jugador..."
+                      />
+                    </div>
+                    {sortedPlayers.length > 0 ? (
+                      sortedPlayers.map((player) => (
+                        <div key={player.IdJugador} className={`bg-white p-4 rounded-xl border-l-4 shadow-sm ${player.EsConvocado ? 'border-l-green-500' : player.EsEliminado ? 'border-l-red-500 opacity-75' : 'border-l-slate-300'}`}>
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <div className="text-[10px] text-slate-400 font-bold uppercase">#{player.IdJugador}</div>
+                              <h5 className="font-bold text-slate-800">{player.Jugador}</h5>
+                              <div className="text-xs text-slate-500">{player.Categoria}</div>
+                            </div>
+                            <div className="text-right">
+                              {player.EsInvitado === 1 && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-800">Invitado</span>}
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-3 gap-2 my-3 p-2 bg-slate-50 rounded-lg">
+                            <div className="text-center border-r border-slate-200">
+                              <div className="text-[9px] text-slate-400 font-bold uppercase">Precio</div>
+                              <div className="text-xs font-bold text-blue-600">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio)}</div>
+                            </div>
+                            <div className="text-center border-r border-slate-200">
+                              <div className="text-[9px] text-slate-400 font-bold uppercase">Pago</div>
+                              <div className="text-xs font-bold text-green-600">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.PagoJugador || 0)}</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-[9px] text-slate-400 font-bold uppercase">CXC</div>
+                              <div className="text-xs font-bold text-red-600">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.CXC || 0)}</div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2">
+                            {!player.EsConvocado ? (
+                              <button onClick={() => handleConvocarPlayer(player)} className="flex-1 bg-green-600 text-white text-xs font-bold py-2 rounded-lg">Convocar</button>
+                            ) : (
+                              <button onClick={() => handleQuitarPlayer(player)} className="flex-1 bg-red-600 text-white text-xs font-bold py-2 rounded-lg">Quitar</button>
+                            )}
+                            <button onClick={() => handleUpdatePrice(player)} className="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-2 rounded-lg">Precio</button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-12 text-slate-500 bg-white rounded-xl border border-slate-200">No se encontraron jugadores</div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           </div>
