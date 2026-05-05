@@ -25,6 +25,9 @@ interface ConvocatoriaSummary {
   Total: number;
   Pagos: number;
   CXC: number;
+  CostoLiga?: number;
+  CostoProfesor?: number;
+  CostoArbitro?: number;
 }
 
 export default function Home() {
@@ -56,7 +59,10 @@ export default function Home() {
     categoria: '',
     fechaInicio: today,
     fechaFin: today,
-    color: ''
+    color: '',
+    costoLiga: 0,
+    costoProfesor: 0,
+    costoArbitro: 0
   });
   const [dbCategories, setDbCategories] = useState<string[]>([]);
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
@@ -78,7 +84,10 @@ export default function Home() {
     newColor: '',
     fechaInicio: '',
     fechaFin: '',
-    idProfesor: '' as string | number
+    idProfesor: '' as string | number,
+    costoLiga: 0,
+    costoProfesor: 0,
+    costoArbitro: 0
   });
 
   // Players Modal State
@@ -113,6 +122,11 @@ export default function Home() {
   const [showOnlyDebts, setShowOnlyDebts] = useState(false);
   const [summarySearchQuery, setSummarySearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
+  const [playerViewMode, setPlayerViewMode] = useState<'table' | 'cards'>('cards');
+  const [playerPayments, setPlayerPayments] = useState<any[]>([]);
+  const [isPaymentDetailsModalOpen, setIsPaymentDetailsModalOpen] = useState(false);
+  const [isLoadingPayments, setIsLoadingPayments] = useState(false);
+  const [selectedPlayerName, setSelectedPlayerName] = useState('');
 
   // Check if user is logged in, redirect to login if not
   useEffect(() => {
@@ -280,7 +294,10 @@ export default function Home() {
           fechaInicio: newConvocatoria.fechaInicio,
           fechaFin: newConvocatoria.fechaFin,
           color: newConvocatoria.color,
-          idProfesor: newConvocatoria.idProfesor
+          idProfesor: newConvocatoria.idProfesor,
+          costoLiga: newConvocatoria.costoLiga,
+          costoProfesor: newConvocatoria.costoProfesor,
+          costoArbitro: newConvocatoria.costoArbitro
         })
       });
 
@@ -294,7 +311,10 @@ export default function Home() {
           categoria: '',
           fechaInicio: today,
           fechaFin: today,
-          color: ''
+          color: '',
+          costoLiga: 0,
+          costoProfesor: 0,
+          costoArbitro: 0
         });
         // Refresh the list
         const refreshResponse = await fetch('/api/convocatorias/summary');
@@ -318,7 +338,10 @@ export default function Home() {
       newColor: item.Color || '',
       fechaInicio: item.FechaInicio ? item.FechaInicio.substring(0, 10) : '',
       fechaFin: item.FechaFin ? item.FechaFin.substring(0, 10) : '',
-      idProfesor: item.IdProfesor || ''
+      idProfesor: item.IdProfesor || '',
+      costoLiga: item.CostoLiga || 0,
+      costoProfesor: item.CostoProfesor || 0,
+      costoArbitro: item.CostoArbitro || 0
     });
     setIsEditModalOpen(true);
   };
@@ -342,7 +365,10 @@ export default function Home() {
           newColor: editConvocatoria.newColor,
           fechaInicio: editConvocatoria.fechaInicio,
           fechaFin: editConvocatoria.fechaFin,
-          idProfesor: editConvocatoria.idProfesor
+          idProfesor: editConvocatoria.idProfesor,
+          costoLiga: editConvocatoria.costoLiga,
+          costoProfesor: editConvocatoria.costoProfesor,
+          costoArbitro: editConvocatoria.costoArbitro
         })
       });
 
@@ -412,12 +438,13 @@ export default function Home() {
       { key: 'jugadores', width: 10 },
       { key: 'total', width: 15, style: { numFmt: '"$"#,##0.00' } },
       { key: 'pagos', width: 15, style: { numFmt: '"$"#,##0.00' } },
+      { key: 'utilidad', width: 15, style: { numFmt: '"$"#,##0.00' } },
       { key: 'cxc', width: 15, style: { numFmt: '"$"#,##0.00' } }
     ];
 
     // Encabezados (Fila 3 para dejar espacio al título)
     const headerRow = worksheet.getRow(3);
-    headerRow.values = ['Liga', 'Categoría', 'Periodo', 'Cerrada', 'Jug.', 'Total', 'Pagos', 'CXC'];
+    headerRow.values = ['Liga', 'Categoría', 'Periodo', 'Cerrada', 'Jug.', 'Total Esp.', 'Total Rec.', 'Utilidad Rec.', 'CXC'];
     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     headerRow.eachCell((cell) => {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
@@ -435,6 +462,7 @@ export default function Home() {
         item.JugadoresConvocados,
         item.Total,
         item.Pagos,
+        item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)),
         item.CXC
       ]);
       row.eachCell((cell) => {
@@ -464,11 +492,12 @@ export default function Home() {
       item.JugadoresConvocados,
       new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total),
       new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos),
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))),
       new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total - item.Pagos)
     ]);
 
     autoTable(doc, {
-      head: [['Liga', 'Categoría', 'Periodo', 'Cerrada', 'Jug.', 'Total', 'Pagos', 'CXC']],
+      head: [['Liga', 'Categoría', 'Periodo', 'Cerrada', 'Jug.', 'Total Esp.', 'Total Rec.', 'Util. Rec.', 'CXC']],
       body: tableData,
       startY: 20,
       theme: 'grid',
@@ -867,6 +896,26 @@ export default function Home() {
     }
   };
 
+  const fetchPlayerPayments = async (player: any) => {
+    if (!selectedConvocatoria) return;
+    
+    setIsLoadingPayments(true);
+    setSelectedPlayerName(player.Jugador);
+    setIsPaymentDetailsModalOpen(true);
+    
+    try {
+      const response = await fetch(`/api/convocatorias/payments?seasonId=${selectedConvocatoria.IdTemporada}&leagueId=${selectedConvocatoria.IdLiga}&playerId=${player.IdJugador}`);
+      const data = await response.json();
+      if (data.success) {
+        setPlayerPayments(data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching payments:', error);
+    } finally {
+      setIsLoadingPayments(false);
+    }
+  };
+
   const handleOpenInviteModal = async () => {
     if (!selectedConvocatoria) return;
 
@@ -1112,7 +1161,7 @@ export default function Home() {
                         onClick={() => handleSort('Total')}
                       >
                         <div className="flex items-center justify-center gap-2">
-                          Total
+                          T. Esperado
                           {sortConfig?.key === 'Total' && (
                             <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                           )}
@@ -1123,7 +1172,7 @@ export default function Home() {
                         onClick={() => handleSort('Pagos')}
                       >
                         <div className="flex items-center justify-center gap-2">
-                          Pagos
+                          T. Recaudado
                           {sortConfig?.key === 'Pagos' && (
                             <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                           )}
@@ -1376,14 +1425,54 @@ export default function Home() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 mb-3 p-2 bg-slate-50 rounded-lg">
+                        <div className="col-span-2 grid grid-cols-3 gap-1 mb-2 pb-2 border-b border-slate-200">
+                          <div>
+                            <div className="text-[8px] text-slate-400 uppercase font-bold">Liga</div>
+                            <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoLiga || 0)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[8px] text-slate-400 uppercase font-bold">Prof.</div>
+                            <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoProfesor || 0)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[8px] text-slate-400 uppercase font-bold">Arb.</div>
+                            <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoArbitro || 0)}</div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-[9px] text-slate-400 uppercase font-bold">Costo Total</div>
+                          <div className="text-xs font-bold text-slate-900">
+                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))}
+                          </div>
+                        </div>
                         <div>
                           <div className="text-[9px] text-slate-400 uppercase font-bold">Jugadores</div>
                           <div className="text-xs font-bold text-blue-700">{item.JugadoresConvocados}</div>
                         </div>
-                        <div>
-                          <div className="text-[9px] text-slate-400 uppercase font-bold">CXC Total</div>
-                          <div className="text-xs font-bold text-red-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CXC || 0)}</div>
+
+                        <div className="pt-1 border-t border-slate-200">
+                          <div className="text-[9px] text-slate-400 uppercase font-bold">Total Esperado</div>
+                          <div className="text-xs font-bold text-green-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total || 0)}</div>
                         </div>
+                        <div className="pt-1 border-t border-slate-200">
+                          <div className="text-[9px] text-slate-400 uppercase font-bold">Total Recaudado</div>
+                          <div className="text-xs font-bold text-blue-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos || 0)}</div>
+                        </div>
+
+                        <div className="pt-1 border-t border-slate-200">
+                          <div className="text-[9px] text-slate-400 uppercase font-bold">Utilidad Esp.</div>
+                          <div className={`text-xs font-bold ${(item.Total - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)))}
+                          </div>
+                        </div>
+                        <div className="pt-1 border-t border-slate-200">
+                          <div className="text-[9px] text-slate-400 uppercase font-bold">Utilidad Rec.</div>
+                          <div className={`text-xs font-bold ${(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)))}
+                          </div>
+                        </div>
+
                         <div className="col-span-2 pt-1 border-t border-slate-200">
                           <div className="text-[9px] text-slate-400 uppercase font-bold">Periodo</div>
                           <div className="text-[10px] text-slate-600">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
@@ -1677,6 +1766,39 @@ export default function Home() {
                   className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                 />
               </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Liga</label>
+                  <input
+                    type="number"
+                    value={newConvocatoria.costoLiga}
+                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoLiga: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Profesor</label>
+                  <input
+                    type="number"
+                    value={newConvocatoria.costoProfesor}
+                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoProfesor: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Árbitro</label>
+                  <input
+                    type="number"
+                    value={newConvocatoria.costoArbitro}
+                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoArbitro: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 mt-6">
@@ -1769,6 +1891,39 @@ export default function Home() {
                   onChange={(e) => setEditConvocatoria(prev => ({ ...prev, fechaFin: e.target.value }))}
                   className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                 />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Liga</label>
+                  <input
+                    type="number"
+                    value={editConvocatoria.costoLiga}
+                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoLiga: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Profesor</label>
+                  <input
+                    type="number"
+                    value={editConvocatoria.costoProfesor}
+                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoProfesor: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Árbitro</label>
+                  <input
+                    type="number"
+                    value={editConvocatoria.costoArbitro}
+                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoArbitro: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1877,6 +2032,23 @@ export default function Home() {
                   <button onClick={exportPlayersToPDF} className="flex-1 lg:flex-none bg-red-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg shadow-sm">PDF</button>
                   <button onClick={handleOpenInviteModal} className="flex-[2] lg:flex-none bg-purple-600 text-white text-[10px] font-bold py-2 px-4 rounded-lg shadow-sm">+ Invitar</button>
                 </div>
+
+                <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 ml-auto">
+                  <button
+                    onClick={() => setPlayerViewMode('table')}
+                    className={`p-1.5 rounded-md transition-all ${playerViewMode === 'table' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                    title="Vista Tabla"
+                  >
+                    <List size={16} />
+                  </button>
+                  <button
+                    onClick={() => setPlayerViewMode('cards')}
+                    className={`p-1.5 rounded-md transition-all ${playerViewMode === 'cards' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                    title="Vista Cards"
+                  >
+                    <LayoutGrid size={16} />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1890,9 +2062,25 @@ export default function Home() {
                 </div>
               ) : (
                 <>
-                  {/* Desktop Table View */}
-                  <div className="hidden lg:block overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white">
-                    <table className="min-w-full bg-white">
+                  {/* Players Search for Cards */}
+                  {playerViewMode === 'cards' && (
+                    <div className="mb-4">
+                      <input
+                        type="text"
+                        placeholder="Buscar jugador..."
+                        className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 shadow-sm"
+                        value={playerFilters.jugador}
+                        onChange={(e) => setPlayerFilters(prev => ({ ...prev, jugador: e.target.value }))}
+                      />
+                    </div>
+                  )}
+
+                  {/* Players View Container */}
+                  <div className="flex-1">
+                    {playerViewMode === 'table' ? (
+                      /* Table View */
+                      <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white overflow-x-auto">
+                        <table className="min-w-full bg-white">
                   <thead className="sticky top-0 bg-white">
                     <tr className="bg-gradient-to-r from-slate-700 to-slate-800 text-white">
                       <th
@@ -2127,64 +2315,106 @@ export default function Home() {
                   </tbody>
                     </table>
                   </div>
-
-                  {/* Mobile Card View */}
-                  <div className="lg:hidden space-y-3 pb-20">
-                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                      <div className="flex items-center gap-2 mb-2 text-slate-600 font-bold text-xs uppercase tracking-wider">
-                        <Search size={14} />
-                        Buscador Rápido
-                      </div>
-                      <input 
-                        type="text" 
-                        value={playerFilters.jugador}
-                        onChange={(e) => setPlayerFilters(prev => ({ ...prev, jugador: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none shadow-sm"
-                        placeholder="Nombre del jugador..."
-                      />
-                    </div>
-                    {sortedPlayers.length > 0 ? (
-                      sortedPlayers.map((player) => (
-                        <div key={player.IdJugador} className={`bg-white p-4 rounded-xl border-l-4 shadow-sm ${player.EsConvocado ? 'border-l-green-500' : player.EsEliminado ? 'border-l-red-500 opacity-75' : 'border-l-slate-300'}`}>
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <div className="text-[10px] text-slate-400 font-bold uppercase">#{player.IdJugador}</div>
-                              <h5 className="font-bold text-slate-800">{player.Jugador}</h5>
-                              <div className="text-xs text-slate-500">{player.Categoria}</div>
+                ) : (
+                    /* Card View (for all screen sizes) */
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-20">
+                      {sortedPlayers.length > 0 ? (
+                        sortedPlayers.map((player) => (
+                          <div 
+                            key={player.IdJugador} 
+                            className={`shadow-sm transition-all hover:shadow-md ${
+                              player.EsConvocado 
+                                ? 'p-4 bg-white border-l-4 border-l-green-500 rounded-xl z-10 scale-[1.02]' 
+                                : 'p-2.5 bg-slate-100/50 border-l-[3px] border-l-slate-300 rounded-lg opacity-75 grayscale-[0.3]'
+                            } ${player.EsEliminado ? 'opacity-50 grayscale border-l-red-500' : ''}`}
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <div className="text-[8px] text-slate-400 font-bold uppercase">#{player.IdJugador}</div>
+                                <h5 className={`text-sm font-black text-slate-900 ${player.EsConvocado ? '' : 'line-clamp-2'} leading-tight tracking-tight`}>
+                                  {player.Jugador}
+                                </h5>
+                                <div className="text-[10px] text-slate-500">{player.Categoria}</div>
+                              </div>
+                              <div className="text-right flex flex-col items-end gap-1">
+                                {player.EsInvitado === 1 && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-800">
+                                    Invitado
+                                  </span>
+                                )}
+                                {player.EsConvocado ? (
+                                  <div className="flex flex-col items-end">
+                                    <div className="flex items-center justify-center w-6 h-6 bg-green-500 rounded-full shadow-sm border-2 border-white mb-1">
+                                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    </div>
+                                    <span className="text-[9px] font-bold text-green-600 uppercase tracking-tighter">Convocado</span>
+                                  </div>
+                                ) : player.EsEliminado ? (
+                                  <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">X</span>
+                                ) : (
+                                  <span className="text-[8px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded-full">D</span>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-right">
-                              {player.EsInvitado === 1 && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-800">Invitado</span>}
+                            
+                             <div className={`grid grid-cols-3 gap-1 ${player.EsConvocado ? 'my-3 p-2' : 'my-2 p-1.5'} bg-slate-50 rounded-md border border-slate-100`}>
+                               <div className="text-center border-r border-slate-200">
+                                 <div className="text-[8px] text-slate-400 font-bold uppercase">Precio</div>
+                                 <div className="text-[10px] font-bold text-blue-600">
+                                   ${player.Precio}
+                                 </div>
+                               </div>
+                               <div 
+                                 className="text-center border-r border-slate-200 cursor-pointer hover:bg-slate-200/50 transition-colors rounded"
+                                 onClick={() => player.EsConvocado && fetchPlayerPayments(player)}
+                               >
+                                 <div className="text-[8px] text-slate-400 font-bold uppercase">Pag.</div>
+                                 <div className="text-[10px] font-bold text-green-600">
+                                   ${player.PagoJugador || 0}
+                                 </div>
+                               </div>
+                               <div className="text-center">
+                                 <div className="text-[8px] text-slate-400 font-bold uppercase">CXC</div>
+                                 <div className="text-[10px] font-bold text-red-600">
+                                   ${player.CXC || 0}
+                                 </div>
+                               </div>
+                             </div>
+  
+                            <div className="flex gap-1.5 items-center">
+                              {!player.EsConvocado ? (
+                                <button 
+                                  onClick={() => handleConvocarPlayer(player)} 
+                                  className="flex-1 bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold py-1 rounded-md transition-colors shadow-sm"
+                                >
+                                  Convocar
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={() => handleQuitarPlayer(player)} 
+                                  className="flex-none bg-red-600 hover:bg-red-700 text-white text-[8px] font-bold py-0.5 px-1.5 rounded transition-colors shadow-sm"
+                                >
+                                  Quitar
+                                </button>
+                              )}
+                              <button 
+                                onClick={() => handleUpdatePrice(player)} 
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-md transition-colors"
+                              >
+                                $
+                              </button>
                             </div>
                           </div>
-                          
-                          <div className="grid grid-cols-3 gap-2 my-3 p-2 bg-slate-50 rounded-lg">
-                            <div className="text-center border-r border-slate-200">
-                              <div className="text-[9px] text-slate-400 font-bold uppercase">Precio</div>
-                              <div className="text-xs font-bold text-blue-600">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio)}</div>
-                            </div>
-                            <div className="text-center border-r border-slate-200">
-                              <div className="text-[9px] text-slate-400 font-bold uppercase">Pago</div>
-                              <div className="text-xs font-bold text-green-600">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.PagoJugador || 0)}</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-[9px] text-slate-400 font-bold uppercase">CXC</div>
-                              <div className="text-xs font-bold text-red-600">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.CXC || 0)}</div>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2">
-                            {!player.EsConvocado ? (
-                              <button onClick={() => handleConvocarPlayer(player)} className="flex-1 bg-green-600 text-white text-xs font-bold py-2 rounded-lg">Convocar</button>
-                            ) : (
-                              <button onClick={() => handleQuitarPlayer(player)} className="flex-1 bg-red-600 text-white text-xs font-bold py-2 rounded-lg">Quitar</button>
-                            )}
-                            <button onClick={() => handleUpdatePrice(player)} className="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-2 rounded-lg">Precio</button>
-                          </div>
+                        ))
+                      ) : (
+                        <div className="col-span-full text-center py-12 text-slate-500 bg-white rounded-xl border border-slate-200 shadow-sm">
+                          No se encontraron jugadores
                         </div>
-                      ))
-                    ) : (
-                      <div className="text-center py-12 text-slate-500 bg-white rounded-xl border border-slate-200">No se encontraron jugadores</div>
-                    )}
+                      )}
+                    </div>
+                  )}
                   </div>
                 </>
               )}
@@ -2274,6 +2504,69 @@ export default function Home() {
                 className="bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors"
               >
                 Invitar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Payment Details Modal */}
+      {isPaymentDetailsModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-lg w-full max-w-lg shadow-xl overflow-hidden">
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-800">Pagos de {selectedPlayerName}</h3>
+              <button
+                onClick={() => setIsPaymentDetailsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              {isLoadingPayments ? (
+                <div className="flex items-center justify-center py-8">
+                  <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                </div>
+              ) : playerPayments.length === 0 ? (
+                <div className="text-center py-8 text-slate-500 italic">No se registran pagos para este jugador en esta convocatoria.</div>
+              ) : (
+                <div className="space-y-3">
+                  {playerPayments.map((p: any) => (
+                    <div key={p.IdPago} className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex justify-between items-center hover:bg-slate-100 transition-colors">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Recibo #{p.Recibo || 'N/A'}</span>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase">{formatDate(p.FechaPago)}</span>
+                        </div>
+                        <div className="text-sm text-slate-700 font-medium leading-tight">{p.Comentario || 'Pago de convocatoria'}</div>
+                      </div>
+                      <div className="text-base font-bold text-green-700 ml-4">
+                        {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(p.Pago)}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="pt-4 mt-4 border-t-2 border-slate-200 flex justify-between items-center font-bold text-lg">
+                    <span className="text-slate-800">Total:</span>
+                    <span className="text-blue-700">
+                      {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(playerPayments.reduce((sum, p) => sum + p.Pago, 0))}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                onClick={() => setIsPaymentDetailsModalOpen(false)}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-sm"
+              >
+                Cerrar
               </button>
             </div>
           </div>

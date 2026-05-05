@@ -3,7 +3,7 @@ import { pool } from '@/lib/db';
 
 export async function POST(request: Request) {
     try {
-        const { seasonId, leagueId, categoria, fechaInicio, fechaFin, color, idProfesor } = await request.json();
+        const { seasonId, leagueId, categoria, fechaInicio, fechaFin, color, idProfesor, costoLiga, costoProfesor, costoArbitro } = await request.json();
 
         if (!seasonId || !leagueId || !categoria || !fechaInicio || !fechaFin) {
             return NextResponse.json(
@@ -14,11 +14,11 @@ export async function POST(request: Request) {
 
         // Insert new convocatoria
         const insertQuery = `
-            INSERT INTO tblConvocatorias (IdTemporada, IdLiga, Categoria, FechaInicio, FechaFin, Color, IdProfesor, Cerrada, Status, FechaAlta)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
+            INSERT INTO tblConvocatorias (IdTemporada, IdLiga, Categoria, FechaInicio, FechaFin, Color, IdProfesor, CostoLiga, CostoProfesor, CostoArbitro, Cerrada, Status, FechaAlta)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
         `;
 
-        await pool.query(insertQuery, [seasonId, leagueId, categoria, fechaInicio, fechaFin, color, idProfesor]);
+        await pool.query(insertQuery, [seasonId, leagueId, categoria, fechaInicio, fechaFin, color, idProfesor, costoLiga || 0, costoProfesor || 0, costoArbitro || 0]);
 
         // Insert players into tblDetalleConvocatorias
         const insertPlayersQuery = `

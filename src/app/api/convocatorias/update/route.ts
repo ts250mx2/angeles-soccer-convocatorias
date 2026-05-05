@@ -3,7 +3,7 @@ import { pool } from '@/lib/db';
 
 export async function POST(request: Request) {
     try {
-        const { seasonId, leagueId, oldCategoria, oldColor, newColor, fechaInicio, fechaFin, idProfesor } = await request.json();
+        const { seasonId, leagueId, oldCategoria, oldColor, newColor, fechaInicio, fechaFin, idProfesor, costoLiga, costoProfesor, costoArbitro } = await request.json();
 
         if (!seasonId || !leagueId || !oldCategoria || oldColor === undefined || newColor === undefined || !fechaInicio || !fechaFin) {
             return NextResponse.json(
@@ -33,9 +33,9 @@ export async function POST(request: Request) {
             // 1. Update tblConvocatorias
             await connection.query(
                 `UPDATE tblConvocatorias 
-                 SET Color = ?, FechaInicio = ?, FechaFin = ?, IdProfesor = ?
+                 SET Color = ?, FechaInicio = ?, FechaFin = ?, IdProfesor = ?, CostoLiga = ?, CostoProfesor = ?, CostoArbitro = ?
                  WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?`,
-                [newColor, fechaInicio, fechaFin, idProfesor, seasonId, leagueId, oldCategoria, oldColor]
+                [newColor, fechaInicio, fechaFin, idProfesor, costoLiga || 0, costoProfesor || 0, costoArbitro || 0, seasonId, leagueId, oldCategoria, oldColor]
             );
 
             // 2. Update tblDetalleConvocatorias (since Color is part of the identity/PK)
