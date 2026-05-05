@@ -1544,7 +1544,10 @@ export default function Home() {
                   categoria: '',
                   fechaInicio: today,
                   fechaFin: today,
-                  color: ''
+                  color: '',
+                  costoLiga: 0,
+                  costoProfesor: 0,
+                  costoArbitro: 0
                 });
               }}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
@@ -1811,7 +1814,10 @@ export default function Home() {
                     categoria: '',
                     fechaInicio: today,
                     fechaFin: today,
-                    color: ''
+                    color: '',
+                    costoLiga: 0,
+                    costoProfesor: 0,
+                    costoArbitro: 0
                   });
                 }}
                 className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded transition-colors"
