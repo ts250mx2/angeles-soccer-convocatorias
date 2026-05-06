@@ -1,7 +1,7 @@
 "use client";
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogOut, Search, ChevronDown, LayoutGrid, List } from 'lucide-react';
+import { LogOut, Search, ChevronDown, LayoutGrid, List, CreditCard } from 'lucide-react';
 import { useRef } from 'react';
 import { useUser } from '@/contexts/user-context';
 import { useEffect, useState } from 'react';
@@ -1001,6 +1001,10 @@ export default function Home() {
           )}
         </div>
         <div className="flex gap-4">
+          <Link href="/adeudos" className="flex items-center text-blue-200 hover:text-white transition-colors">
+            <CreditCard size={18} className="mr-2" />
+            Adeudos
+          </Link>
           <Link href="/login" className="flex items-center text-blue-200 hover:text-white transition-colors">
             <LogOut size={18} className="mr-2" />
             Salir
