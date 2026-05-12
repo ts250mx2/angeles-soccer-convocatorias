@@ -111,12 +111,12 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
       }
     }
     
-    const isBecado100 = player.Beca === '100' || player.Beca === 100 || String(player.Beca).includes('100');
+    const isBecado100 = player.Beca === '100' || String(player.Beca).includes('100');
     const isAlCorriente = isBecado100 || (hasPaidInscripcion && allMonthsPaid);
 
     if (activeFilter === 'corriente') return player.Status === 0 && isAlCorriente;
     if (activeFilter === 'adeudo') return player.Status === 0 && !isAlCorriente;
-    if (activeFilter === 'beca') return player.Beca !== null && player.Beca !== undefined && player.Beca !== '' && player.Beca != 0 && player.Beca != '0';
+    if (activeFilter === 'beca') return player.Beca !== null && player.Beca !== undefined && player.Beca !== '' && String(player.Beca) !== '0';
 
     return true;
   });
@@ -179,7 +179,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
     if (!config) return acc;
     
     // Count scholarships for all players (not just active)
-    if (player.Beca !== null && player.Beca !== undefined && player.Beca !== '' && player.Beca != 0 && player.Beca != '0') {
+    if (player.Beca !== null && player.Beca !== undefined && player.Beca !== '' && String(player.Beca) !== '0') {
       acc.becados++;
     }
 
@@ -197,7 +197,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
       }
     }
     
-    const isBecado100 = player.Beca === '100' || player.Beca === 100 || String(player.Beca).includes('100');
+    const isBecado100 = player.Beca === '100' || String(player.Beca).includes('100');
     const isAlCorriente = isBecado100 || (hasPaidInscripcion && allMonthsPaid);
     
     if (isAlCorriente) {
@@ -237,7 +237,9 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
     // Detailed Table
     const tableData = players.map(p => {
       const paidMonths = p.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
-      const isBecado100 = p.Beca === '100' || p.Beca === 100 || String(p.Beca).includes('100');
+      const isBecado100 = p.Beca === '100' || String(p.Beca).includes('100');
+      let statusText = "AL CORRIENTE";
+      let statusColor = [16, 185, 129]; // Emerald-500
       
       if (isBecado100) {
         statusText = "AL CORRIENTE (BECA 100%)";
@@ -261,7 +263,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
       return [
         p.IdJugador,
         p.Jugador,
-        p.Beca && p.Beca != 0 && p.Beca != '0' ? `SÍ (${p.Beca})` : 'NO',
+        p.Beca && String(p.Beca) !== '0' ? `SÍ (${p.Beca})` : 'NO',
         p.InscripcionPagada || (p.Beca && String(p.Beca).includes('100')) ? 'SÍ' : 'NO',
         statusText
       ];
@@ -426,7 +428,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
                     <div>
                       <h4 className="font-bold text-slate-200 group-hover:text-white transition-colors flex items-center gap-2">
                         {player.Jugador}
-                        {player.Beca && player.Beca != 0 && player.Beca != '0' && (
+                        {player.Beca && String(player.Beca) !== '0' && (
                           <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-500 text-[9px] font-black border border-amber-500/30">
                             BECA: {player.Beca}
                           </span>
@@ -451,7 +453,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
                       <p className="text-[8px] uppercase font-bold text-slate-500">Mensualidades</p>
                       <div className="flex gap-1">
                         {config && Array.from({ length: config.endMonth - config.startMonth + 1 }, (_, i) => config.startMonth + i).map(month => {
-                          const isBecado100 = player.Beca === '100' || player.Beca === 100 || String(player.Beca).includes('100');
+                          const isBecado100 = player.Beca === '100' || String(player.Beca).includes('100');
                           const isPaid = isBecado100 || isMonthPaid(player.MesesPagados, month);
                           const isCurrent = month === config.currentMonth;
                           const isPast = month < config.currentMonth;
