@@ -32,6 +32,7 @@ export async function GET(request: Request) {
                 J.Jugador, 
                 J.Categoria, 
                 J.Status,
+                J.Beca,
                 CASE WHEN INSCRIPCION.IdJugador IS NOT NULL THEN 1 ELSE 0 END as InscripcionPagada,
                 COALESCE(MENSUALIDADES.MesesPagados, '') as MesesPagados
             FROM tblJugadores J

@@ -14,6 +14,7 @@ interface Player {
   Status: number;
   InscripcionPagada: number;
   MesesPagados: string;
+  Beca: string | null;
 }
 
 interface PageConfig {
@@ -44,7 +45,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
   const [config, setConfig] = useState<PageConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'activos' | 'bajas' | 'corriente' | 'adeudo'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'activos' | 'bajas' | 'corriente' | 'adeudo' | 'beca'>('all');
 
   // Modal State
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
@@ -109,10 +110,13 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
         }
       }
     }
-    const isAlCorriente = hasPaidInscripcion && allMonthsPaid;
+    
+    const isBecado100 = player.Beca === '100' || player.Beca === 100 || String(player.Beca).includes('100');
+    const isAlCorriente = isBecado100 || (hasPaidInscripcion && allMonthsPaid);
 
     if (activeFilter === 'corriente') return player.Status === 0 && isAlCorriente;
     if (activeFilter === 'adeudo') return player.Status === 0 && !isAlCorriente;
+    if (activeFilter === 'beca') return player.Beca !== null && player.Beca !== undefined && player.Beca !== '' && player.Beca != 0 && player.Beca != '0';
 
     return true;
   });
@@ -173,6 +177,12 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
 
   const stats = players.reduce((acc, player) => {
     if (!config) return acc;
+    
+    // Count scholarships for all players (not just active)
+    if (player.Beca !== null && player.Beca !== undefined && player.Beca !== '' && player.Beca != 0 && player.Beca != '0') {
+      acc.becados++;
+    }
+
     if (player.Status !== 0) return acc; // Only active players count for debt/current status
     
     const paidMonths = player.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
@@ -187,7 +197,8 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
       }
     }
     
-    const isAlCorriente = hasPaidInscripcion && allMonthsPaid;
+    const isBecado100 = player.Beca === '100' || player.Beca === 100 || String(player.Beca).includes('100');
+    const isAlCorriente = isBecado100 || (hasPaidInscripcion && allMonthsPaid);
     
     if (isAlCorriente) {
       acc.alCorriente++;
@@ -196,7 +207,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
     }
     
     return acc;
-  }, { alCorriente: 0, conAdeudo: 0 });
+  }, { alCorriente: 0, conAdeudo: 0, becados: 0 });
 
   const handleExportPDF = () => {
     const doc = new jsPDF();
@@ -215,6 +226,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
         ['Total Jugadores', players.length],
         ['Activos Al Corriente', stats.alCorriente],
         ['Activos Con Adeudo', stats.conAdeudo],
+        ['Jugadores con Beca', stats.becados],
       ],
       theme: 'striped',
       headStyles: { fillColor: [59, 130, 246] }, // Blue-500
@@ -225,10 +237,12 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
     // Detailed Table
     const tableData = players.map(p => {
       const paidMonths = p.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
-      let statusText = "AL CORRIENTE";
-      let statusColor = [16, 185, 129]; // Emerald-500
+      const isBecado100 = p.Beca === '100' || p.Beca === 100 || String(p.Beca).includes('100');
       
-      if (!p.InscripcionPagada) {
+      if (isBecado100) {
+        statusText = "AL CORRIENTE (BECA 100%)";
+        statusColor = [16, 185, 129]; // Emerald-500
+      } else if (!p.InscripcionPagada) {
         statusText = "DEBE INSCRIPCION";
         statusColor = [244, 63, 94]; // Rose-500
       } else if (config) {
@@ -247,14 +261,15 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
       return [
         p.IdJugador,
         p.Jugador,
-        p.InscripcionPagada ? 'SÍ' : 'NO',
+        p.Beca && p.Beca != 0 && p.Beca != '0' ? `SÍ (${p.Beca})` : 'NO',
+        p.InscripcionPagada || (p.Beca && String(p.Beca).includes('100')) ? 'SÍ' : 'NO',
         statusText
       ];
     });
     
     autoTable(doc, {
       startY: (doc as any).lastAutoTable.finalY + 15,
-      head: [['ID', 'Jugador', 'Inscrip.', 'Estado de Mensualidades']],
+      head: [['ID', 'Jugador', 'Beca', 'Inscrip.', 'Estado de Mensualidades']],
       body: tableData,
       theme: 'grid',
       headStyles: { fillColor: [30, 41, 59] }, // Slate-800
@@ -318,6 +333,81 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
           />
         </div>
 
+        {/* Summary Header */}
+        <div className="mb-8 flex flex-wrap lg:flex-nowrap gap-3 items-stretch">
+          <button 
+            onClick={() => setActiveFilter('all')}
+            className={`flex-1 min-w-[120px] p-3 rounded-2xl text-center transition-all border ${
+              activeFilter === 'all' 
+                ? 'bg-slate-400/20 border-slate-400/40 shadow-lg scale-[1.02]' 
+                : 'bg-slate-500/5 border-slate-500/10 hover:bg-slate-500/10'
+            }`}
+          >
+            <p className="text-[9px] uppercase font-bold text-slate-400 mb-1 tracking-wider whitespace-nowrap">Total Jugadores</p>
+            <p className="text-xl font-black text-white">{players.length}</p>
+          </button>
+
+          <button 
+            onClick={() => setActiveFilter('activos')}
+            className={`flex-1 min-w-[120px] p-3 rounded-2xl text-center transition-all border ${
+              activeFilter === 'activos' 
+                ? 'bg-emerald-500/20 border-emerald-500/40 shadow-lg scale-[1.02]' 
+                : 'bg-emerald-500/5 border-emerald-500/10 hover:bg-emerald-500/10'
+            }`}
+          >
+            <p className="text-[9px] uppercase font-bold text-emerald-500/60 mb-1 tracking-wider whitespace-nowrap">Activos</p>
+            <p className="text-xl font-black text-emerald-400">{players.filter(p => p.Status === 0).length}</p>
+          </button>
+
+          <button 
+            onClick={() => setActiveFilter('bajas')}
+            className={`flex-1 min-w-[120px] p-3 rounded-2xl text-center transition-all border ${
+              activeFilter === 'bajas' 
+                ? 'bg-rose-500/20 border-rose-500/40 shadow-lg scale-[1.02]' 
+                : 'bg-rose-500/5 border-rose-500/10 hover:bg-rose-500/10'
+            }`}
+          >
+            <p className="text-[9px] uppercase font-bold text-rose-500/60 mb-1 tracking-wider whitespace-nowrap">Bajas</p>
+            <p className="text-xl font-black text-rose-400">{players.filter(p => p.Status === 2).length}</p>
+          </button>
+
+          <button 
+            onClick={() => setActiveFilter('corriente')}
+            className={`flex-1 min-w-[120px] p-3 rounded-2xl text-center transition-all border ${
+              activeFilter === 'corriente' 
+                ? 'bg-blue-500/20 border-blue-500/40 shadow-lg scale-[1.02]' 
+                : 'bg-blue-500/5 border-blue-500/10 hover:bg-blue-500/10'
+            }`}
+          >
+            <p className="text-[9px] uppercase font-bold text-blue-400/60 mb-1 tracking-wider whitespace-nowrap">Al Corriente</p>
+            <p className="text-xl font-black text-blue-400">{stats.alCorriente}</p>
+          </button>
+
+          <button 
+            onClick={() => setActiveFilter('adeudo')}
+            className={`flex-1 min-w-[120px] p-3 rounded-2xl text-center transition-all border ${
+              activeFilter === 'adeudo' 
+                ? 'bg-amber-500/20 border-amber-500/40 shadow-lg scale-[1.02]' 
+                : 'bg-amber-500/5 border-amber-500/10 hover:bg-amber-500/10'
+            }`}
+          >
+            <p className="text-[9px] uppercase font-bold text-amber-500/60 mb-1 tracking-wider whitespace-nowrap">Con Adeudo</p>
+            <p className="text-xl font-black text-amber-400">{stats.conAdeudo}</p>
+          </button>
+
+          <button 
+            onClick={() => setActiveFilter('beca')}
+            className={`flex-1 min-w-[120px] p-3 rounded-2xl text-center transition-all border ${
+              activeFilter === 'beca' 
+                ? 'bg-purple-500/20 border-purple-500/40 shadow-lg scale-[1.02]' 
+                : 'bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/10'
+            }`}
+          >
+            <p className="text-[9px] uppercase font-bold text-purple-500/60 mb-1 tracking-wider whitespace-nowrap">Becados</p>
+            <p className="text-xl font-black text-purple-400">{stats.becados}</p>
+          </button>
+        </div>
+
         {/* Players List */}
         <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-sm shadow-2xl">
           {isLoading ? (
@@ -334,7 +424,14 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
                       <User size={24} />
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-200 group-hover:text-white transition-colors">{player.Jugador}</h4>
+                      <h4 className="font-bold text-slate-200 group-hover:text-white transition-colors flex items-center gap-2">
+                        {player.Jugador}
+                        {player.Beca && player.Beca != 0 && player.Beca != '0' && (
+                          <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-500 text-[9px] font-black border border-amber-500/30">
+                            BECA: {player.Beca}
+                          </span>
+                        )}
+                      </h4>
                       <p className="text-xs text-slate-500 font-mono">ID: {player.IdJugador}</p>
                     </div>
                   </div>
@@ -342,7 +439,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
                     {/* Inscripción Status */}
                     <div className="flex flex-col items-center gap-1">
                       <p className="text-[8px] uppercase font-bold text-slate-500">Inscrip.</p>
-                      {player.InscripcionPagada ? (
+                      {(player.InscripcionPagada || (player.Beca && String(player.Beca).includes('100'))) ? (
                         <CheckCircle2 className="text-emerald-500" size={20} />
                       ) : (
                         <XCircle className="text-rose-500" size={20} />
@@ -354,7 +451,8 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
                       <p className="text-[8px] uppercase font-bold text-slate-500">Mensualidades</p>
                       <div className="flex gap-1">
                         {config && Array.from({ length: config.endMonth - config.startMonth + 1 }, (_, i) => config.startMonth + i).map(month => {
-                          const isPaid = isMonthPaid(player.MesesPagados, month);
+                          const isBecado100 = player.Beca === '100' || player.Beca === 100 || String(player.Beca).includes('100');
+                          const isPaid = isBecado100 || isMonthPaid(player.MesesPagados, month);
                           const isCurrent = month === config.currentMonth;
                           const isPast = month < config.currentMonth;
                           const isFuture = month > config.currentMonth;
@@ -400,68 +498,6 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
           )}
         </div>
 
-        {/* Summary Footer */}
-        <div className="mt-8 grid grid-cols-2 sm:grid-cols-5 gap-4">
-          <button 
-            onClick={() => setActiveFilter('all')}
-            className={`p-4 rounded-2xl text-center transition-all border ${
-              activeFilter === 'all' 
-                ? 'bg-slate-400/20 border-slate-400/40 shadow-lg scale-105' 
-                : 'bg-slate-500/5 border-slate-500/10 hover:bg-slate-500/10'
-            }`}
-          >
-            <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 tracking-wider">Total Jugadores</p>
-            <p className="text-2xl font-black text-white">{players.length}</p>
-          </button>
-
-          <button 
-            onClick={() => setActiveFilter('activos')}
-            className={`p-4 rounded-2xl text-center transition-all border ${
-              activeFilter === 'activos' 
-                ? 'bg-emerald-500/20 border-emerald-500/40 shadow-lg scale-105' 
-                : 'bg-emerald-500/5 border-emerald-500/10 hover:bg-emerald-500/10'
-            }`}
-          >
-            <p className="text-[10px] uppercase font-bold text-emerald-500/60 mb-1 tracking-wider">Activos</p>
-            <p className="text-2xl font-black text-emerald-400">{players.filter(p => p.Status === 0).length}</p>
-          </button>
-
-          <button 
-            onClick={() => setActiveFilter('bajas')}
-            className={`p-4 rounded-2xl text-center transition-all border ${
-              activeFilter === 'bajas' 
-                ? 'bg-rose-500/20 border-rose-500/40 shadow-lg scale-105' 
-                : 'bg-rose-500/5 border-rose-500/10 hover:bg-rose-500/10'
-            }`}
-          >
-            <p className="text-[10px] uppercase font-bold text-rose-500/60 mb-1 tracking-wider">Bajas</p>
-            <p className="text-2xl font-black text-rose-400">{players.filter(p => p.Status === 2).length}</p>
-          </button>
-
-          <button 
-            onClick={() => setActiveFilter('corriente')}
-            className={`p-4 rounded-2xl text-center transition-all border ${
-              activeFilter === 'corriente' 
-                ? 'bg-blue-500/20 border-blue-500/40 shadow-lg scale-105' 
-                : 'bg-blue-500/5 border-blue-500/10 hover:bg-blue-500/10'
-            }`}
-          >
-            <p className="text-[10px] uppercase font-bold text-blue-400/60 mb-1 tracking-wider">Al Corriente (Activos)</p>
-            <p className="text-2xl font-black text-blue-400">{stats.alCorriente}</p>
-          </button>
-
-          <button 
-            onClick={() => setActiveFilter('adeudo')}
-            className={`p-4 rounded-2xl text-center transition-all border ${
-              activeFilter === 'adeudo' 
-                ? 'bg-amber-500/20 border-amber-500/40 shadow-lg scale-105' 
-                : 'bg-amber-500/5 border-amber-500/10 hover:bg-amber-500/10'
-            }`}
-          >
-            <p className="text-[10px] uppercase font-bold text-amber-400/60 mb-1 tracking-wider">Con Adeudo (Activos)</p>
-            <p className="text-2xl font-black text-amber-400">{stats.conAdeudo}</p>
-          </button>
-        </div>
       </main>
 
       {/* Payment History Modal */}
