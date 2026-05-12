@@ -1001,10 +1001,12 @@ export default function Home() {
           )}
         </div>
         <div className="flex gap-4">
-          <Link href="/adeudos" className="flex items-center text-blue-200 hover:text-white transition-colors">
-            <CreditCard size={18} className="mr-2" />
-            Adeudos
-          </Link>
+          {user && (user.AdminConvocatorias ?? 0) >= 2 && (
+            <Link href="/adeudos" className="flex items-center text-blue-200 hover:text-white transition-colors">
+              <CreditCard size={18} className="mr-2" />
+              Adeudos
+            </Link>
+          )}
           <Link href="/login" className="flex items-center text-blue-200 hover:text-white transition-colors">
             <LogOut size={18} className="mr-2" />
             Salir
@@ -1029,26 +1031,28 @@ export default function Home() {
                     Ver Cerradas
                   </span>
                 </label>
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <button
-                    onClick={exportToExcel}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg shadow transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Excel
-                  </button>
-                  <button
-                    onClick={exportToPDF}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg shadow transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                    PDF
-                  </button>
-                </div>
+                {(user?.AdminConvocatorias ?? 0) >= 2 && (
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={exportToExcel}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg shadow transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Excel
+                    </button>
+                    <button
+                      onClick={exportToPDF}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg shadow transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      PDF
+                    </button>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg w-full sm:w-auto justify-center">
                   <button
                     onClick={() => setViewMode('cards')}
@@ -1149,50 +1153,54 @@ export default function Home() {
                           )}
                         </div>
                       </th>
-                      <th
-                        className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
-                        onClick={() => handleSort('JugadoresConvocados')}
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          Jugadores
-                          {sortConfig?.key === 'JugadoresConvocados' && (
-                            <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
-                        onClick={() => handleSort('Total')}
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          T. Esperado
-                          {sortConfig?.key === 'Total' && (
-                            <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
-                        onClick={() => handleSort('Pagos')}
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          T. Recaudado
-                          {sortConfig?.key === 'Pagos' && (
-                            <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
-                        onClick={() => handleSort('CXC')}
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          CXC
-                          {sortConfig?.key === 'CXC' && (
-                            <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
+                      {(user?.AdminConvocatorias ?? 0) >= 2 && (
+                        <>
+                          <th
+                            className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
+                            onClick={() => handleSort('JugadoresConvocados')}
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              Jugadores
+                              {sortConfig?.key === 'JugadoresConvocados' && (
+                                <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                              )}
+                            </div>
+                          </th>
+                          <th
+                            className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
+                            onClick={() => handleSort('Total')}
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              T. Esperado
+                              {sortConfig?.key === 'Total' && (
+                                <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                              )}
+                            </div>
+                          </th>
+                          <th
+                            className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
+                            onClick={() => handleSort('Pagos')}
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              T. Recaudado
+                              {sortConfig?.key === 'Pagos' && (
+                                <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                              )}
+                            </div>
+                          </th>
+                          <th
+                            className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
+                            onClick={() => handleSort('CXC')}
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              CXC
+                              {sortConfig?.key === 'CXC' && (
+                                <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                              )}
+                            </div>
+                          </th>
+                        </>
+                      )}
                       <th className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider">Acciones</th>
                     </tr>
                     {/* Filter Row */}
@@ -1299,18 +1307,22 @@ export default function Home() {
                               </span>
                             )}
                           </td>
-                          <td className="py-2 px-4 text-center text-xs font-bold text-blue-700">
-                            {item.JugadoresConvocados}
-                          </td>
-                          <td className="py-2 px-4 text-center text-xs font-bold text-green-700">
-                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total || 0)}
-                          </td>
-                          <td className="py-2 px-4 text-center text-xs font-bold text-green-700">
-                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos || 0)}
-                          </td>
-                          <td className="py-2 px-4 text-center text-xs font-bold text-red-700 bg-red-50/30">
-                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CXC || 0)}
-                          </td>
+                          {(user?.AdminConvocatorias ?? 0) >= 2 && (
+                            <>
+                              <td className="py-2 px-4 text-center text-xs font-bold text-blue-700">
+                                {item.JugadoresConvocados}
+                              </td>
+                              <td className="py-2 px-4 text-center text-xs font-bold text-green-700">
+                                {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total || 0)}
+                              </td>
+                              <td className="py-2 px-4 text-center text-xs font-bold text-green-700">
+                                {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos || 0)}
+                              </td>
+                              <td className="py-2 px-4 text-center text-xs font-bold text-red-700 bg-red-50/30">
+                                {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CXC || 0)}
+                              </td>
+                            </>
+                          )}
                           <td className="py-2 px-4 text-center">
                             <div className="flex gap-2 justify-center items-center">
                               {item.Cerrada === 0 ? (
@@ -1321,32 +1333,34 @@ export default function Home() {
                                   >
                                     Convocar
                                   </button>
-                                  <button
-                                    onClick={() => handleOpenEditModal(item)}
-                                    className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
-                                  >
-                                    Editar
-                                  </button>
-                                  <button
-                                    onClick={() => handleCloseConvocatoria(item)}
-                                    disabled={!user || (user.AdminConvocatorias ?? 0) < 2}
-                                    className="bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-md"
-                                    title={!user || (user.AdminConvocatorias ?? 0) < 2 ? "No tienes permisos para cerrar convocatorias" : ""}
-                                  >
-                                    Cerrar
-                                  </button>
+                                  {(user?.AdminConvocatorias ?? 0) >= 2 && (
+                                    <>
+                                      <button
+                                        onClick={() => handleOpenEditModal(item)}
+                                        className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                                      >
+                                        Editar
+                                      </button>
+                                      <button
+                                        onClick={() => handleCloseConvocatoria(item)}
+                                        className="bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                                      >
+                                        Cerrar
+                                      </button>
+                                    </>
+                                  )}
                                 </>
                               ) : (
                                 <span className="text-slate-400 text-xs font-medium px-2">Cerrada</span>
                               )}
-                              <button
-                                onClick={() => handleDeleteConvocatoria(item)}
-                                disabled={!user || (user.AdminConvocatorias ?? 0) < 2}
-                                className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-md"
-                                title={!user || (user.AdminConvocatorias ?? 0) < 2 ? "No tienes permisos para borrar convocatorias" : ""}
-                              >
-                                Borrar
-                              </button>
+                              {(user?.AdminConvocatorias ?? 0) >= 2 && (
+                                <button
+                                  onClick={() => handleDeleteConvocatoria(item)}
+                                  className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                                >
+                                  Borrar
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1428,60 +1442,69 @@ export default function Home() {
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 mb-3 p-2 bg-slate-50 rounded-lg">
-                        <div className="col-span-2 grid grid-cols-3 gap-1 mb-2 pb-2 border-b border-slate-200">
+                      {(user?.AdminConvocatorias ?? 0) >= 2 && (
+                        <div className="grid grid-cols-2 gap-2 mb-3 p-2 bg-slate-50 rounded-lg">
+                          <div className="col-span-2 grid grid-cols-3 gap-1 mb-2 pb-2 border-b border-slate-200">
+                            <div>
+                              <div className="text-[8px] text-slate-400 uppercase font-bold">Liga</div>
+                              <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoLiga || 0)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[8px] text-slate-400 uppercase font-bold">Prof.</div>
+                              <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoProfesor || 0)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[8px] text-slate-400 uppercase font-bold">Arb.</div>
+                              <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoArbitro || 0)}</div>
+                            </div>
+                          </div>
+
                           <div>
-                            <div className="text-[8px] text-slate-400 uppercase font-bold">Liga</div>
-                            <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoLiga || 0)}</div>
+                            <div className="text-[9px] text-slate-400 uppercase font-bold">Costo Total</div>
+                            <div className="text-xs font-bold text-slate-900">
+                              {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))}
+                            </div>
                           </div>
                           <div>
-                            <div className="text-[8px] text-slate-400 uppercase font-bold">Prof.</div>
-                            <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoProfesor || 0)}</div>
+                            <div className="text-[9px] text-slate-400 uppercase font-bold">Jugadores</div>
+                            <div className="text-xs font-bold text-blue-700">{item.JugadoresConvocados}</div>
                           </div>
-                          <div>
-                            <div className="text-[8px] text-slate-400 uppercase font-bold">Arb.</div>
-                            <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoArbitro || 0)}</div>
-                          </div>
-                        </div>
 
-                        <div>
-                          <div className="text-[9px] text-slate-400 uppercase font-bold">Costo Total</div>
-                          <div className="text-xs font-bold text-slate-900">
-                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))}
+                          <div className="pt-1 border-t border-slate-200">
+                            <div className="text-[9px] text-slate-400 uppercase font-bold">Total Esperado</div>
+                            <div className="text-xs font-bold text-green-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total || 0)}</div>
+                          </div>
+                          <div className="pt-1 border-t border-slate-200">
+                            <div className="text-[9px] text-slate-400 uppercase font-bold">Total Recaudado</div>
+                            <div className="text-xs font-bold text-blue-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos || 0)}</div>
+                          </div>
+
+                          <div className="pt-1 border-t border-slate-200">
+                            <div className="text-[9px] text-slate-400 uppercase font-bold">Utilidad Esp.</div>
+                            <div className={`text-xs font-bold ${(item.Total - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                              {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)))}
+                            </div>
+                          </div>
+                          <div className="pt-1 border-t border-slate-200">
+                            <div className="text-[9px] text-slate-400 uppercase font-bold">Utilidad Rec.</div>
+                            <div className={`text-xs font-bold ${(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                              {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)))}
+                            </div>
+                          </div>
+
+                          <div className="col-span-2 pt-1 border-t border-slate-200">
+                            <div className="text-[9px] text-slate-400 uppercase font-bold">Periodo</div>
+                            <div className="text-[10px] text-slate-600">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
                           </div>
                         </div>
-                        <div>
-                          <div className="text-[9px] text-slate-400 uppercase font-bold">Jugadores</div>
-                          <div className="text-xs font-bold text-blue-700">{item.JugadoresConvocados}</div>
-                        </div>
+                      )}
 
-                        <div className="pt-1 border-t border-slate-200">
-                          <div className="text-[9px] text-slate-400 uppercase font-bold">Total Esperado</div>
-                          <div className="text-xs font-bold text-green-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total || 0)}</div>
+                      {(!user || (user.AdminConvocatorias ?? 0) < 2) && (
+                        <div className="mb-3 p-2 bg-slate-50 rounded-lg">
+                           <div className="text-[9px] text-slate-400 uppercase font-bold">Periodo</div>
+                           <div className="text-[10px] text-slate-600 font-bold">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
                         </div>
-                        <div className="pt-1 border-t border-slate-200">
-                          <div className="text-[9px] text-slate-400 uppercase font-bold">Total Recaudado</div>
-                          <div className="text-xs font-bold text-blue-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos || 0)}</div>
-                        </div>
-
-                        <div className="pt-1 border-t border-slate-200">
-                          <div className="text-[9px] text-slate-400 uppercase font-bold">Utilidad Esp.</div>
-                          <div className={`text-xs font-bold ${(item.Total - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)))}
-                          </div>
-                        </div>
-                        <div className="pt-1 border-t border-slate-200">
-                          <div className="text-[9px] text-slate-400 uppercase font-bold">Utilidad Rec.</div>
-                          <div className={`text-xs font-bold ${(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)))}
-                          </div>
-                        </div>
-
-                        <div className="col-span-2 pt-1 border-t border-slate-200">
-                          <div className="text-[9px] text-slate-400 uppercase font-bold">Periodo</div>
-                          <div className="text-[10px] text-slate-600">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
-                        </div>
-                      </div>
+                      )}
 
                       <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
                         {item.Cerrada === 0 ? (
@@ -1492,30 +1515,34 @@ export default function Home() {
                             >
                               Convocar
                             </button>
-                            <button
-                              onClick={() => handleOpenEditModal(item)}
-                              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-2 rounded-lg transition-colors shadow-sm"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => handleCloseConvocatoria(item)}
-                              disabled={!user || (user.AdminConvocatorias ?? 0) < 2}
-                              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-bold py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50"
-                            >
-                              Cerrar
-                            </button>
+                            {(user?.AdminConvocatorias ?? 0) >= 2 && (
+                              <>
+                                <button
+                                  onClick={() => handleOpenEditModal(item)}
+                                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-2 rounded-lg transition-colors shadow-sm"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  onClick={() => handleCloseConvocatoria(item)}
+                                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-bold py-2 rounded-lg transition-colors shadow-sm"
+                                >
+                                  Cerrar
+                                </button>
+                              </>
+                            )}
                           </>
                         ) : (
                           <div className="w-full text-center py-2 text-slate-400 font-medium text-xs">Esta convocatoria está cerrada</div>
                         )}
-                        <button
-                          onClick={() => handleDeleteConvocatoria(item)}
-                          disabled={!user || (user.AdminConvocatorias ?? 0) < 2}
-                          className="w-full bg-red-100 hover:bg-red-200 text-red-700 text-[10px] font-bold py-1.5 rounded-lg transition-colors disabled:opacity-50 mt-0.5"
-                        >
-                          Eliminar Permanente
-                        </button>
+                        {(user?.AdminConvocatorias ?? 0) >= 2 && (
+                          <button
+                            onClick={() => handleDeleteConvocatoria(item)}
+                            className="w-full bg-red-100 hover:bg-red-200 text-red-700 text-[10px] font-bold py-1.5 rounded-lg transition-colors mt-0.5"
+                          >
+                            Eliminar Permanente
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))

@@ -2,8 +2,10 @@
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, Search, User, CheckCircle2, XCircle, Clock, CreditCard } from 'lucide-react';
+import { ChevronLeft, Search, User, CheckCircle2, XCircle, Clock, CreditCard, FileDown } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Player {
   IdJugador: number;
@@ -42,6 +44,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
   const [config, setConfig] = useState<PageConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'activos' | 'bajas' | 'corriente' | 'adeudo'>('all');
 
   // Modal State
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
@@ -84,10 +87,35 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
     }
   }, [isInitialized, user, categoria]);
 
-  const filteredPlayers = players.filter(player => 
-    player.Jugador.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    player.IdJugador.toString().includes(searchQuery)
-  );
+  const filteredPlayers = players.filter(player => {
+    const matchesSearch = player.Jugador.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      player.IdJugador.toString().includes(searchQuery);
+    
+    if (!matchesSearch) return false;
+    if (activeFilter === 'all') return true;
+    
+    if (activeFilter === 'activos') return player.Status === 0;
+    if (activeFilter === 'bajas') return player.Status === 2;
+
+    // Check if player is al corriente
+    const paidMonths = player.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
+    const hasPaidInscripcion = !!player.InscripcionPagada;
+    let allMonthsPaid = true;
+    if (config) {
+      for (let m = config.startMonth; m <= config.currentMonth; m++) {
+        if (!paidMonths.includes(m)) {
+          allMonthsPaid = false;
+          break;
+        }
+      }
+    }
+    const isAlCorriente = hasPaidInscripcion && allMonthsPaid;
+
+    if (activeFilter === 'corriente') return player.Status === 0 && isAlCorriente;
+    if (activeFilter === 'adeudo') return player.Status === 0 && !isAlCorriente;
+
+    return true;
+  });
 
   const fetchHistory = async (player: Player) => {
     if (!config) return;
@@ -143,6 +171,113 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
     }
   };
 
+  const stats = players.reduce((acc, player) => {
+    if (!config) return acc;
+    if (player.Status !== 0) return acc; // Only active players count for debt/current status
+    
+    const paidMonths = player.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
+    const hasPaidInscripcion = !!player.InscripcionPagada;
+    
+    // Check if all months from startMonth to currentMonth are paid
+    let allMonthsPaid = true;
+    for (let m = config.startMonth; m <= config.currentMonth; m++) {
+      if (!paidMonths.includes(m)) {
+        allMonthsPaid = false;
+        break;
+      }
+    }
+    
+    const isAlCorriente = hasPaidInscripcion && allMonthsPaid;
+    
+    if (isAlCorriente) {
+      acc.alCorriente++;
+    } else {
+      acc.conAdeudo++;
+    }
+    
+    return acc;
+  }, { alCorriente: 0, conAdeudo: 0 });
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(18);
+    doc.text(`Reporte de Adeudos - ${categoria}`, 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Fecha de generación: ${new Date().toLocaleString('es-MX')}`, 14, 28);
+    
+    // Summary table
+    autoTable(doc, {
+      startY: 35,
+      head: [['Resumen', 'Cantidad']],
+      body: [
+        ['Total Jugadores', players.length],
+        ['Activos Al Corriente', stats.alCorriente],
+        ['Activos Con Adeudo', stats.conAdeudo],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [59, 130, 246] }, // Blue-500
+      margin: { left: 14 },
+      tableWidth: 80
+    });
+    
+    // Detailed Table
+    const tableData = players.map(p => {
+      const paidMonths = p.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
+      let statusText = "AL CORRIENTE";
+      let statusColor = [16, 185, 129]; // Emerald-500
+      
+      if (!p.InscripcionPagada) {
+        statusText = "DEBE INSCRIPCION";
+        statusColor = [244, 63, 94]; // Rose-500
+      } else if (config) {
+        const missing = [];
+        for (let m = config.startMonth; m <= config.currentMonth; m++) {
+          if (!paidMonths.includes(m)) {
+            missing.push(getMonthName(m));
+          }
+        }
+        if (missing.length > 0) {
+          statusText = `DEBE: ${missing.join(', ')}`;
+          statusColor = [244, 63, 94]; // Rose-500
+        }
+      }
+      
+      return [
+        p.IdJugador,
+        p.Jugador,
+        p.InscripcionPagada ? 'SÍ' : 'NO',
+        statusText
+      ];
+    });
+    
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 15,
+      head: [['ID', 'Jugador', 'Inscrip.', 'Estado de Mensualidades']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59] }, // Slate-800
+      columnStyles: {
+        0: { cellWidth: 20 },
+        2: { cellWidth: 20 },
+        3: { fontStyle: 'bold' }
+      },
+      didDrawCell: (data) => {
+        if (data.section === 'body' && data.column.index === 3) {
+          const text = data.cell.text[0];
+          if (text.startsWith('DEBE')) {
+            doc.setTextColor(244, 63, 94); // Rose-500
+          } else if (text === 'AL CORRIENTE') {
+            doc.setTextColor(16, 185, 129); // Emerald-500
+          }
+        }
+      }
+    });
+    
+    doc.save(`Adeudos_${categoria.replace(/\s+/g, '_')}.pdf`);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white">
       {/* Header */}
@@ -156,8 +291,17 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
             <p className="text-xs text-blue-200">Listado de jugadores y estados</p>
           </div>
         </div>
-        <div className="bg-blue-500/20 px-4 py-1.5 rounded-xl border border-blue-500/30">
-          <span className="text-sm font-bold text-blue-300">{players.length} Jugadores</span>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportPDF}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-xl border border-emerald-500/30 transition-all font-bold text-sm"
+          >
+            <FileDown size={18} />
+            <span className="hidden sm:inline">Mandar a PDF</span>
+          </button>
+          <div className="bg-blue-500/20 px-4 py-1.5 rounded-xl border border-blue-500/30">
+            <span className="text-sm font-bold text-blue-300">{players.length} Jugadores</span>
+          </div>
         </div>
       </nav>
 
@@ -257,21 +401,66 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
         </div>
 
         {/* Summary Footer */}
-        <div className="mt-8 grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <div className="bg-emerald-500/5 border border-emerald-500/10 p-4 rounded-2xl text-center">
+        <div className="mt-8 grid grid-cols-2 sm:grid-cols-5 gap-4">
+          <button 
+            onClick={() => setActiveFilter('all')}
+            className={`p-4 rounded-2xl text-center transition-all border ${
+              activeFilter === 'all' 
+                ? 'bg-slate-400/20 border-slate-400/40 shadow-lg scale-105' 
+                : 'bg-slate-500/5 border-slate-500/10 hover:bg-slate-500/10'
+            }`}
+          >
+            <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 tracking-wider">Total Jugadores</p>
+            <p className="text-2xl font-black text-white">{players.length}</p>
+          </button>
+
+          <button 
+            onClick={() => setActiveFilter('activos')}
+            className={`p-4 rounded-2xl text-center transition-all border ${
+              activeFilter === 'activos' 
+                ? 'bg-emerald-500/20 border-emerald-500/40 shadow-lg scale-105' 
+                : 'bg-emerald-500/5 border-emerald-500/10 hover:bg-emerald-500/10'
+            }`}
+          >
             <p className="text-[10px] uppercase font-bold text-emerald-500/60 mb-1 tracking-wider">Activos</p>
             <p className="text-2xl font-black text-emerald-400">{players.filter(p => p.Status === 0).length}</p>
-          </div>
-          <div className="bg-rose-500/5 border border-rose-500/10 p-4 rounded-2xl text-center">
+          </button>
+
+          <button 
+            onClick={() => setActiveFilter('bajas')}
+            className={`p-4 rounded-2xl text-center transition-all border ${
+              activeFilter === 'bajas' 
+                ? 'bg-rose-500/20 border-rose-500/40 shadow-lg scale-105' 
+                : 'bg-rose-500/5 border-rose-500/10 hover:bg-rose-500/10'
+            }`}
+          >
             <p className="text-[10px] uppercase font-bold text-rose-500/60 mb-1 tracking-wider">Bajas</p>
             <p className="text-2xl font-black text-rose-400">{players.filter(p => p.Status === 2).length}</p>
-          </div>
-          <div className="hidden sm:block bg-blue-600/10 border border-blue-500/20 p-4 rounded-2xl text-center shadow-lg shadow-blue-500/5">
-            <p className="text-[10px] uppercase font-black text-blue-300 mb-1 tracking-widest">Resumen Categoría</p>
-            <p className="text-sm font-bold text-white">
-              {players.filter(p => p.InscripcionPagada).length} / {players.length} Inscritos
-            </p>
-          </div>
+          </button>
+
+          <button 
+            onClick={() => setActiveFilter('corriente')}
+            className={`p-4 rounded-2xl text-center transition-all border ${
+              activeFilter === 'corriente' 
+                ? 'bg-blue-500/20 border-blue-500/40 shadow-lg scale-105' 
+                : 'bg-blue-500/5 border-blue-500/10 hover:bg-blue-500/10'
+            }`}
+          >
+            <p className="text-[10px] uppercase font-bold text-blue-400/60 mb-1 tracking-wider">Al Corriente (Activos)</p>
+            <p className="text-2xl font-black text-blue-400">{stats.alCorriente}</p>
+          </button>
+
+          <button 
+            onClick={() => setActiveFilter('adeudo')}
+            className={`p-4 rounded-2xl text-center transition-all border ${
+              activeFilter === 'adeudo' 
+                ? 'bg-amber-500/20 border-amber-500/40 shadow-lg scale-105' 
+                : 'bg-amber-500/5 border-amber-500/10 hover:bg-amber-500/10'
+            }`}
+          >
+            <p className="text-[10px] uppercase font-bold text-amber-400/60 mb-1 tracking-wider">Con Adeudo (Activos)</p>
+            <p className="text-2xl font-black text-amber-400">{stats.conAdeudo}</p>
+          </button>
         </div>
       </main>
 

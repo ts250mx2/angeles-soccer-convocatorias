@@ -5,9 +5,9 @@ export async function POST(request: Request) {
     try {
         const { seasonId, leagueId, playerId, categoria, color } = await request.json();
 
-        if (!seasonId || !leagueId || !playerId || !categoria || !color) {
+        if (!seasonId || !leagueId || !playerId || !categoria) {
             return NextResponse.json(
-                { success: false, message: 'Faltan parámetros requeridos (incluyendo color)' },
+                { success: false, message: 'Faltan parámetros requeridos' },
                 { status: 400 }
             );
         }
