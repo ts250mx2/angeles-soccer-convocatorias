@@ -50,6 +50,11 @@ export default function Sidebar() {
           href: "/",
           icon: <ClipboardList size={16} />,
         },
+        {
+          label: "Pagos de Copas y Ligas",
+          href: "/pagos-copas",
+          icon: <Trophy size={16} />,
+        },
       ],
     },
     {

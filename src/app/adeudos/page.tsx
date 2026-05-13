@@ -216,25 +216,36 @@ export default function AdeudosPage() {
 function CategoryCard({ cat, isSelected, onToggle }: { cat: CategorySummary, isSelected: boolean, onToggle: () => void }) {
   return (
     <div 
-      onClick={onToggle}
-      className={`group relative bg-white/5 hover:bg-white/[0.08] border ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/20 scale-[1.02]' : 'border-white/10 hover:border-blue-500/30'} rounded-2xl p-5 transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] cursor-pointer overflow-hidden h-full block backdrop-blur-sm`}
+      className={`group relative bg-white/5 hover:bg-white/[0.08] border ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/20 scale-[1.02]' : 'border-white/10 hover:border-blue-500/30'} rounded-2xl transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden h-full block backdrop-blur-sm`}
     >
       {/* Subtle Gradient Glow */}
       <div className={`absolute -inset-24 bg-blue-600/5 blur-3xl ${isSelected ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition-opacity duration-700 pointer-events-none`}></div>
       
-      {/* Selection Checkmark */}
-      {isSelected && (
-        <div className="absolute top-3 right-3 z-20 bg-blue-500 text-white rounded-full p-1 shadow-lg animate-in zoom-in-50 duration-200">
-          <CheckCircle2 size={16} />
-        </div>
-      )}
+      {/* Selection Toggle (Checkbox-like) */}
+      <button 
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggle();
+        }}
+        className={`absolute top-4 right-4 z-20 w-6 h-6 rounded-full border-2 transition-all flex items-center justify-center shadow-lg
+          ${isSelected 
+            ? 'bg-blue-500 border-blue-400 text-white scale-110' 
+            : 'bg-white/5 border-white/20 text-transparent hover:border-blue-500/50 hover:bg-white/10'}`}
+      >
+        <CheckCircle2 size={14} className={isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-20'} />
+      </button>
 
-      <div className="relative z-10">
+      {/* Main Content - Navigates to Detail */}
+      <Link 
+        href={`/adeudos/${encodeURIComponent(cat.Categoria)}`}
+        className="p-5 block relative z-10 h-full"
+      >
         <div className="mb-4 flex justify-between items-center">
           <div className={`${isSelected ? 'bg-blue-500 text-white' : 'bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20'} p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 border border-blue-500/10`}>
             <Users size={18} />
           </div>
-          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-md border border-white/5 mr-8">
             Categoría
           </div>
         </div>
@@ -270,20 +281,10 @@ function CategoryCard({ cat, isSelected, onToggle }: { cat: CategorySummary, isS
             </div>
           </div>
         </div>
-      </div>
+      </Link>
 
       {/* Decorative Accent */}
       <div className={`absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-500/20 to-transparent ${isSelected ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition-opacity`} />
-      
-      {/* Footer Link Overlay (so people can still click through directly if they don't want to multi-select, wait, let's keep it simple: click = toggle, unless they click a specific "Enter" button) */}
-      <Link 
-        href={`/adeudos/${encodeURIComponent(cat.Categoria)}`}
-        onClick={(e) => e.stopPropagation()}
-        className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 p-2 rounded-lg bg-white/10 hover:bg-blue-500 transition-all text-white z-20"
-        title="Ver detalle individual"
-      >
-        <ChevronRight size={14} />
-      </Link>
     </div>
   );
 }
