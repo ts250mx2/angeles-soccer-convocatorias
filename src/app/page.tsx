@@ -1,7 +1,6 @@
 "use client";
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogOut, Search, ChevronDown, LayoutGrid, List, CreditCard } from 'lucide-react';
+import { Search, ChevronDown, LayoutGrid, List } from 'lucide-react';
 import { useRef } from 'react';
 import { useUser } from '@/contexts/user-context';
 import { useEffect, useState } from 'react';
@@ -9,6 +8,7 @@ import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import DashboardLayout from '@/components/DashboardLayout';
 
 interface ConvocatoriaSummary {
   IdTemporada: number;
@@ -976,44 +976,8 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <nav className="bg-white/10 backdrop-blur-xl border-b border-white/20 px-6 py-4 flex justify-between items-center shadow-lg">
-        <div>
-          <h1 className="text-xl font-bold text-white">Convocatorias Angeles Soccer</h1>
-          {user && (
-            <p className="text-sm text-blue-200 mt-0.5 flex items-center gap-2">
-              <span>Hola, {user.Usuario}</span>
-              {user.AdminConvocatorias !== undefined && (
-                <span title={user.AdminConvocatorias >= 2 ? "Acceso completo" : "Acceso restringido"}>
-                  {user.AdminConvocatorias >= 2 ? (
-                    <svg className="w-4 h-4 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4 text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  )}
-                </span>
-              )}
-              {season && <span className="font-medium text-blue-300 ml-1">| {season}</span>}
-            </p>
-          )}
-        </div>
-        <div className="flex gap-4">
-          {user && (user.AdminConvocatorias ?? 0) >= 2 && (
-            <Link href="/adeudos" className="flex items-center text-blue-200 hover:text-white transition-colors">
-              <CreditCard size={18} className="mr-2" />
-              Adeudos
-            </Link>
-          )}
-          <Link href="/login" className="flex items-center text-blue-200 hover:text-white transition-colors">
-            <LogOut size={18} className="mr-2" />
-            Salir
-          </Link>
-        </div>
-      </nav>
-      <main className="p-4 md:p-8">
+    <DashboardLayout>
+      <main className="p-4 md:p-8 overflow-y-auto flex-1">
         <div className="max-w-7xl mx-auto">
           <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl p-4 md:p-8 border border-white/20">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
@@ -1560,7 +1524,7 @@ export default function Home() {
               </div>
             </div>
           </div>
-        </main>
+      </main>
 
       {/* Create Convocatoria Modal */}
       {isCreateModalOpen && (
@@ -2609,6 +2573,6 @@ export default function Home() {
           </div>
         </div>
       )}
-    </div>
+  </DashboardLayout>
   );
 }

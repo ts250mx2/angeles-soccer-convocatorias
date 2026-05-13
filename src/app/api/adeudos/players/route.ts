@@ -4,11 +4,13 @@ import { pool } from '@/lib/db';
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
-        const categoria = searchParams.get('categoria');
+        const categoriaParam = searchParams.get('categoria');
 
-        if (!categoria) {
+        if (!categoriaParam) {
             return NextResponse.json({ success: false, message: 'La categoría es requerida' }, { status: 400 });
         }
+
+        const categorias = categoriaParam.split(',').map(c => c.trim());
 
         // 1. Get active season info
         const [seasonRows] = await pool.query(
@@ -44,15 +46,15 @@ export async function GET(request: Request) {
                 GROUP BY P.IdJugador
             ) INSCRIPCION ON J.IdJugador = INSCRIPCION.IdJugador
             LEFT JOIN (
-                SELECT P.IdJugador, GROUP_CONCAT(DISTINCT P.Mes) as MesesPagados
+                SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as MesesCount, GROUP_CONCAT(DISTINCT P.Mes) as MesesPagados
                 FROM tblPagos P
                 INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
                 WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 1 AND P.Status = 0
                   AND P.Mes >= ? AND P.Mes <= ?
                 GROUP BY P.IdJugador
             ) MENSUALIDADES ON J.IdJugador = MENSUALIDADES.IdJugador
-            WHERE J.Categoria = ?
-            ORDER BY J.Jugador ASC
+            WHERE J.Categoria IN (${categorias.map(() => '?').join(',')})
+            ORDER BY J.Categoria ASC, J.Jugador ASC
         `;
 
         const [rows] = await pool.query(query, [
@@ -60,7 +62,7 @@ export async function GET(request: Request) {
             seasonId, 
             startMonth, 
             endMonth, 
-            categoria
+            ...categorias
         ]);
 
         return NextResponse.json({ 

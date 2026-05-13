@@ -6,6 +6,7 @@ import { ChevronLeft, Search, User, CheckCircle2, XCircle, Clock, CreditCard, Fi
 import { useUser } from '@/contexts/user-context';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import DashboardLayout from '@/components/DashboardLayout';
 
 interface Player {
   IdJugador: number;
@@ -296,33 +297,34 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white">
-      {/* Header */}
-      <nav className="bg-white/10 backdrop-blur-xl border-b border-white/20 px-6 py-4 flex justify-between items-center shadow-lg sticky top-0 z-50">
-        <div className="flex items-center gap-4">
-          <Link href="/adeudos" className="p-2 hover:bg-white/10 rounded-full transition-colors">
-            <ChevronLeft size={24} />
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold">{categoria}</h1>
-            <p className="text-xs text-blue-200">Listado de jugadores y estados</p>
+    <DashboardLayout>
+      <main className="overflow-y-auto flex-1 text-white">
+        {/* Header */}
+        <div className="bg-white/5 backdrop-blur-xl border-b border-white/10 px-6 py-4 flex justify-between items-center shadow-lg sticky top-0 z-20">
+          <div className="flex items-center gap-4">
+            <Link href="/adeudos" className="p-2 hover:bg-white/10 rounded-full transition-colors">
+              <ChevronLeft size={24} />
+            </Link>
+            <div>
+              <h1 className="text-xl font-bold">{categoria}</h1>
+              <p className="text-xs text-blue-200">Listado de jugadores y estados</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={handleExportPDF}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-xl border border-emerald-500/30 transition-all font-bold text-sm"
+            >
+              <FileDown size={18} />
+              <span className="hidden sm:inline">Mandar a PDF</span>
+            </button>
+            <div className="bg-blue-500/20 px-4 py-1.5 rounded-xl border border-blue-500/30">
+              <span className="text-sm font-bold text-blue-300">{players.length} Jugadores</span>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={handleExportPDF}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-xl border border-emerald-500/30 transition-all font-bold text-sm"
-          >
-            <FileDown size={18} />
-            <span className="hidden sm:inline">Mandar a PDF</span>
-          </button>
-          <div className="bg-blue-500/20 px-4 py-1.5 rounded-xl border border-blue-500/30">
-            <span className="text-sm font-bold text-blue-300">{players.length} Jugadores</span>
-          </div>
-        </div>
-      </nav>
 
-      <main className="max-w-5xl mx-auto p-6 md:p-8">
+        <div className="max-w-5xl mx-auto p-6 md:p-8">
         {/* Search */}
         <div className="mb-8 relative group max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-400 transition-colors" size={18} />
@@ -500,6 +502,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
           )}
         </div>
 
+        </div>
       </main>
 
       {/* Payment History Modal */}
@@ -668,6 +671,6 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
           </div>
         </div>
       )}
-    </div>
+    </DashboardLayout>
   );
 }
