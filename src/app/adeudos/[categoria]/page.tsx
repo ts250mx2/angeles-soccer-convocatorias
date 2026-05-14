@@ -218,16 +218,57 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
     doc.text(`Reporte de Adeudos - ${categoria}`, 14, 20);
     doc.setFontSize(10);
     doc.text(`Fecha de generación: ${new Date().toLocaleString('es-MX')}`, 14, 28);
+    if (searchQuery) {
+      doc.text(`Filtro búsqueda: "${searchQuery}"`, 14, 34);
+    }
+    if (activeFilter !== 'all') {
+      const filterLabels = {
+        all: 'Todos',
+        activos: 'Activos',
+        bajas: 'Bajas',
+        corriente: 'Al Corriente',
+        adeudo: 'Con Adeudo',
+        beca: 'Becados'
+      };
+      doc.text(`Filtro estado: ${filterLabels[activeFilter]}`, 14, 40);
+    }
+
+    // Calculate stats for the filtered list
+    const filteredStats = filteredPlayers.reduce((acc, player) => {
+      if (player.Beca !== null && player.Beca !== undefined && player.Beca !== '' && String(player.Beca) !== '0') {
+        acc.becados++;
+      }
+      if (player.Status === 0) {
+        const paidMonths = player.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
+        const hasPaidInscripcion = !!player.InscripcionPagada;
+        let allMonthsPaid = true;
+        if (config) {
+          for (let m = config.startMonth; m <= config.currentMonth; m++) {
+            if (!paidMonths.includes(m)) {
+              allMonthsPaid = false;
+              break;
+            }
+          }
+        }
+        const isBecado100 = player.Beca === '100' || String(player.Beca).includes('100');
+        if (isBecado100 || (hasPaidInscripcion && allMonthsPaid)) {
+          acc.alCorriente++;
+        } else {
+          acc.conAdeudo++;
+        }
+      }
+      return acc;
+    }, { alCorriente: 0, conAdeudo: 0, becados: 0 });
     
     // Summary table
     autoTable(doc, {
-      startY: 35,
-      head: [['Resumen', 'Cantidad']],
+      startY: 45,
+      head: [['Resumen Filtrado', 'Cantidad']],
       body: [
-        ['Total Jugadores', players.length],
-        ['Activos Al Corriente', stats.alCorriente],
-        ['Activos Con Adeudo', stats.conAdeudo],
-        ['Jugadores con Beca', stats.becados],
+        ['Total Jugadores', filteredPlayers.length],
+        ['Activos Al Corriente', filteredStats.alCorriente],
+        ['Activos Con Adeudo', filteredStats.conAdeudo],
+        ['Jugadores con Beca', filteredStats.becados],
       ],
       theme: 'striped',
       headStyles: { fillColor: [59, 130, 246] }, // Blue-500
@@ -236,18 +277,15 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
     });
     
     // Detailed Table
-    const tableData = players.map(p => {
+    const tableData = filteredPlayers.map(p => {
       const paidMonths = p.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
       const isBecado100 = p.Beca === '100' || String(p.Beca).includes('100');
       let statusText = "AL CORRIENTE";
-      let statusColor = [16, 185, 129]; // Emerald-500
       
       if (isBecado100) {
         statusText = "AL CORRIENTE (BECA 100%)";
-        statusColor = [16, 185, 129]; // Emerald-500
       } else if (!p.InscripcionPagada) {
         statusText = "DEBE INSCRIPCION";
-        statusColor = [244, 63, 94]; // Rose-500
       } else if (config) {
         const missing = [];
         for (let m = config.startMonth; m <= config.currentMonth; m++) {
@@ -257,7 +295,6 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
         }
         if (missing.length > 0) {
           statusText = `DEBE: ${missing.join(', ')}`;
-          statusColor = [244, 63, 94]; // Rose-500
         }
       }
       
@@ -282,11 +319,11 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
         3: { fontStyle: 'bold' }
       },
       didDrawCell: (data) => {
-        if (data.section === 'body' && data.column.index === 3) {
+        if (data.section === 'body' && data.column.index === 4) {
           const text = data.cell.text[0];
           if (text.startsWith('DEBE')) {
             doc.setTextColor(244, 63, 94); // Rose-500
-          } else if (text === 'AL CORRIENTE') {
+          } else if (text.startsWith('AL CORRIENTE')) {
             doc.setTextColor(16, 185, 129); // Emerald-500
           }
         }
@@ -295,6 +332,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
     
     doc.save(`Adeudos_${categoria.replace(/\s+/g, '_')}.pdf`);
   };
+
 
   return (
     <DashboardLayout>

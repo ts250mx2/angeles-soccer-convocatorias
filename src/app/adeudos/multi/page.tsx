@@ -180,23 +180,64 @@ function MultiCategoryContent() {
     doc.setFontSize(10);
     doc.text(`Categorías: ${categories.join(', ')}`, 14, 28);
     doc.text(`Generado: ${new Date().toLocaleString('es-MX')}`, 14, 34);
+    if (searchQuery) {
+      doc.text(`Filtro búsqueda: "${searchQuery}"`, 14, 40);
+    }
+    if (activeFilter !== 'all') {
+      const filterLabels = {
+        all: 'Todos',
+        activos: 'Activos',
+        bajas: 'Bajas',
+        corriente: 'Al Corriente',
+        adeudo: 'Con Adeudo',
+        beca: 'Becados'
+      };
+      doc.text(`Filtro estado: ${filterLabels[activeFilter]}`, 14, 46);
+    }
+
+    // Calculate stats for the filtered list
+    const filteredStats = filteredPlayers.reduce((acc, player) => {
+      if (player.Beca !== null && player.Beca !== undefined && player.Beca !== '' && String(player.Beca) !== '0') {
+        acc.becados++;
+      }
+      if (player.Status === 0) {
+        const paidMonths = player.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
+        const hasPaidInscripcion = !!player.InscripcionPagada;
+        let allMonthsPaid = true;
+        if (config) {
+          for (let m = config.startMonth; m <= config.currentMonth; m++) {
+            if (!paidMonths.includes(m)) {
+              allMonthsPaid = false;
+              break;
+            }
+          }
+        }
+        const isBecado100 = player.Beca === '100' || String(player.Beca).includes('100');
+        if (isBecado100 || (hasPaidInscripcion && allMonthsPaid)) {
+          acc.alCorriente++;
+        } else {
+          acc.conAdeudo++;
+        }
+      }
+      return acc;
+    }, { alCorriente: 0, conAdeudo: 0, becados: 0 });
     
     autoTable(doc, {
-      startY: 40,
-      head: [['Resumen', 'Cantidad']],
+      startY: 52,
+      head: [['Resumen Filtrado', 'Cantidad']],
       body: [
-        ['Categorías seleccionadas', categories.length],
-        ['Total Jugadores', players.length],
-        ['Activos Al Corriente', stats.alCorriente],
-        ['Activos Con Adeudo', stats.conAdeudo],
-        ['Becados', stats.becados],
+        ['Categorías', categories.length],
+        ['Total Jugadores', filteredPlayers.length],
+        ['Activos Al Corriente', filteredStats.alCorriente],
+        ['Activos Con Adeudo', filteredStats.conAdeudo],
+        ['Becados', filteredStats.becados],
       ],
       theme: 'striped',
       headStyles: { fillColor: [59, 130, 246] },
       tableWidth: 100
     });
     
-    const tableData = players.map(p => {
+    const tableData = filteredPlayers.map(p => {
       const paidMonths = p.MesesPagados.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m));
       const isBecado100 = p.Beca === '100' || String(p.Beca).includes('100');
       let statusText = "AL CORRIENTE";
@@ -217,11 +258,22 @@ function MultiCategoryContent() {
       head: [['Categoría', 'ID', 'Jugador', 'Beca', 'Estado']],
       body: tableData,
       theme: 'grid',
-      headStyles: { fillColor: [30, 41, 59] }
+      headStyles: { fillColor: [30, 41, 59] },
+      didDrawCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const text = data.cell.text[0];
+          if (text.startsWith('DEBE')) {
+            doc.setTextColor(244, 63, 94); // Rose-500
+          } else if (text.startsWith('AL CORRIENTE')) {
+            doc.setTextColor(16, 185, 129); // Emerald-500
+          }
+        }
+      }
     });
     
     doc.save(`Adeudos_Combinado.pdf`);
   };
+
 
   return (
     <DashboardLayout>
