@@ -1,19 +1,8 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 
-export async function GET(request: Request) {
+export async function GET() {
     try {
-        const { searchParams } = new URL(request.url);
-        const categoriaParam = searchParams.get('categoria');
-        const sedeIdParam = searchParams.get('sedeId');
-
-        if (!categoriaParam && !sedeIdParam) {
-            return NextResponse.json({ success: false, message: 'La categoría o sede es requerida' }, { status: 400 });
-        }
-
-        const categorias = categoriaParam ? categoriaParam.split(',').map(c => c.trim()) : [];
-        const sedeId = sedeIdParam ? parseInt(sedeIdParam) : null;
-
         // 1. Get active season info
         const [seasonRows] = await pool.query(
             'SELECT IdTemporada, FechaInicio, FechaFin FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1'
@@ -29,24 +18,20 @@ export async function GET(request: Request) {
         const endMonth = new Date(activeSeason.FechaFin).getUTCMonth() + 1;
         const currentMonth = new Date().getUTCMonth() + 1;
 
-        // 2. Query to get players and their payment status
-        const whereClause = sedeId 
-            ? 'WHERE J.IdSede = ?' 
-            : `WHERE J.Categoria IN (${categorias.map(() => '?').join(',')})`;
+        const numMonthsExpected = Math.max(0, endMonth - startMonth + 1);
 
+        // 2. Query to get sede summary
         const query = `
             SELECT 
-                J.IdJugador, 
-                J.Jugador, 
-                J.Categoria, 
-                J.Status,
-                J.Beca,
-                J.IdSede,
-                COALESCE(S.Sede, J.Sede) as SedeNombre,
-                CASE WHEN INSCRIPCION.IdJugador IS NOT NULL THEN 1 ELSE 0 END as InscripcionPagada,
-                COALESCE(MENSUALIDADES.MesesPagados, '') as MesesPagados
-            FROM tblJugadores J
-            LEFT JOIN tblSedes S ON J.IdSede = S.IdSede
+                S.IdSede,
+                S.Sede,
+                COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
+                COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas,
+                SUM(CASE WHEN INSCRIPCION.IdJugador IS NULL AND J.Status = 0 THEN 1 ELSE 0 END) as PendientesInscripcion,
+                SUM(CASE WHEN COALESCE(MENSUALIDADES.PagosCount, 0) < ? AND J.Status = 0 THEN 1 ELSE 0 END) as PendientesMensualidad
+            FROM tblSedes S
+            LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
+            -- Check for registration payment (IdTipoProducto = 2)
             LEFT JOIN (
                 SELECT P.IdJugador
                 FROM tblPagos P
@@ -54,43 +39,42 @@ export async function GET(request: Request) {
                 WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0
                 GROUP BY P.IdJugador
             ) INSCRIPCION ON J.IdJugador = INSCRIPCION.IdJugador
+            -- Check for mensualidades count (IdTipoProducto = 1)
             LEFT JOIN (
-                SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as MesesCount, GROUP_CONCAT(DISTINCT P.Mes) as MesesPagados
+                SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as PagosCount
                 FROM tblPagos P
                 INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
                 WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 1 AND P.Status = 0
                   AND P.Mes >= ? AND P.Mes <= ?
                 GROUP BY P.IdJugador
             ) MENSUALIDADES ON J.IdJugador = MENSUALIDADES.IdJugador
-            ${whereClause}
-            ORDER BY J.Categoria ASC, J.Jugador ASC
+            GROUP BY S.IdSede, S.Sede
+            ORDER BY S.Sede
         `;
 
-        const queryParams = [
+        const [rows] = await pool.query(query, [
+            numMonthsExpected, 
             seasonId, 
             seasonId, 
             startMonth, 
-            endMonth,
-            ...(sedeId ? [sedeId] : categorias)
-        ];
-
-        const [rows] = await pool.query(query, queryParams);
-
+            endMonth
+        ]);
 
         return NextResponse.json({ 
             success: true, 
             data: rows,
             config: {
+                seasonId,
                 startMonth,
                 endMonth,
                 currentMonth,
-                seasonId
+                numMonthsExpected
             }
         });
     } catch (error) {
-        console.error('Error fetching players for category:', error);
+        console.error('Error fetching sedes for adeudos:', error);
         return NextResponse.json(
-            { success: false, message: 'Error al obtener jugadores' },
+            { success: false, message: 'Error al obtener sedes' },
             { status: 500 }
         );
     }

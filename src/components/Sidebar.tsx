@@ -15,6 +15,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Shield,
+  MapPin,
 } from "lucide-react";
 
 interface NavItem {
@@ -65,6 +66,12 @@ export default function Sidebar() {
           label: "Adeudos",
           href: "/adeudos",
           icon: <CreditCard size={16} />,
+          adminOnly: true,
+        },
+        {
+          label: "Adeudos por Sede",
+          href: "/adeudos/sede",
+          icon: <MapPin size={16} />,
           adminOnly: true,
         },
       ],
