@@ -34,8 +34,12 @@ export default function LoginPage() {
             if (data.success) {
                 // Set user in context
                 setUser(data.user);
-                // Redirect to dashboard/home on success
-                router.push('/');
+                // Redirect based on role
+                if ((data.user.AdminConvocatorias ?? 0) >= 2) {
+                    router.push('/');
+                } else {
+                    router.push('/inscripciones');
+                }
             } else {
                 setError(data.message || 'Error al iniciar sesión');
             }

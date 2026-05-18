@@ -148,7 +148,13 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
-    if (isInitialized && !user) router.push("/login");
+    if (isInitialized) {
+      if (!user) {
+        router.push("/login");
+      } else if ((user.AdminConvocatorias ?? 0) < 2) {
+        router.push("/inscripciones");
+      }
+    }
   }, [user, isInitialized, router]);
 
   const fetchKPIs = useCallback(async (p: Period, from?: string, to?: string) => {

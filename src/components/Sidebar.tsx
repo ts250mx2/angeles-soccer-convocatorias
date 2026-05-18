@@ -16,6 +16,7 @@ import {
   PanelLeftOpen,
   Shield,
   MapPin,
+  UserCheck,
 } from "lucide-react";
 
 interface NavItem {
@@ -41,6 +42,7 @@ export default function Sidebar() {
       label: "Dashboard",
       href: "/dashboard",
       icon: <LayoutDashboard size={18} />,
+      adminOnly: true,
     },
     {
       label: "Copas y Ligas",
@@ -55,6 +57,7 @@ export default function Sidebar() {
           label: "Pagos de Copas y Ligas",
           href: "/pagos-copas",
           icon: <Trophy size={16} />,
+          adminOnly: true,
         },
       ],
     },
@@ -62,6 +65,11 @@ export default function Sidebar() {
       label: "Jugadores",
       icon: <Users size={18} />,
       children: [
+        {
+          label: "Inscripciones",
+          href: "/inscripciones",
+          icon: <UserCheck size={16} />,
+        },
         {
           label: "Adeudos",
           href: "/adeudos",
