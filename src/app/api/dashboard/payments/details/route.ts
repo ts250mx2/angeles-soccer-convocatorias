@@ -26,32 +26,37 @@ export async function GET(request: Request) {
         const dateFrom = searchParams.get('dateFrom');
         const dateTo = searchParams.get('dateTo');
         const idSede = searchParams.get('idSede');
+        const idSedeJugador = searchParams.get('idSedeJugador');
         const idLiga = searchParams.get('idLiga');
         const categoria = searchParams.get('categoria');
-
+ 
         const dateFilter = buildDateFilter(period, dateFrom, dateTo);
-
+ 
         const [seasonRows] = await pool.query(
             'SELECT IdTemporada FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1'
         ) as any[];
         const currentSeasonId = seasonRows.length > 0 ? seasonRows[0].IdTemporada : null;
-
+ 
         let query = `
             SELECT 
                 P.IdPago,
                 P.Pago,
                 P.FechaPago,
                 P.Recibo,
+                J.IdJugador,
                 J.Jugador,
-                DC.Categoria,
+                J.Categoria AS Categoria,
                 L.Liga,
                 S.Sede,
+                CASE WHEN J.Jugador LIKE '%Ventas%' THEN 'VENTAS' ELSE SJ.Sede END AS SedeJugador,
+                CASE WHEN J.Jugador LIKE '%Ventas%' THEN 99999 ELSE J.IdSede END AS IdSedeJugador,
                 PR.Producto
             FROM tblPagos P
             INNER JOIN tblJugadores J ON P.IdJugador = J.IdJugador
-            INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
-            INNER JOIN tblLigas L ON PR.IdLiga = L.IdLiga
+            LEFT JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+            LEFT JOIN tblLigas L ON PR.IdLiga = L.IdLiga
             LEFT JOIN tblSedes S ON P.IdSedePago = S.IdSede
+            LEFT JOIN tblSedes SJ ON J.IdSede = SJ.IdSede
             LEFT JOIN tblDetalleConvocatorias DC ON P.IdJugador = DC.IdJugador 
                 AND P.IdTemporada = DC.IdTemporada 
                 AND PR.IdLiga = DC.IdLiga
@@ -59,12 +64,20 @@ export async function GET(request: Request) {
               AND ${dateFilter}
               ${currentSeasonId ? 'AND P.IdTemporada = ?' : ''}
         `;
-
+ 
         const params: any[] = currentSeasonId ? [currentSeasonId] : [];
-
+ 
         if (idSede) {
             query += ' AND P.IdSedePago = ?';
             params.push(idSede);
+        }
+        if (idSedeJugador) {
+            if (idSedeJugador === '99999') {
+                query += " AND J.Jugador LIKE '%Ventas%'";
+            } else {
+                query += " AND J.IdSede = ? AND J.Jugador NOT LIKE '%Ventas%'";
+                params.push(idSedeJugador);
+            }
         }
         if (idLiga) {
             query += ' AND PR.IdLiga = ?';
@@ -74,8 +87,13 @@ export async function GET(request: Request) {
             query += ' AND DC.Categoria = ?';
             params.push(categoria);
         }
-
+ 
         query += ' ORDER BY P.FechaPago DESC LIMIT 500';
+ 
+        console.log('\n=== EJECUTANDO CONSULTA DE DETALLES DE PAGOS ===');
+        console.log('SQL Query:', query.replace(/\s+/g, ' ').trim());
+        console.log('Parámetros:', JSON.stringify(params));
+        console.log('================================================\n');
 
         const [rows] = await pool.query(query, params);
 

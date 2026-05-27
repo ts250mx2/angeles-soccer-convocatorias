@@ -77,23 +77,48 @@ export async function GET(request: Request) {
         `;
         const [leagueRows] = await pool.query(leagueQuery, kpiParams) as any[];
 
-        // ─── Breakdown by Sede (tblSedes join) ────────────────────
+        // ─── Breakdown by Sede (Consolidated registered & payment Sede) ──
         const sedeQuery = `
             SELECT
                 S.IdSede,
                 S.Sede,
-                COUNT(DISTINCT P.IdPago)    AS Pagos,
-                COUNT(DISTINCT P.IdJugador) AS Jugadores,
-                COALESCE(SUM(P.Pago), 0)   AS Total
-            FROM tblPagos P
-            INNER JOIN tblSedes S ON P.IdSedePago = S.IdSede
-            WHERE P.Status = 0
-              AND ${dateFilter}
-              ${currentSeasonId ? 'AND P.IdTemporada = ?' : ''}
-            GROUP BY S.IdSede, S.Sede
-            ORDER BY Total DESC
+                COALESCE(SP.Pagos, 0) AS Pagos,
+                COALESCE(SP.Jugadores, 0) AS Jugadores,
+                COALESCE(SP.Total, 0) AS Total,
+                COALESCE(SR.PagosReg, 0) AS PagosReg,
+                COALESCE(SR.JugadoresReg, 0) AS JugadoresReg,
+                COALESCE(SR.TotalReg, 0) AS TotalReg
+            FROM tblSedes S
+            LEFT JOIN (
+                SELECT 
+                    IdSedePago,
+                    COUNT(DISTINCT IdPago) AS Pagos,
+                    COUNT(DISTINCT IdJugador) AS Jugadores,
+                    SUM(Pago) AS Total
+                FROM tblPagos P
+                WHERE P.Status = 0
+                  AND ${dateFilter}
+                  ${currentSeasonId ? 'AND P.IdTemporada = ?' : ''}
+                GROUP BY IdSedePago
+            ) SP ON S.IdSede = SP.IdSedePago
+            LEFT JOIN (
+                SELECT 
+                    J.IdSede,
+                    COUNT(DISTINCT P.IdPago) AS PagosReg,
+                    COUNT(DISTINCT P.IdJugador) AS JugadoresReg,
+                    SUM(P.Pago) AS TotalReg
+                FROM tblPagos P
+                INNER JOIN tblJugadores J ON P.IdJugador = J.IdJugador
+                WHERE P.Status = 0
+                  AND ${dateFilter}
+                  ${currentSeasonId ? 'AND P.IdTemporada = ?' : ''}
+                GROUP BY J.IdSede
+            ) SR ON S.IdSede = SR.IdSede
+            WHERE SP.Total > 0 OR SR.TotalReg > 0
+            ORDER BY Total DESC, TotalReg DESC
         `;
-        const [sr] = await pool.query(sedeQuery, kpiParams) as any[];
+        const sedeParams = currentSeasonId ? [currentSeasonId, currentSeasonId] : [];
+        const [sr] = await pool.query(sedeQuery, sedeParams) as any[];
         const sedeRows = sr as any[];
 
         // ─── Breakdown by Category ────────────────────────────────
@@ -143,6 +168,27 @@ export async function GET(request: Request) {
             if ((sRows as any[]).length > 0) seasonSummary = (sRows as any[])[0];
         }
 
+        // ─── Sede de Pago vs. Player Registered Sede Breakdown ────
+        const breakdownQuery = `
+            SELECT
+                P.IdSedePago AS IdSedePago,
+                CASE WHEN J.Jugador LIKE '%Ventas%' THEN 99999 ELSE J.IdSede END AS IdSedeJugador,
+                CASE WHEN J.Jugador LIKE '%Ventas%' THEN 'VENTAS' ELSE SJ.Sede END AS SedeJugador,
+                COUNT(DISTINCT P.IdJugador) AS Jugadores,
+                COUNT(P.IdPago) AS Pagos,
+                COALESCE(SUM(P.Pago), 0) AS Total
+            FROM tblPagos P
+            INNER JOIN tblJugadores J ON P.IdJugador = J.IdJugador
+            INNER JOIN tblSedes SJ ON J.IdSede = SJ.IdSede
+            WHERE P.Status = 0
+              AND ${dateFilter}
+              ${currentSeasonId ? 'AND P.IdTemporada = ?' : ''}
+            GROUP BY P.IdSedePago, 
+                     CASE WHEN J.Jugador LIKE '%Ventas%' THEN 99999 ELSE J.IdSede END,
+                     CASE WHEN J.Jugador LIKE '%Ventas%' THEN 'Ventas' ELSE SJ.Sede END
+        `;
+        const [brRows] = await pool.query(breakdownQuery, kpiParams) as any[];
+
         return NextResponse.json({
             success: true,
             period,
@@ -160,6 +206,7 @@ export async function GET(request: Request) {
             byCategory: categoryRows,
             timeline: timelineRows,
             seasonSummary,
+            breakdown: brRows,
         });
     } catch (error) {
         console.error('Error fetching dashboard KPIs:', error);

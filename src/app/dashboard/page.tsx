@@ -7,7 +7,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import {
   DollarSign, CreditCard, Users, TrendingUp, TrendingDown,
   Calendar, BarChart3, RefreshCw, Trophy, Target, MapPin, X,
-  ExternalLink, ChevronRight, Search, FileText
+  ExternalLink, ChevronRight, Search, FileText, Download
 } from "lucide-react";
 
 type Period = "today" | "yesterday" | "week" | "month" | "custom";
@@ -27,6 +27,9 @@ interface RowData {
   Pagos: number; 
   Jugadores?: number; 
   Total: number; 
+  PagosReg?: number;
+  JugadoresReg?: number;
+  TotalReg?: number;
 }
 interface TimelineEntry { Fecha: string; Pagos: number; Total: number; }
 interface DashboardData {
@@ -40,6 +43,7 @@ interface DashboardData {
   byCategory: RowData[];
   timeline: TimelineEntry[];
   seasonSummary: { TotalPagosTemporada: number; JugadoresTemporada: number; TotalTemporada: number; };
+  breakdown?: { IdSedePago: number; IdSedeJugador: number; SedeJugador: string; Jugadores: number; Pagos: number; Total: number; }[];
 }
 
 interface PaymentDetail {
@@ -47,10 +51,13 @@ interface PaymentDetail {
   Pago: number;
   FechaPago: string;
   Recibo: string;
+  IdJugador?: number;
   Jugador: string;
   Categoria: string;
   Liga: string;
   Sede: string;
+  SedeJugador?: string;
+  IdSedeJugador?: number;
   Producto: string;
 }
 
@@ -142,6 +149,19 @@ export default function DashboardPage() {
   const [detailsModal, setDetailsModal] = useState<{ open: boolean, title: string, subtitle: string }>({ open: false, title: "", subtitle: "" });
   const [detailsData, setDetailsData] = useState<PaymentDetail[]>([]);
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
+  const [payingPlayersModalOpen, setPayingPlayersModalOpen] = useState(false);
+
+  // Nested subcard drill down states
+  const [activeSubcardModal, setActiveSubcardModal] = useState<{ 
+    idSede: number; 
+    type: 'pago' | 'registro' | 'both'; 
+    sedeName: string;
+    idSedeJugador?: number;
+    sedeJugadorName?: string;
+  } | null>(null);
+  const [subcardPlayersData, setSubcardPlayersData] = useState<PaymentDetail[]>([]);
+  const [isSubcardLoading, setIsSubcardLoading] = useState(false);
+  const [selectedPlayerDetails, setSelectedPlayerDetails] = useState<{ idJugador: number; name: string } | null>(null);
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -190,6 +210,455 @@ export default function DashboardPage() {
     }
   };
 
+  const exportToExcel = async () => {
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Detalle de Pagos");
+
+      // Enable grid lines
+      worksheet.views = [{ showGridLines: true }];
+
+      // Title Styling
+      worksheet.mergeCells("A2:H2");
+      const titleCell = worksheet.getCell("A2");
+      titleCell.value = "Ángeles Soccer Club";
+      titleCell.font = { name: "Segoe UI", size: 16, bold: true, color: { argb: "FF4F46E5" } };
+      titleCell.alignment = { vertical: "middle", horizontal: "left" };
+
+      worksheet.mergeCells("A3:H3");
+      const subtitleCell = worksheet.getCell("A3");
+      subtitleCell.value = `Reporte de Convocatorias y Pagos — ${detailsModal.title}`;
+      subtitleCell.font = { name: "Segoe UI", size: 12, bold: true, color: { argb: "FF1E293B" } };
+      subtitleCell.alignment = { vertical: "middle", horizontal: "left" };
+
+      worksheet.mergeCells("A4:H4");
+      const filterCell = worksheet.getCell("A4");
+      filterCell.value = `Filtro: ${detailsModal.subtitle}  |  Rango de Fechas: ${periodLabel}`;
+      filterCell.font = { name: "Segoe UI", size: 10, italic: true, color: { argb: "FF64748B" } };
+      filterCell.alignment = { vertical: "middle", horizontal: "left" };
+
+      worksheet.mergeCells("A5:H5");
+      const exportCell = worksheet.getCell("A5");
+      exportCell.value = `Fecha de exportación: ${new Date().toLocaleString("es-MX")}`;
+      exportCell.font = { name: "Segoe UI", size: 9, italic: true, color: { argb: "FF94A3B8" } };
+      exportCell.alignment = { vertical: "middle", horizontal: "left" };
+
+      // Set headers
+      const headerRowNumber = 7;
+      const headers = [
+        "Fecha de Pago",
+        "Recibo",
+        "Jugador",
+        "Categoría",
+        "Sede",
+        "Liga",
+        "Producto",
+        "Monto (MXN)"
+      ];
+
+      const headerRow = worksheet.getRow(headerRowNumber);
+      headerRow.values = headers;
+      headerRow.height = 28;
+
+      const headerFont = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+      const headerFill = {
+        type: "pattern" as const,
+        pattern: "solid" as const,
+        fgColor: { argb: "FF4F46E5" } // Elegant Purple/Indigo theme
+      };
+      
+      const thinBorder = {
+        top: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+        left: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+        right: { style: "thin" as const, color: { argb: "FFE2E8F0" } }
+      };
+
+      headers.forEach((_, colIndex) => {
+        const cell = headerRow.getCell(colIndex + 1);
+        cell.font = headerFont;
+        cell.fill = headerFill;
+        cell.alignment = { 
+          vertical: "middle", 
+          horizontal: colIndex === 0 || colIndex === 1 ? "center" : colIndex === 7 ? "right" : "left" 
+        };
+        cell.border = thinBorder;
+      });
+
+      // Populate data
+      let currentRowNumber = headerRowNumber + 1;
+
+      detailsData.forEach((item, index) => {
+        const row = worksheet.getRow(currentRowNumber);
+        const formattedDate = new Date(item.FechaPago).toLocaleDateString("es-MX", { day: '2-digit', month: '2-digit', year: 'numeric' }) + " " + new Date(item.FechaPago).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' });
+
+        row.values = [
+          formattedDate,
+          item.Recibo || "—",
+          item.Jugador,
+          item.Categoria || "—",
+          item.Sede || "—",
+          item.Liga || "—",
+          item.Producto || "—",
+          Number(item.Pago)
+        ];
+
+        row.height = 22;
+
+        const isEven = index % 2 === 0;
+        const rowBgColor = isEven ? "FFFFFFFF" : "FFF8FAFC"; // Alternate zebra rows
+        const dataFill = {
+          type: "pattern" as const,
+          pattern: "solid" as const,
+          fgColor: { argb: rowBgColor }
+        };
+
+        for (let colIndex = 1; colIndex <= 8; colIndex++) {
+          const cell = row.getCell(colIndex);
+          cell.font = { name: "Segoe UI", size: 9.5 };
+          cell.fill = dataFill;
+          cell.border = thinBorder;
+
+          if (colIndex === 1 || colIndex === 2) {
+            cell.alignment = { vertical: "middle", horizontal: "center" };
+          } else if (colIndex === 8) {
+            cell.alignment = { vertical: "middle", horizontal: "right" };
+            cell.numFmt = '"$"#,##0.00';
+          } else {
+            cell.alignment = { vertical: "middle", horizontal: "left" };
+          }
+        }
+
+        currentRowNumber++;
+      });
+
+      // Total Row
+      const totalRow = worksheet.getRow(currentRowNumber);
+      totalRow.height = 26;
+      worksheet.mergeCells(`A${currentRowNumber}:G${currentRowNumber}`);
+
+      const labelCell = totalRow.getCell(1);
+      labelCell.value = "TOTAL GENERAL   ";
+      labelCell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF1E293B" } };
+      labelCell.alignment = { vertical: "middle", horizontal: "right" };
+
+      // Apply borders to the merged cells
+      const totalBorder = {
+        top: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+        bottom: { style: "double" as const, color: { argb: "FF475569" } }
+      };
+
+      for (let colIndex = 1; colIndex <= 7; colIndex++) {
+        totalRow.getCell(colIndex).border = totalBorder;
+      }
+
+      const totalValueCell = totalRow.getCell(8);
+      totalValueCell.value = { formula: `=SUM(H8:H${currentRowNumber - 1})` };
+      totalValueCell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF059669" } }; // Emerald green total
+      totalValueCell.alignment = { vertical: "middle", horizontal: "right" };
+      totalValueCell.numFmt = '"$"#,##0.00';
+      totalValueCell.border = totalBorder;
+
+      // Auto-fit columns
+      worksheet.columns.forEach((column, colIndex) => {
+        let maxLen = 10;
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber >= 7 && rowNumber < currentRowNumber) {
+            const cellVal = row.getCell(colIndex + 1).value;
+            if (cellVal) {
+              const strVal = String(cellVal);
+              if (strVal.length > maxLen) maxLen = strVal.length;
+            }
+          }
+        });
+        column.width = Math.min(maxLen + 4, 35);
+      });
+
+      // Write Workbook to buffer and download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const downloadLink = document.createElement("a");
+      downloadLink.href = URL.createObjectURL(blob);
+      
+      const cleanTitle = detailsModal.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      downloadLink.download = `reporte_pagos_${cleanTitle}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    } catch (e) {
+      console.error("Error al exportar a Excel:", e);
+    }
+  };
+
+  const exportPlayersToExcel = async () => {
+    if (!activeSubcardModal || subcardPlayersData.length === 0) return;
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Lista de Jugadores");
+
+      // Enable grid lines
+      worksheet.views = [{ showGridLines: true }];
+
+      // Title Styling
+      worksheet.mergeCells("A2:F2");
+      const titleCell = worksheet.getCell("A2");
+      titleCell.value = "Ángeles Soccer Club";
+      titleCell.font = { name: "Segoe UI", size: 16, bold: true, color: { argb: "FF4F46E5" } };
+      titleCell.alignment = { vertical: "middle", horizontal: "left" };
+
+      worksheet.mergeCells("A3:F3");
+      const subtitleCell = worksheet.getCell("A3");
+      const filterDesc = activeSubcardModal.type === 'both' 
+        ? `Pago en ${activeSubcardModal.sedeName} / Registro en ${activeSubcardModal.sedeJugadorName}`
+        : `${activeSubcardModal.sedeName} (${activeSubcardModal.type === 'pago' ? 'Sede de Pago' : 'Sede de Registro'})`;
+      subtitleCell.value = `Lista de Jugadores Únicos — ${filterDesc}`;
+      subtitleCell.font = { name: "Segoe UI", size: 12, bold: true, color: { argb: "FF1E293B" } };
+      subtitleCell.alignment = { vertical: "middle", horizontal: "left" };
+
+      worksheet.mergeCells("A4:F4");
+      const filterCell = worksheet.getCell("A4");
+      filterCell.value = `Rango de Fechas: ${periodLabel}`;
+      filterCell.font = { name: "Segoe UI", size: 10, italic: true, color: { argb: "FF64748B" } };
+      filterCell.alignment = { vertical: "middle", horizontal: "left" };
+
+      worksheet.mergeCells("A5:F5");
+      const exportCell = worksheet.getCell("A5");
+      exportCell.value = `Fecha de exportación: ${new Date().toLocaleString("es-MX")}`;
+      exportCell.font = { name: "Segoe UI", size: 9, italic: true, color: { argb: "FF94A3B8" } };
+      exportCell.alignment = { vertical: "middle", horizontal: "left" };
+
+      // Set headers
+      const headerRowNumber = 7;
+      const headers = [
+        "Jugador",
+        "Categoría",
+        "Sede de Pago",
+        "Sede de Origen",
+        "Cant. Pagos",
+        "Total Pagado (MXN)"
+      ];
+
+      const headerRow = worksheet.getRow(headerRowNumber);
+      headerRow.values = headers;
+      headerRow.height = 28;
+
+      const headerFont = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+      const headerFill = {
+        type: "pattern" as const,
+        pattern: "solid" as const,
+        fgColor: { argb: "FF6B21A8" } // Elegant Purple theme matching the modal
+      };
+      
+      const thinBorder = {
+        top: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+        left: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+        right: { style: "thin" as const, color: { argb: "FFE2E8F0" } }
+      };
+
+      headers.forEach((_, colIndex) => {
+        const cell = headerRow.getCell(colIndex + 1);
+        cell.font = headerFont;
+        cell.fill = headerFill;
+        cell.alignment = { 
+          vertical: "middle", 
+          horizontal: colIndex === 4 || colIndex === 5 ? "right" : "left" 
+        };
+        cell.border = thinBorder;
+      });
+
+      // Populate data
+      let currentRowNumber = headerRowNumber + 1;
+      const players = getGroupedPlayers(subcardPlayersData);
+
+      players.forEach((item, index) => {
+        const row = worksheet.getRow(currentRowNumber);
+        row.values = [
+          item.jugador,
+          item.categoria || "—",
+          item.sede || "—", // Sede de Pago
+          item.sedeJugador || "—", // Sede de Origen / Registro
+          Number(item.pagosCount),
+          Number(item.total)
+        ];
+
+        row.height = 22;
+
+        const isEven = index % 2 === 0;
+        const rowBgColor = isEven ? "FFFFFFFF" : "FFFDF4FF"; // Alternate zebra rows
+        const dataFill = {
+          type: "pattern" as const,
+          pattern: "solid" as const,
+          fgColor: { argb: rowBgColor }
+        };
+
+        for (let colIndex = 1; colIndex <= 6; colIndex++) {
+          const cell = row.getCell(colIndex);
+          cell.font = { name: "Segoe UI", size: 9.5 };
+          cell.fill = dataFill;
+          cell.border = thinBorder;
+
+          if (colIndex === 5) {
+            cell.alignment = { vertical: "middle", horizontal: "right" };
+            cell.numFmt = '#,##0';
+          } else if (colIndex === 6) {
+            cell.alignment = { vertical: "middle", horizontal: "right" };
+            cell.numFmt = '"$"#,##0.00';
+          } else {
+            cell.alignment = { vertical: "middle", horizontal: "left" };
+          }
+        }
+
+        currentRowNumber++;
+      });
+
+      // Total Row
+      const totalRow = worksheet.getRow(currentRowNumber);
+      totalRow.height = 26;
+      worksheet.mergeCells(`A${currentRowNumber}:E${currentRowNumber}`);
+
+      const labelCell = totalRow.getCell(1);
+      labelCell.value = "TOTAL SUMATORIA JUGADORES   ";
+      labelCell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF1E293B" } };
+      labelCell.alignment = { vertical: "middle", horizontal: "right" };
+
+      const totalBorder = {
+        top: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+        bottom: { style: "double" as const, color: { argb: "FF475569" } }
+      };
+
+      for (let colIndex = 1; colIndex <= 5; colIndex++) {
+        totalRow.getCell(colIndex).border = totalBorder;
+      }
+
+      const totalValueCell = totalRow.getCell(6);
+      totalValueCell.value = { formula: `=SUM(F8:F${currentRowNumber - 1})` };
+      totalValueCell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF059669" } }; // Emerald green total
+      totalValueCell.alignment = { vertical: "middle", horizontal: "right" };
+      totalValueCell.numFmt = '"$"#,##0.00';
+      totalValueCell.border = totalBorder;
+
+      // Auto-fit columns
+      worksheet.columns.forEach((column, colIndex) => {
+        let maxLen = 10;
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber >= 7 && rowNumber < currentRowNumber) {
+            const cellVal = row.getCell(colIndex + 1).value;
+            if (cellVal) {
+              const strVal = String(cellVal);
+              if (strVal.length > maxLen) maxLen = strVal.length;
+            }
+          }
+        });
+        column.width = Math.min(maxLen + 4, 35);
+      });
+
+      // Write Workbook to buffer and download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const downloadLink = document.createElement("a");
+      downloadLink.href = URL.createObjectURL(blob);
+      
+      const cleanTitle = activeSubcardModal.sedeName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      downloadLink.download = `jugadores_unicos_${cleanTitle}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    } catch (e) {
+      console.error("Error al exportar jugadores a Excel:", e);
+    }
+  };
+
+  const fetchSubcardDetails = async (
+    idSede: number, 
+    type: 'pago' | 'registro' | 'both', 
+    sedeName: string,
+    idSedeJugador?: number,
+    sedeJugadorName?: string
+  ) => {
+    setActiveSubcardModal({ idSede, type, sedeName, idSedeJugador, sedeJugadorName });
+    setIsSubcardLoading(true);
+    setSubcardPlayersData([]);
+    try {
+      let url = `/api/dashboard/payments/details?period=${period}`;
+      if (period === "custom") url += `&dateFrom=${dateFrom}&dateTo=${dateTo}`;
+      
+      if (type === 'pago') {
+        url += `&idSede=${idSede}`;
+      } else if (type === 'registro') {
+        url += `&idSedeJugador=${idSede}`;
+      } else if (type === 'both') {
+        url += `&idSede=${idSede}&idSedeJugador=${idSedeJugador}`;
+      }
+      
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.success) setSubcardPlayersData(json.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSubcardLoading(false);
+    }
+  };
+
+  const openSubcardTotal = () => {
+    if (!activeSubcardModal) return;
+    const filterTypeLabel = activeSubcardModal.type === 'pago' 
+      ? 'Sede de Pago' 
+      : activeSubcardModal.type === 'registro' 
+      ? 'Sede de Registro (tblJugadores.IdSede)' 
+      : `Pagaron en Sede: ${activeSubcardModal.sedeName} / Pertenecen a: ${activeSubcardModal.sedeJugadorName}`;
+    setDetailsModal({
+      open: true,
+      title: activeSubcardModal.type === 'both' 
+        ? `${activeSubcardModal.sedeName} + ${activeSubcardModal.sedeJugadorName}` 
+        : `${activeSubcardModal.sedeName}`,
+      subtitle: `${filterTypeLabel} — ${periodLabel}`
+    });
+    setDetailsData(subcardPlayersData);
+  };
+
+  // Group subcardPlayersData by player
+  const getGroupedPlayers = (payments: PaymentDetail[]) => {
+    const map: Record<number | string, {
+      idJugador: number;
+      jugador: string;
+      categoria: string;
+      sede: string;
+      sedeJugador?: string;
+      liga: string;
+      total: number;
+      pagosCount: number;
+      payments: PaymentDetail[];
+    }> = {};
+
+    payments.forEach(p => {
+      const key = p.IdJugador || p.Jugador;
+      if (!map[key]) {
+        map[key] = {
+          idJugador: p.IdJugador || 0,
+          jugador: p.Jugador,
+          categoria: p.Categoria || "—",
+          sede: p.Sede || "—",
+          sedeJugador: p.SedeJugador || "—",
+          liga: p.Liga || "—",
+          total: 0,
+          pagosCount: 0,
+          payments: []
+        };
+      }
+      map[key].total += Number(p.Pago);
+      map[key].pagosCount += 1;
+      map[key].payments.push(p);
+    });
+
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  };
+
   useEffect(() => {
     if (isInitialized && user) fetchKPIs(period, dateFrom, dateTo);
   }, [isInitialized, user, period, fetchKPIs]);
@@ -213,7 +682,7 @@ export default function DashboardPage() {
   const kpiCards = [
     { label: "Total Recaudado", value: fmtC(data?.kpi.totalRecaudado ?? 0), sub: fmt(data?.kpi.totalRecaudado ?? 0), icon: <DollarSign size={18} className="text-blue-400" />, bg: "from-blue-600/20 to-blue-800/10", border: "border-blue-500/30", iconBg: "bg-blue-500/20 border-blue-500/20", accent: true },
     { label: "Pagos Registrados", value: (data?.kpi.totalPagos ?? 0).toLocaleString("es-MX"), sub: "transacciones", icon: <CreditCard size={18} className="text-emerald-400" />, bg: "bg-white/5", border: "border-white/10", iconBg: "bg-emerald-500/10 border-emerald-500/10", accent: false },
-    { label: "Jugadores Pagantes", value: (data?.kpi.jugadoresUnicos ?? 0).toLocaleString("es-MX"), sub: "jugadores únicos", icon: <Users size={18} className="text-purple-400" />, bg: "bg-white/5", border: "border-white/10", iconBg: "bg-purple-500/10 border-purple-500/10", accent: false },
+    { label: "Jugadores Pagantes", value: (data?.kpi.jugadoresUnicos ?? 0).toLocaleString("es-MX"), sub: "jugadores únicos", icon: <Users size={18} className="text-purple-400" />, bg: "bg-white/5 hover:bg-purple-500/5 transition-all hover:scale-[1.02] cursor-pointer", border: "border-white/10 hover:border-purple-500/30", iconBg: "bg-purple-500/10 border-purple-500/10", accent: false, onClick: () => setPayingPlayersModalOpen(true) },
     { label: "Promedio por Pago", value: fmtC(data?.kpi.promedioPago ?? 0), sub: fmt(data?.kpi.promedioPago ?? 0), icon: <TrendingUp size={18} className="text-amber-400" />, bg: "bg-white/5", border: "border-white/10", iconBg: "bg-amber-500/10 border-amber-500/10", accent: false },
   ];
 
@@ -288,7 +757,7 @@ export default function DashboardPage() {
 
           {/* Drill Down Details Modal */}
           {detailsModal.open && (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[120] p-4">
               <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
                 {/* Modal Header */}
                 <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
@@ -301,9 +770,20 @@ export default function DashboardPage() {
                       <p className="text-xs text-slate-400">Detalle de pagos — {detailsModal.subtitle}</p>
                     </div>
                   </div>
-                  <button onClick={() => setDetailsModal({ ...detailsModal, open: false })} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
-                    <X size={20} />
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {detailsData.length > 0 && (
+                      <button 
+                        onClick={exportToExcel}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
+                      >
+                        <Download size={14} />
+                        Exportar a Excel
+                      </button>
+                    )}
+                    <button onClick={() => setDetailsModal({ ...detailsModal, open: false })} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                      <X size={20} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Modal Content */}
@@ -384,13 +864,320 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Modal de Jugadores Pagantes por Sucursal */}
+          {payingPlayersModalOpen && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+              <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                {/* Modal Header */}
+                <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-purple-600/20 p-3 rounded-2xl border border-purple-500/20">
+                      <Users size={24} className="text-purple-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-white">Jugadores Pagantes por Sucursal</h3>
+                      <p className="text-xs text-slate-400">Distribución de jugadores únicos que realizaron pagos — {periodLabel}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setPayingPlayersModalOpen(false)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {/* Modal Content */}
+                <div className="flex-1 overflow-y-auto p-6">
+                  {(!data?.bySede || data.bySede.filter(item => (item.Jugadores ?? 0) > 0).length === 0) ? (
+                    <div className="h-48 flex flex-col items-center justify-center text-slate-500 gap-2">
+                      <Search size={48} className="opacity-20" />
+                      <p className="text-lg font-bold">Sin datos para mostrar</p>
+                      <p className="text-sm opacity-60">No hay registros de pagos en el período seleccionado.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {data.bySede.filter(item => (item.Jugadores ?? 0) > 0).map((item) => {
+                        const breakdownItems = data?.breakdown?.filter(b => b.IdSedePago === item.IdSede) || [];
+                        return (
+                          <div 
+                            key={item.IdSede}
+                            className="bg-slate-800/40 border border-white/10 rounded-2xl p-5 relative overflow-hidden group flex flex-col justify-between"
+                          >
+                            {/* Decorative background glow */}
+                            <div className="absolute -right-12 -top-12 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl pointer-events-none" />
+                            
+                            <div>
+                              <div className="flex items-center gap-2 mb-4">
+                                <MapPin size={16} className="text-purple-400" />
+                                <h4 className="text-sm font-black text-white truncate">{item.Sede || 'Sede'}</h4>
+                              </div>
+                              
+                              {/* Subcards Grid */}
+                              <div className="space-y-3 mb-4">
+                                {/* Main Sede de Pago Total (tal como está ahorita, pero simplificado a 1 card principal elegante) */}
+                                <div 
+                                  onClick={() => {
+                                    setPayingPlayersModalOpen(false);
+                                    fetchSubcardDetails(item.IdSede ?? 0, 'pago', item.Sede || 'Sede');
+                                  }}
+                                  className="bg-slate-900/60 border border-white/5 hover:border-purple-500/30 hover:bg-slate-900/90 rounded-xl p-3.5 cursor-pointer transition-all hover:scale-[1.02] flex items-center justify-between group/sub"
+                                >
+                                  <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Pagantes</p>
+                                    <p className="text-[10px] text-slate-500 mt-0.5">Jugadores únicos cobrados aquí</p>
+                                  </div>
+                                  <div className="text-right flex flex-col items-end">
+                                    <div className="flex items-baseline gap-1">
+                                      <span className="text-xl font-black text-purple-400 group-hover/sub:text-purple-300 transition-colors">{item.Jugadores ?? 0}</span>
+                                      <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">jugadores</span>
+                                    </div>
+                                    <p className="text-[9px] font-medium text-slate-500 mt-0.5">{item.Pagos ?? 0} operaciones</p>
+                                  </div>
+                                </div>
+
+                                {/* breakdown registered sedes subcards */}
+                                {breakdownItems.length > 0 && (
+                                  <div className="mt-2 space-y-2">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Sedes de Origen de los Jugadores</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {breakdownItems.map((b) => (
+                                        <div 
+                                          key={b.IdSedeJugador}
+                                          onClick={() => {
+                                            setPayingPlayersModalOpen(false);
+                                            fetchSubcardDetails(item.IdSede ?? 0, 'both', item.Sede || 'Sede', b.IdSedeJugador, b.SedeJugador);
+                                          }}
+                                          className="bg-slate-900/40 border border-white/5 hover:border-purple-500/40 hover:bg-slate-900/80 rounded-xl p-2.5 cursor-pointer transition-all hover:scale-[1.03] flex flex-col justify-between group/subcard"
+                                        >
+                                          <p className="text-[9px] font-black text-slate-300 truncate group-hover/subcard:text-purple-300 transition-colors" title={b.SedeJugador}>
+                                            {b.SedeJugador}
+                                          </p>
+                                          <div className="flex items-baseline justify-between mt-1.5">
+                                            <div className="flex items-baseline gap-0.5">
+                                              <span className="text-xs font-black text-purple-400 group-hover/subcard:text-purple-300 transition-colors">{b.Jugadores}</span>
+                                              <span className="text-[8px] text-slate-500 font-semibold">jug.</span>
+                                            </div>
+                                            <span className="text-[8px] text-slate-500 font-medium">{b.Pagos} op.</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Secondary stats */}
+                            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5 text-left text-[10px]">
+                              <div>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Cobrado en Sede</p>
+                                <p className="text-xs font-black text-emerald-400 mt-0.5">{fmt(item.Total)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Cobrado de Inscritos</p>
+                                <p className="text-xs font-black text-blue-400 mt-0.5">{fmt(item.TotalReg ?? 0)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center text-[11px] text-slate-500 px-8">
+                  <p>Mostrando {data?.bySede.filter(item => (item.Jugadores ?? 0) > 0).length ?? 0} sucursales con actividad</p>
+                  <p className="font-bold text-slate-400">Total Jugadores Únicos: <span className="text-white text-xs font-black ml-1">{data?.kpi.jugadoresUnicos ?? 0}</span></p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Lista de Jugadores por Subtarjeta */}
+          {activeSubcardModal && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-[110] p-4">
+              <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                {/* Header */}
+                <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-purple-600/20 p-3 rounded-2xl border border-purple-500/20">
+                      <Users size={24} className="text-purple-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-white">Jugadores Únicos</h3>
+                      <p className="text-xs text-slate-400">
+                        {activeSubcardModal.type === 'both'
+                          ? `Pagaron en ${activeSubcardModal.sedeName} • Pertenecen a ${activeSubcardModal.sedeJugadorName}`
+                          : `${activeSubcardModal.sedeName} — ${activeSubcardModal.type === 'pago' ? 'Sede de Pago' : 'Sede de Registro (tblJugadores)'}`
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {subcardPlayersData.length > 0 && (
+                      <>
+                        <button 
+                          onClick={exportPlayersToExcel}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
+                          title="Exportar lista de jugadores a Excel"
+                        >
+                          <Download size={13} />
+                          Exportar Excel
+                        </button>
+                        <button 
+                          onClick={openSubcardTotal}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black transition-all shadow-lg shadow-blue-500/20 cursor-pointer"
+                          title="Ver detalle de todos los pagos"
+                        >
+                          <FileText size={13} />
+                          Ver Detalle
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => { setActiveSubcardModal(null); setPayingPlayersModalOpen(true); }} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-6">
+                  {isSubcardLoading ? (
+                    <div className="h-48 flex flex-col items-center justify-center gap-4">
+                      <RefreshCw className="animate-spin text-purple-500" size={32} />
+                      <p className="text-sm text-slate-400 font-bold animate-pulse">Cargando jugadores...</p>
+                    </div>
+                  ) : subcardPlayersData.length === 0 ? (
+                    <div className="h-48 flex flex-col items-center justify-center text-slate-500 gap-2">
+                      <Search size={48} className="opacity-20" />
+                      <p className="text-lg font-bold">No se encontraron jugadores</p>
+                      <p className="text-sm opacity-60">No hay registros para este período.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {getGroupedPlayers(subcardPlayersData).map((player) => (
+                        <div 
+                          key={player.idJugador || player.jugador}
+                          onClick={() => setSelectedPlayerDetails({ idJugador: player.idJugador, name: player.jugador })}
+                          className="bg-slate-800/40 border border-white/5 hover:border-purple-500/40 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] hover:bg-slate-800/80 group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center text-xs font-black text-purple-400 border border-purple-500/20 group-hover:bg-purple-500/20 transition-all">
+                              {player.jugador.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-black text-white group-hover:text-purple-300 transition-colors">{player.jugador}</p>
+                              <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500">
+                                <span className="font-medium bg-white/5 px-2 py-0.5 rounded-full border border-white/5">{player.categoria}</span>
+                                <span>•</span>
+                                <span className="opacity-75 font-semibold">ID: {player.idJugador}</span>
+                                <span>•</span>
+                                <span>{player.sedeJugador}</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="text-right">
+                            <p className="text-sm font-black text-emerald-400">{fmt(player.total)}</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">{player.pagosCount} pagos</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center text-[11px] text-slate-500 px-8">
+                  <p>Total jugadores listados: {getGroupedPlayers(subcardPlayersData).length}</p>
+                  <p className="font-bold text-slate-400">Suma total: <span className="text-emerald-400 font-black ml-1">{fmt(subcardPlayersData.reduce((acc, curr) => acc + Number(curr.Pago), 0))}</span></p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Detalle de Pagos de un Jugador Específico */}
+          {selectedPlayerDetails && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[130] p-4">
+              <div className="bg-[#0b0f19] border border-white/10 rounded-3xl w-full max-w-2xl max-h-[70vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
+                {/* Header */}
+                <div className="p-5 border-b border-white/5 flex items-center justify-between bg-white/3">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20">
+                      <CreditCard size={18} className="text-emerald-400" />
+                    </div>
+                    <div>
+                      <h4 className="text-base font-black text-white">{selectedPlayerDetails.name}</h4>
+                      <p className="text-[10px] text-slate-500">Historial de transacciones — {periodLabel}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedPlayerDetails(null)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Content - Table list of specific player's payments */}
+                <div className="flex-1 overflow-y-auto p-5">
+                  {(() => {
+                    const playerPayments = subcardPlayersData.filter(p => 
+                      (p.IdJugador && p.IdJugador === selectedPlayerDetails.idJugador) || 
+                      (!p.IdJugador && p.Jugador === selectedPlayerDetails.name)
+                    );
+                    
+                    return playerPayments.length === 0 ? (
+                      <div className="py-12 text-center text-slate-500 text-sm">Sin pagos registrados</div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-white/5">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-white/5 text-[9px] uppercase font-black text-slate-500 tracking-wider">
+                              <th className="px-3 py-3">Fecha</th>
+                              <th className="px-3 py-3">Recibo</th>
+                              <th className="px-3 py-3">Liga / Producto</th>
+                              <th className="px-3 py-3 text-right">Monto</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {playerPayments.map((p) => (
+                              <tr key={p.IdPago} className="hover:bg-white/3 transition-colors">
+                                <td className="px-3 py-3 whitespace-nowrap text-slate-400">
+                                  {new Date(p.FechaPago).toLocaleDateString("es-MX", { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  <span className="block text-[9px] opacity-60">{new Date(p.FechaPago).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' })}</span>
+                                </td>
+                                <td className="px-3 py-3 text-slate-400 font-bold">{p.Recibo || '—'}</td>
+                                <td className="px-3 py-3">
+                                  <p className="font-bold text-slate-300">{p.Liga}</p>
+                                  <p className="text-[10px] text-slate-500">{p.Producto}</p>
+                                </td>
+                                <td className="px-3 py-3 text-right font-black text-emerald-400">{fmt(p.Pago)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 bg-white/3 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-500 px-6">
+                  <p>Pagos registrados: {subcardPlayersData.filter(p => (p.IdJugador && p.IdJugador === selectedPlayerDetails.idJugador) || (!p.IdJugador && p.Jugador === selectedPlayerDetails.name)).length}</p>
+                  <p className="font-bold text-slate-400">Total pagado por el jugador: <span className="text-emerald-400 font-black ml-1">{fmt(subcardPlayersData.filter(p => (p.IdJugador && p.IdJugador === selectedPlayerDetails.idJugador) || (!p.IdJugador && p.Jugador === selectedPlayerDetails.name)).reduce((acc, curr) => acc + Number(curr.Pago), 0))}</span></p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* KPI Cards */}
           {isLoading ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{[...Array(4)].map((_, i) => <div key={i} className="h-36 bg-white/5 rounded-2xl animate-pulse border border-white/10" />)}</div>
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {kpiCards.map((card) => (
-                <div key={card.label} className={`relative group ${card.bg} border ${card.border} rounded-2xl p-5 overflow-hidden hover:shadow-lg transition-all`}>
+                <div 
+                  key={card.label} 
+                  onClick={card.onClick}
+                  className={`relative group ${card.bg} border ${card.border} rounded-2xl p-5 overflow-hidden hover:shadow-lg transition-all ${card.onClick ? 'cursor-pointer' : ''}`}
+                >
                   <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/5 rounded-full blur-xl group-hover:bg-white/10 transition-all" />
                   <div className="relative z-10">
                     <div className="flex items-center justify-between mb-3">
