@@ -9,6 +9,32 @@ import DashboardLayout from '@/components/DashboardLayout';
 interface CategoriaSummary {
   Categoria: string;
   Inscritos: number;
+  Bajas: number;
+  BecasDetail: string | null;
+}
+
+function formatBecasDetail(becasDetail: string | null): string {
+  if (!becasDetail) return '';
+  const list = becasDetail.split(',');
+  const counts: Record<string, number> = {};
+  list.forEach(b => {
+    const trimmed = b.trim();
+    if (trimmed) {
+      const pct = /^\d+$/.test(trimmed) ? `${trimmed}%` : trimmed;
+      counts[pct] = (counts[pct] || 0) + 1;
+    }
+  });
+
+  const entries = Object.entries(counts);
+  if (entries.length === 0) return '';
+
+  const sorted = entries.sort((a, b) => {
+    const valA = parseInt(a[0]) || 0;
+    const valB = parseInt(b[0]) || 0;
+    return valB - valA;
+  });
+
+  return sorted.map(([percentage, count]) => `${count} de ${percentage}`).join(', ');
 }
 
 export default function InscripcionesSedePage({ params }: { params: Promise<{ sedeId: string }> }) {
@@ -54,9 +80,14 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
     }
   }, [isInitialized, user, sedeId]);
 
-  const filteredCategorias = categorias.filter(cat => 
+  const sortedCategorias = [...categorias].sort((a, b) => b.Inscritos - a.Inscritos);
+
+  const filteredCategorias = sortedCategorias.filter(cat => 
     cat.Categoria.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const categoriesWithInscritos = filteredCategorias.filter(cat => cat.Inscritos > 0);
+  const categoriesWithoutInscritos = filteredCategorias.filter(cat => cat.Inscritos === 0);
 
   return (
     <DashboardLayout>
@@ -74,10 +105,15 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
               <p className="text-xs text-blue-200 uppercase tracking-widest font-black">Categorías de la sede</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="bg-emerald-500/20 px-4 py-1.5 rounded-xl border border-emerald-500/30">
               <span className="text-sm font-bold text-emerald-400">
                 {categorias.reduce((acc, curr) => acc + curr.Inscritos, 0)} Inscritos Totales
+              </span>
+            </div>
+            <div className="bg-rose-500/20 px-4 py-1.5 rounded-xl border border-rose-500/30">
+              <span className="text-sm font-bold text-rose-400">
+                {categorias.reduce((acc, curr) => acc + (curr.Bajas || 0), 0)} Bajas Totales
               </span>
             </div>
           </div>
@@ -107,10 +143,36 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
               ))}
             </div>
           ) : filteredCategorias.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredCategorias.map((cat) => (
-                <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} />
-              ))}
+            <div className="space-y-12">
+              {/* Categorías con Jugadores */}
+              {categoriesWithInscritos.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-4 mb-8">
+                    <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400/80 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">Categorías con Jugadores</h2>
+                    <div className="h-px flex-1 bg-gradient-to-r from-blue-500/20 to-transparent" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {categoriesWithInscritos.map((cat) => (
+                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Categorías sin Jugadores */}
+              {categoriesWithoutInscritos.length > 0 && (
+                <div className="pt-8">
+                  <div className="flex items-center gap-4 mb-8">
+                    <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500/80 bg-white/5 px-3 py-1 rounded-full border border-white/10">Sin Jugadores</h2>
+                    <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-50 hover:opacity-100 transition-all duration-500">
+                    {categoriesWithoutInscritos.map((cat) => (
+                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-20 bg-white/5 rounded-3xl border border-dashed border-white/20">
@@ -154,6 +216,31 @@ function CategoriaCard({ categoria, sedeId }: { categoria: CategoriaSummary, sed
               Jugadores Inscritos
             </span>
             <span className="text-xl font-black text-emerald-400">{categoria.Inscritos}</span>
+          </div>
+
+          <div className="flex flex-col bg-white/[0.03] p-3 rounded-lg border border-white/5">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
+                Jugadores Becados
+              </span>
+              <span className="text-xl font-black text-purple-400">
+                {categoria.BecasDetail ? categoria.BecasDetail.split(',').filter(Boolean).length : 0}
+              </span>
+            </div>
+            {categoria.BecasDetail && (
+              <p className="text-[10px] text-purple-300/80 font-semibold mt-1 self-start ml-3.5 leading-tight">
+                {formatBecasDetail(categoria.BecasDetail)}
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-between items-center bg-white/[0.03] p-3 rounded-lg border border-white/5">
+            <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
+              <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
+              Jugadores Baja
+            </span>
+            <span className="text-xl font-black text-rose-400">{categoria.Bajas || 0}</span>
           </div>
         </div>
 

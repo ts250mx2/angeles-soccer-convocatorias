@@ -44,6 +44,8 @@ interface DashboardData {
   timeline: TimelineEntry[];
   seasonSummary: { TotalPagosTemporada: number; JugadoresTemporada: number; TotalTemporada: number; };
   breakdown?: { IdSedePago: number; IdSedeJugador: number; SedeJugador: string; Jugadores: number; Pagos: number; Total: number; }[];
+  productBySede?: { IdSedePago: number; IdTipoProducto: number; TipoProducto: string; Pagos: number; Jugadores: number; Total: number; }[];
+  productDetailBySede?: { IdSedePago: number; IdTipoProducto: number; IdProducto: number; Producto: string; Pagos: number; Jugadores: number; Total: number; }[];
 }
 
 interface PaymentDetail {
@@ -162,6 +164,15 @@ export default function DashboardPage() {
   const [subcardPlayersData, setSubcardPlayersData] = useState<PaymentDetail[]>([]);
   const [isSubcardLoading, setIsSubcardLoading] = useState(false);
   const [selectedPlayerDetails, setSelectedPlayerDetails] = useState<{ idJugador: number; name: string } | null>(null);
+  const [subcardSearchQuery, setSubcardSearchQuery] = useState('');
+
+  // Intermediate modal: TipoProducto product breakdown per sede
+  const [tipoProductoModal, setTipoProductoModal] = useState<{
+    idSede: number;
+    sedeName: string;
+    idTipoProducto: number;
+    tipoProductoName: string;
+  } | null>(null);
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -189,7 +200,7 @@ export default function DashboardPage() {
     finally { setIsLoading(false); }
   }, []);
 
-  const fetchDetails = async (filters: { idSede?: number, idLiga?: number, categoria?: string }, title: string, sub: string) => {
+  const fetchDetails = async (filters: { idSede?: number, idSedeJugador?: number, otrasCuotas?: boolean, idLiga?: number, categoria?: string, idProducto?: number, idTipoProducto?: number }, title: string, sub: string) => {
     setDetailsModal({ open: true, title, subtitle: sub });
     setIsDetailsLoading(true);
     setDetailsData([]);
@@ -197,8 +208,12 @@ export default function DashboardPage() {
       let url = `/api/dashboard/payments/details?period=${period}`;
       if (period === "custom") url += `&dateFrom=${dateFrom}&dateTo=${dateTo}`;
       if (filters.idSede) url += `&idSede=${filters.idSede}`;
+      if (filters.idSedeJugador) url += `&idSedeJugador=${filters.idSedeJugador}`;
+      if (filters.otrasCuotas) url += `&otrasCuotas=true`;
       if (filters.idLiga) url += `&idLiga=${filters.idLiga}`;
       if (filters.categoria) url += `&categoria=${encodeURIComponent(filters.categoria)}`;
+      if (filters.idTipoProducto) url += `&idTipoProducto=${filters.idTipoProducto}`;
+      if (filters.idProducto) url += `&idProducto=${filters.idProducto}`;
       
       const res = await fetch(url);
       const json = await res.json();
@@ -899,7 +914,7 @@ export default function DashboardPage() {
                         return (
                           <div 
                             key={item.IdSede}
-                            className="bg-slate-800/40 border border-white/10 rounded-2xl p-5 relative overflow-hidden group flex flex-col justify-between"
+                          className="bg-slate-800/40 border border-white/10 rounded-2xl p-5 relative overflow-hidden group flex flex-col min-h-[300px]"
                           >
                             {/* Decorative background glow */}
                             <div className="absolute -right-12 -top-12 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl pointer-events-none" />
@@ -934,47 +949,104 @@ export default function DashboardPage() {
                                 </div>
 
                                 {/* breakdown registered sedes subcards */}
-                                {breakdownItems.length > 0 && (
-                                  <div className="mt-2 space-y-2">
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Sedes de Origen de los Jugadores</p>
-                                    <div className="grid grid-cols-2 gap-2">
-                                      {breakdownItems.map((b) => (
-                                        <div 
-                                          key={b.IdSedeJugador}
-                                          onClick={() => {
-                                            setPayingPlayersModalOpen(false);
-                                            fetchSubcardDetails(item.IdSede ?? 0, 'both', item.Sede || 'Sede', b.IdSedeJugador, b.SedeJugador);
-                                          }}
-                                          className="bg-slate-900/40 border border-white/5 hover:border-purple-500/40 hover:bg-slate-900/80 rounded-xl p-2.5 cursor-pointer transition-all hover:scale-[1.03] flex flex-col justify-between group/subcard"
-                                        >
-                                          <p className="text-[9px] font-black text-slate-300 truncate group-hover/subcard:text-purple-300 transition-colors" title={b.SedeJugador}>
-                                            {b.SedeJugador}
-                                          </p>
-                                          <div className="flex items-baseline justify-between mt-1.5">
-                                            <div className="flex items-baseline gap-0.5">
-                                              <span className="text-xs font-black text-purple-400 group-hover/subcard:text-purple-300 transition-colors">{b.Jugadores}</span>
-                                              <span className="text-[8px] text-slate-500 font-semibold">jug.</span>
+                                {/* Fixed-height sedes de origen area - same height on all cards */}
+                                <div className="h-[185px]">
+                                  {breakdownItems.length > 0 && (
+                                    <div className="mt-2 space-y-2">
+                                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Sedes de Origen de los Jugadores</p>
+                                      <div className="grid grid-cols-2 gap-2 h-[145px] overflow-y-auto pr-0.5 content-start">
+                                        {breakdownItems.map((b) => (
+                                          <div 
+                                            key={b.IdSedeJugador}
+                                            onClick={() => {
+                                              setPayingPlayersModalOpen(false);
+                                              fetchSubcardDetails(item.IdSede ?? 0, 'both', item.Sede || 'Sede', b.IdSedeJugador, b.SedeJugador);
+                                            }}
+                                            className="bg-slate-900/40 border border-white/5 hover:border-purple-500/40 hover:bg-slate-900/80 rounded-xl p-2.5 cursor-pointer transition-all hover:scale-[1.03] flex flex-col justify-between group/subcard"
+                                          >
+                                            <p className="text-[9px] font-black text-slate-300 truncate group-hover/subcard:text-purple-300 transition-colors" title={b.SedeJugador}>
+                                              {b.SedeJugador}
+                                            </p>
+                                            <div className="flex items-baseline justify-between mt-1.5">
+                                              <div className="flex items-baseline gap-0.5">
+                                                <span className="text-xs font-black text-purple-400 group-hover/subcard:text-purple-300 transition-colors">{b.Jugadores}</span>
+                                                <span className="text-[8px] text-slate-500 font-semibold">jug.</span>
+                                              </div>
+                                              <span className="text-[8px] text-slate-500 font-medium">{b.Pagos} op.</span>
                                             </div>
-                                            <span className="text-[8px] text-slate-500 font-medium">{b.Pagos} op.</span>
                                           </div>
-                                        </div>
-                                      ))}
+                                        ))}
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
+                                  )}
+                                </div>
                               </div>
                             </div>
                             
-                            {/* Secondary stats */}
-                            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5 text-left text-[10px]">
-                              <div>
-                                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Cobrado en Sede</p>
-                                <p className="text-xs font-black text-emerald-400 mt-0.5">{fmt(item.Total)}</p>
-                              </div>
-                              <div>
-                                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Cobrado de Inscritos</p>
-                                <p className="text-xs font-black text-blue-400 mt-0.5">{fmt(item.TotalReg ?? 0)}</p>
-                              </div>
+                            {/* Product TYPE cards */}
+                            <div>
+                            {(() => {
+                              const tipoItems = data?.productBySede?.filter(p => p.IdSedePago === item.IdSede) || [];
+                              if (tipoItems.length === 0) {
+                                return (
+                                  <div
+                                    onClick={() => {
+                                      setPayingPlayersModalOpen(false);
+                                      fetchDetails({ idSede: item.IdSede }, item.Sede || 'Sede', `Cobrado en Sede — ${periodLabel}`);
+                                    }}
+                                    className="cursor-pointer hover:bg-white/5 p-2 rounded-lg border border-transparent hover:border-white/10 transition-all flex flex-col pt-3 border-t border-white/5"
+                                    title="Ver detalle de todo lo cobrado en sede"
+                                  >
+                                    <p className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">Cobrado Sede</p>
+                                    <p className="text-[10px] font-black text-emerald-400 mt-1">{fmt(item.Total)}</p>
+                                  </div>
+                                );
+                              }
+                              
+                              const TIPO_COLORS = [
+                                { text: 'text-emerald-400', border: 'hover:border-emerald-500/40', dot: 'bg-emerald-500' },
+                                { text: 'text-blue-400',    border: 'hover:border-blue-500/40',    dot: 'bg-blue-500' },
+                                { text: 'text-amber-400',   border: 'hover:border-amber-500/40',   dot: 'bg-amber-500' },
+                                { text: 'text-rose-400',    border: 'hover:border-rose-500/40',    dot: 'bg-rose-500' },
+                                { text: 'text-cyan-400',    border: 'hover:border-cyan-500/40',    dot: 'bg-cyan-500' },
+                                { text: 'text-purple-400',  border: 'hover:border-purple-500/40',  dot: 'bg-purple-500' },
+                              ];
+
+                              return (
+                                <div className="pt-3 border-t border-white/5 mt-1">
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">Cobrado por Tipo de Producto</p>
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    {tipoItems.map((tipo, ti) => {
+                                      const c = TIPO_COLORS[ti % TIPO_COLORS.length];
+                                      return (
+                                        <div
+                                          key={tipo.IdTipoProducto}
+                                          onClick={() => {
+                                            setTipoProductoModal({
+                                              idSede: item.IdSede ?? 0,
+                                              sedeName: item.Sede || 'Sede',
+                                              idTipoProducto: tipo.IdTipoProducto,
+                                              tipoProductoName: tipo.TipoProducto,
+                                            });
+                                          }}
+                                          className={`bg-slate-900/50 border border-white/5 ${c.border} rounded-xl p-2.5 cursor-pointer transition-all hover:scale-[1.03] hover:bg-slate-900/80 flex flex-col group/tipo`}
+                                          title={`Ver desglose de ${tipo.TipoProducto}`}
+                                        >
+                                          <div className="flex items-start gap-1.5 mb-2">
+                                            <div className={`w-1.5 h-1.5 rounded-full ${c.dot} flex-shrink-0 mt-[3px]`} />
+                                            <p className="text-[9px] font-black text-slate-300 group-hover/tipo:text-white transition-colors leading-tight" title={tipo.TipoProducto}>
+                                              {tipo.TipoProducto}
+                                            </p>
+                                          </div>
+                                          <p className={`text-[11px] font-black ${c.text} leading-none`}>{fmtC(Number(tipo.Total))}</p>
+                                          <p className="text-[8px] text-slate-500 mt-0.5">{tipo.Pagos} pagos · {tipo.Jugadores} jug.</p>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                             </div>
                           </div>
                         );
@@ -987,6 +1059,127 @@ export default function DashboardPage() {
                 <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center text-[11px] text-slate-500 px-8">
                   <p>Mostrando {data?.bySede.filter(item => (item.Jugadores ?? 0) > 0).length ?? 0} sucursales con actividad</p>
                   <p className="font-bold text-slate-400">Total Jugadores Únicos: <span className="text-white text-xs font-black ml-1">{data?.kpi.jugadoresUnicos ?? 0}</span></p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Intermedio: Desglose por Producto dentro de un TipoProducto */}
+          {tipoProductoModal && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[115] p-4">
+              <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-lg max-h-[75vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                {/* Header */}
+                <div className="p-5 border-b border-white/5 flex items-center justify-between bg-white/5">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-amber-500/15 p-2.5 rounded-2xl border border-amber-500/20">
+                      <BarChart3 size={20} className="text-amber-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white">{tipoProductoModal.tipoProductoName}</h3>
+                      <p className="text-[11px] text-slate-400">{tipoProductoModal.sedeName} — Desglose por producto · {periodLabel}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setTipoProductoModal(null)}
+                    className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-5">
+                  {(() => {
+                    const productos = data?.productDetailBySede?.filter(
+                      p => p.IdSedePago === tipoProductoModal.idSede && p.IdTipoProducto === tipoProductoModal.idTipoProducto
+                    ) || [];
+
+                    if (productos.length === 0) {
+                      return (
+                        <div className="py-12 text-center text-slate-500 text-sm">
+                          Sin detalle de productos disponible
+                        </div>
+                      );
+                    }
+
+                    const totalTipo = productos.reduce((acc, p) => acc + Number(p.Total), 0);
+                    const maxTotal = Math.max(...productos.map(p => Number(p.Total)), 1);
+
+                    const PROD_COLORS = [
+                      { text: 'text-emerald-400', bar: 'from-emerald-600 to-emerald-400', badge: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' },
+                      { text: 'text-blue-400',    bar: 'from-blue-600 to-blue-400',       badge: 'bg-blue-500/10 border-blue-500/20 text-blue-400' },
+                      { text: 'text-amber-400',   bar: 'from-amber-600 to-amber-400',     badge: 'bg-amber-500/10 border-amber-500/20 text-amber-400' },
+                      { text: 'text-rose-400',    bar: 'from-rose-600 to-rose-400',       badge: 'bg-rose-500/10 border-rose-500/20 text-rose-400' },
+                      { text: 'text-cyan-400',    bar: 'from-cyan-600 to-cyan-400',       badge: 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400' },
+                      { text: 'text-purple-400',  bar: 'from-purple-600 to-purple-400',   badge: 'bg-purple-500/10 border-purple-500/20 text-purple-400' },
+                    ];
+
+                    return (
+                      <div className="space-y-2">
+                        {productos.map((prod, pi) => {
+                          const c = PROD_COLORS[pi % PROD_COLORS.length];
+                          const pct = (Number(prod.Total) / maxTotal) * 100;
+                          return (
+                            <div
+                              key={prod.IdProducto}
+                              onClick={() => {
+                                setTipoProductoModal(null);
+                                fetchDetails(
+                                  { idSede: tipoProductoModal.idSede, idProducto: prod.IdProducto },
+                                  `${tipoProductoModal.sedeName} — ${prod.Producto}`,
+                                  `Producto: ${prod.Producto} · ${tipoProductoModal.tipoProductoName} — ${periodLabel}`
+                                );
+                              }}
+                              className="bg-slate-800/40 border border-white/5 hover:border-white/20 rounded-2xl p-4 cursor-pointer transition-all hover:scale-[1.01] hover:bg-slate-800/80 group"
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${c.badge}`}>
+                                    #{pi + 1}
+                                  </span>
+                                  <p className="text-sm font-black text-white group-hover:text-slate-200 truncate transition-colors">
+                                    {prod.Producto}
+                                  </p>
+                                </div>
+                                <div className="text-right flex-shrink-0 ml-3">
+                                  <p className={`text-sm font-black ${c.text}`}>{fmt(Number(prod.Total))}</p>
+                                  <p className="text-[10px] text-slate-500">{prod.Pagos} pagos · {prod.Jugadores} jug.</p>
+                                </div>
+                              </div>
+                              {/* Mini bar */}
+                              <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                <div className={`h-full bg-gradient-to-r ${c.bar} rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
+                              </div>
+                              <div className="flex justify-between items-center mt-1.5">
+                                <span className="text-[9px] text-slate-500">{((Number(prod.Total) / totalTipo) * 100).toFixed(1)}% del tipo</span>
+                                <span className="text-[9px] text-slate-500 opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1">
+                                  Ver detalle <ChevronRight size={9} />
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center text-[11px] text-slate-500 px-6">
+                  <p>
+                    {data?.productDetailBySede?.filter(
+                      p => p.IdSedePago === tipoProductoModal.idSede && p.IdTipoProducto === tipoProductoModal.idTipoProducto
+                    ).length ?? 0} productos en esta categoría
+                  </p>
+                  <p className="font-bold text-slate-400">
+                    Total: <span className="text-amber-400 font-black ml-1">
+                      {fmt(
+                        (data?.productDetailBySede?.filter(
+                          p => p.IdSedePago === tipoProductoModal.idSede && p.IdTipoProducto === tipoProductoModal.idTipoProducto
+                        ) || []).reduce((acc, p) => acc + Number(p.Total), 0)
+                      )}
+                    </span>
+                  </p>
                 </div>
               </div>
             </div>
@@ -1033,11 +1226,25 @@ export default function DashboardPage() {
                         </button>
                       </>
                     )}
-                    <button onClick={() => { setActiveSubcardModal(null); setPayingPlayersModalOpen(true); }} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                     <button onClick={() => { setActiveSubcardModal(null); setPayingPlayersModalOpen(true); setSubcardSearchQuery(''); }} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
                       <X size={20} />
                     </button>
                   </div>
                 </div>
+
+                {/* Search Bar inside Submodal */}
+                {subcardPlayersData.length > 0 && !isSubcardLoading && (
+                  <div className="px-6 py-3 border-b border-white/5 bg-slate-900/40 relative group flex items-center">
+                    <Search className="absolute left-9 text-slate-500 group-focus-within:text-purple-400 transition-colors" size={14} />
+                    <input 
+                      type="text" 
+                      placeholder="Buscar jugador por nombre o ID..." 
+                      value={subcardSearchQuery}
+                      onChange={(e) => setSubcardSearchQuery(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 outline-none focus:bg-white/10 focus:border-purple-500/50 transition-all text-white text-xs placeholder-slate-500"
+                    />
+                  </div>
+                )}
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6">
@@ -1054,41 +1261,64 @@ export default function DashboardPage() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {getGroupedPlayers(subcardPlayersData).map((player) => (
-                        <div 
-                          key={player.idJugador || player.jugador}
-                          onClick={() => setSelectedPlayerDetails({ idJugador: player.idJugador, name: player.jugador })}
-                          className="bg-slate-800/40 border border-white/5 hover:border-purple-500/40 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] hover:bg-slate-800/80 group"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center text-xs font-black text-purple-400 border border-purple-500/20 group-hover:bg-purple-500/20 transition-all">
-                              {player.jugador.charAt(0).toUpperCase()}
+                      {(() => {
+                        const grouped = getGroupedPlayers(subcardPlayersData);
+                        const filtered = grouped.filter(p => 
+                          p.jugador.toLowerCase().includes(subcardSearchQuery.toLowerCase()) ||
+                          p.idJugador.toString().includes(subcardSearchQuery)
+                        );
+                        
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="py-12 text-center text-slate-500 text-xs">
+                              No se encontraron jugadores que coincidan con la búsqueda
                             </div>
-                            <div>
-                              <p className="text-sm font-black text-white group-hover:text-purple-300 transition-colors">{player.jugador}</p>
-                              <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500">
-                                <span className="font-medium bg-white/5 px-2 py-0.5 rounded-full border border-white/5">{player.categoria}</span>
-                                <span>•</span>
-                                <span className="opacity-75 font-semibold">ID: {player.idJugador}</span>
-                                <span>•</span>
-                                <span>{player.sedeJugador}</span>
+                          );
+                        }
+                        
+                        return filtered.map((player) => (
+                          <div 
+                            key={player.idJugador || player.jugador}
+                            onClick={() => setSelectedPlayerDetails({ idJugador: player.idJugador, name: player.jugador })}
+                            className="bg-slate-800/40 border border-white/5 hover:border-purple-500/40 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] hover:bg-slate-800/80 group"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center text-xs font-black text-purple-400 border border-purple-500/20 group-hover:bg-purple-500/20 transition-all">
+                                {player.jugador.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="text-sm font-black text-white group-hover:text-purple-300 transition-colors">{player.jugador}</p>
+                                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500">
+                                  <span className="font-medium bg-white/5 px-2 py-0.5 rounded-full border border-white/5">{player.categoria}</span>
+                                  <span>•</span>
+                                  <span className="opacity-75 font-semibold">ID: {player.idJugador}</span>
+                                  <span>•</span>
+                                  <span>{player.sedeJugador}</span>
+                                </div>
                               </div>
                             </div>
+                            
+                            <div className="text-right">
+                              <p className="text-sm font-black text-emerald-400">{fmt(player.total)}</p>
+                              <p className="text-[10px] text-slate-500 mt-0.5">{player.pagosCount} pagos</p>
+                            </div>
                           </div>
-                          
-                          <div className="text-right">
-                            <p className="text-sm font-black text-emerald-400">{fmt(player.total)}</p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">{player.pagosCount} pagos</p>
-                          </div>
-                        </div>
-                      ))}
+                        ));
+                      })()}
                     </div>
                   )}
                 </div>
 
                 {/* Footer */}
                 <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center text-[11px] text-slate-500 px-8">
-                  <p>Total jugadores listados: {getGroupedPlayers(subcardPlayersData).length}</p>
+                  <p>Total jugadores listados: {(() => {
+                    const grouped = getGroupedPlayers(subcardPlayersData);
+                    const filtered = grouped.filter(p => 
+                      p.jugador.toLowerCase().includes(subcardSearchQuery.toLowerCase()) ||
+                      p.idJugador.toString().includes(subcardSearchQuery)
+                    );
+                    return filtered.length;
+                  })()}</p>
                   <p className="font-bold text-slate-400">Suma total: <span className="text-emerald-400 font-black ml-1">{fmt(subcardPlayersData.reduce((acc, curr) => acc + Number(curr.Pago), 0))}</span></p>
                 </div>
               </div>

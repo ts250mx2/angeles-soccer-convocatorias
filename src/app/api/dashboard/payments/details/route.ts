@@ -29,6 +29,9 @@ export async function GET(request: Request) {
         const idSedeJugador = searchParams.get('idSedeJugador');
         const idLiga = searchParams.get('idLiga');
         const categoria = searchParams.get('categoria');
+        const otrasCuotas = searchParams.get('otrasCuotas');
+        const idTipoProducto = searchParams.get('idTipoProducto');
+        const idProducto = searchParams.get('idProducto');
  
         const dateFilter = buildDateFilter(period, dateFrom, dateTo);
  
@@ -70,6 +73,11 @@ export async function GET(request: Request) {
         if (idSede) {
             query += ' AND P.IdSedePago = ?';
             params.push(idSede);
+            
+            if (otrasCuotas === 'true') {
+                query += " AND (J.IdSede != ? OR J.Jugador LIKE '%Ventas%')";
+                params.push(idSede);
+            }
         }
         if (idSedeJugador) {
             if (idSedeJugador === '99999') {
@@ -82,6 +90,14 @@ export async function GET(request: Request) {
         if (idLiga) {
             query += ' AND PR.IdLiga = ?';
             params.push(idLiga);
+        }
+        if (idTipoProducto) {
+            query += ' AND PR.IdTipoProducto = ?';
+            params.push(idTipoProducto);
+        }
+        if (idProducto) {
+            query += ' AND P.IdProducto = ?';
+            params.push(idProducto);
         }
         if (categoria) {
             query += ' AND DC.Categoria = ?';

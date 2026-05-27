@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, MapPin, ChevronRight, UserCheck } from 'lucide-react';
+import { Search, MapPin, ChevronRight, UserCheck, Users } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
 
@@ -10,6 +10,32 @@ interface SedeSummary {
   IdSede: number;
   Sede: string;
   Inscritos: number;
+  Bajas: number;
+  BecasDetail: string | null;
+}
+
+function formatBecasDetail(becasDetail: string | null): string {
+  if (!becasDetail) return '';
+  const list = becasDetail.split(',');
+  const counts: Record<string, number> = {};
+  list.forEach(b => {
+    const trimmed = b.trim();
+    if (trimmed) {
+      const pct = /^\d+$/.test(trimmed) ? `${trimmed}%` : trimmed;
+      counts[pct] = (counts[pct] || 0) + 1;
+    }
+  });
+
+  const entries = Object.entries(counts);
+  if (entries.length === 0) return '';
+
+  const sorted = entries.sort((a, b) => {
+    const valA = parseInt(a[0]) || 0;
+    const valB = parseInt(b[0]) || 0;
+    return valB - valA;
+  });
+
+  return sorted.map(([percentage, count]) => `${count} de ${percentage}`).join(', ');
 }
 
 export default function InscripcionesSedesPage() {
@@ -79,7 +105,7 @@ export default function InscripcionesSedesPage() {
               />
             </div>
 
-            <div className="flex gap-4 w-full md:w-auto">
+            <div className="flex gap-4 w-full md:w-auto flex-wrap">
               <div className="flex-1 md:flex-none bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl flex items-center gap-3">
                 <div className="bg-emerald-500/20 p-2 rounded-lg">
                   <UserCheck size={18} className="text-emerald-400" />
@@ -87,6 +113,15 @@ export default function InscripcionesSedesPage() {
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Total Inscritos</p>
                   <p className="text-xl font-bold">{sedes.reduce((acc, curr) => acc + curr.Inscritos, 0)}</p>
+                </div>
+              </div>
+              <div className="flex-1 md:flex-none bg-rose-500/10 border border-rose-500/20 px-4 py-2 rounded-xl flex items-center gap-3">
+                <div className="bg-rose-500/20 p-2 rounded-lg">
+                  <Users size={18} className="text-rose-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-rose-400 font-bold">Total Bajas</p>
+                  <p className="text-xl font-bold">{sedes.reduce((acc, curr) => acc + (curr.Bajas || 0), 0)}</p>
                 </div>
               </div>
               <div className="flex-1 md:flex-none bg-blue-500/10 border border-blue-500/20 px-4 py-2 rounded-xl flex items-center gap-3">
@@ -182,6 +217,31 @@ function SedeCard({ sede }: { sede: SedeSummary }) {
               Jugadores Inscritos
             </span>
             <span className="text-xl font-black text-emerald-400">{sede.Inscritos}</span>
+          </div>
+
+          <div className="flex flex-col bg-white/[0.03] p-3 rounded-lg border border-white/5">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
+                Jugadores Becados
+              </span>
+              <span className="text-xl font-black text-purple-400">
+                {sede.BecasDetail ? sede.BecasDetail.split(',').filter(Boolean).length : 0}
+              </span>
+            </div>
+            {sede.BecasDetail && (
+              <p className="text-[10px] text-purple-300/80 font-semibold mt-1 self-start ml-3.5 leading-tight">
+                {formatBecasDetail(sede.BecasDetail)}
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-between items-center bg-white/[0.03] p-3 rounded-lg border border-white/5">
+            <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
+              <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
+              Jugadores Baja
+            </span>
+            <span className="text-xl font-black text-rose-400">{sede.Bajas || 0}</span>
           </div>
         </div>
 

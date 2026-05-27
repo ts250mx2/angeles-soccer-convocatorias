@@ -27,6 +27,9 @@ export default function InscripcionesJugadoresPage({ params }: { params: Promise
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
+  type FilterOption = 'todos' | 'activos' | 'becados' | 'sin_beca' | 'bajas';
+  const [activeFilter, setActiveFilter] = useState<FilterOption>('todos');
+
   // Check if user is logged in
   useEffect(() => {
     if (isInitialized && !user) {
@@ -60,10 +63,31 @@ export default function InscripcionesJugadoresPage({ params }: { params: Promise
     }
   }, [isInitialized, user, sedeId, decodedCategoria]);
 
+  const countTodos = players.length;
+  const countActivos = players.filter(p => p.Status === 0).length;
+  const countBecados = players.filter(p => p.Beca !== null && p.Beca !== undefined && p.Beca !== '' && String(p.Beca) !== '0').length;
+  const countSinBeca = players.filter(p => p.Status === 0 && (p.Beca === null || p.Beca === undefined || p.Beca === '' || String(p.Beca) === '0')).length;
+  const countBajas = players.filter(p => p.Status === 2).length;
+
   const filteredPlayers = players.filter(player => {
     const matchesSearch = player.Jugador.toLowerCase().includes(searchQuery.toLowerCase()) ||
       player.IdJugador.toString().includes(searchQuery);
-    return matchesSearch;
+    
+    if (!matchesSearch) return false;
+
+    switch (activeFilter) {
+      case 'activos':
+        return player.Status === 0;
+      case 'becados':
+        return player.Beca !== null && player.Beca !== undefined && player.Beca !== '' && String(player.Beca) !== '0';
+      case 'sin_beca':
+        return player.Status === 0 && (player.Beca === null || player.Beca === undefined || player.Beca === '' || String(player.Beca) === '0');
+      case 'bajas':
+        return player.Status === 2;
+      case 'todos':
+      default:
+        return true;
+    }
   });
 
   const getStatusBadge = (status: number) => {
@@ -125,6 +149,37 @@ export default function InscripcionesJugadoresPage({ params }: { params: Promise
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-400 transition-colors" size={18} />
             <input type="text" placeholder="Buscar por nombre o ID..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 outline-none focus:bg-white/10 focus:border-blue-500/50 transition-all text-white placeholder-slate-400" />
+          </div>
+
+          {/* Filters Bar */}
+          <div className="mb-8 flex gap-2 overflow-x-auto pb-2 flex-wrap">
+            {[
+              { id: 'todos', label: 'Todos', count: countTodos, color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
+              { id: 'activos', label: 'Activos', count: countActivos, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+              { id: 'becados', label: 'Becados', count: countBecados, color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
+              { id: 'sin_beca', label: 'Sin Beca', count: countSinBeca, color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+              { id: 'bajas', label: 'Bajas', count: countBajas, color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
+            ].map(opt => {
+              const isActive = activeFilter === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setActiveFilter(opt.id as FilterOption)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                    isActive
+                      ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20 scale-[1.02]'
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <span>{opt.label}</span>
+                  <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-black ${
+                    isActive ? 'bg-white/20 text-white' : opt.color
+                  }`}>
+                    {opt.count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="space-y-4">

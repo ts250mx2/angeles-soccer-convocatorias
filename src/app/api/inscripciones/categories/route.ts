@@ -15,11 +15,13 @@ export async function GET(request: Request) {
         const query = `
             SELECT 
                 J.Categoria,
-                COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Inscritos
+                COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Inscritos,
+                COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas,
+                GROUP_CONCAT(CASE WHEN J.Status = 0 AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != '' THEN J.Beca END) as BecasDetail
             FROM tblJugadores J
             WHERE J.IdSede = ?
             GROUP BY J.Categoria
-            ORDER BY J.Categoria ASC
+            ORDER BY Inscritos DESC, J.Categoria ASC
         `;
 
         const [rows] = await pool.query(query, [sedeId]);

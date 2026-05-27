@@ -189,6 +189,46 @@ export async function GET(request: Request) {
         `;
         const [brRows] = await pool.query(breakdownQuery, kpiParams) as any[];
 
+        // ─── Product TYPE breakdown per Sede de Pago (cards nivel 1) ────
+        const productBySedeQuery = `
+            SELECT
+                P.IdSedePago,
+                TP.IdTipoProducto,
+                TP.TipoProducto,
+                COUNT(DISTINCT P.IdPago)    AS Pagos,
+                COUNT(DISTINCT P.IdJugador) AS Jugadores,
+                COALESCE(SUM(P.Pago), 0)   AS Total
+            FROM tblPagos P
+            INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+            INNER JOIN tblTiposProductos TP ON PR.IdTipoProducto = TP.IdTipoProducto
+            WHERE P.Status = 0
+              AND ${dateFilter}
+              ${currentSeasonId ? 'AND P.IdTemporada = ?' : ''}
+            GROUP BY P.IdSedePago, TP.IdTipoProducto, TP.TipoProducto
+            ORDER BY P.IdSedePago, Total DESC
+        `;
+        const [productBySedeRows] = await pool.query(productBySedeQuery, kpiParams) as any[];
+
+        // ─── Product detail breakdown per Sede+TipoProducto (drill-down nivel 2) ──
+        const productDetailBySedeQuery = `
+            SELECT
+                P.IdSedePago,
+                PR.IdTipoProducto,
+                PR.IdProducto,
+                PR.Producto,
+                COUNT(DISTINCT P.IdPago)    AS Pagos,
+                COUNT(DISTINCT P.IdJugador) AS Jugadores,
+                COALESCE(SUM(P.Pago), 0)   AS Total
+            FROM tblPagos P
+            INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+            WHERE P.Status = 0
+              AND ${dateFilter}
+              ${currentSeasonId ? 'AND P.IdTemporada = ?' : ''}
+            GROUP BY P.IdSedePago, PR.IdTipoProducto, PR.IdProducto, PR.Producto
+            ORDER BY P.IdSedePago, PR.IdTipoProducto, Total DESC
+        `;
+        const [productDetailBySedeRows] = await pool.query(productDetailBySedeQuery, kpiParams) as any[];
+
         return NextResponse.json({
             success: true,
             period,
@@ -207,6 +247,8 @@ export async function GET(request: Request) {
             timeline: timelineRows,
             seasonSummary,
             breakdown: brRows,
+            productBySede: productBySedeRows,
+            productDetailBySede: productDetailBySedeRows,
         });
     } catch (error) {
         console.error('Error fetching dashboard KPIs:', error);
