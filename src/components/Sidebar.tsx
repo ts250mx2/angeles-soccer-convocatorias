@@ -17,6 +17,10 @@ import {
   Shield,
   MapPin,
   UserCheck,
+  Banknote,
+  LayoutList,
+  ShoppingCart,
+  Receipt,
 } from "lucide-react";
 
 interface NavItem {
@@ -34,7 +38,9 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({
     "Copas y Ligas": true,
+    Caja: true,
     Jugadores: true,
+    Ventas: true,
   });
 
   const navItems: NavItem[] = [
@@ -62,6 +68,19 @@ export default function Sidebar() {
       ],
     },
     {
+      label: "Caja",
+      icon: <Banknote size={18} />,
+      adminOnly: true,
+      children: [
+        {
+          label: "Control de Caja",
+          href: "/caja",
+          icon: <LayoutList size={16} />,
+          adminOnly: true,
+        },
+      ],
+    },
+    {
       label: "Jugadores",
       icon: <Users size={18} />,
       children: [
@@ -81,6 +100,23 @@ export default function Sidebar() {
           href: "/adeudos/sede",
           icon: <MapPin size={16} />,
           adminOnly: true,
+        },
+      ],
+    },
+    {
+      label: "Ventas",
+      icon: <ShoppingCart size={18} />,
+      adminOnly: true,
+      children: [
+        {
+          label: "Ventas de Productos",
+          href: "/ventas",
+          icon: <ShoppingCart size={16} />,
+        },
+        {
+          label: "Cortes de Caja",
+          href: "/caja",
+          icon: <Receipt size={16} />,
         },
       ],
     },
