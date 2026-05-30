@@ -95,7 +95,7 @@ export async function GET(
             usuario: r.Usuario,
         }));
 
-        const totalEgresos = porFormaPago.reduce((s, r) => s + r.total, 0);
+        const totalEgresos = porFormaPago.reduce((s: number, r: any) => s + r.total, 0);
 
         return NextResponse.json({
             success: true,
