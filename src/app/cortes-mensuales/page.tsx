@@ -4,10 +4,12 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   KeyRound, DollarSign, TrendingDown, Lock, MapPin,
   RefreshCw, X, AlertCircle, Wallet, Scissors, ChevronRight,
-  CreditCard, Shirt, Receipt, Ticket, Sparkles, CalendarRange, LayoutGrid,
+  CreditCard, Shirt, Receipt, Ticket, Sparkles, CalendarRange, LayoutGrid, FileDown,
 } from "lucide-react";
 
 interface CorteData {
@@ -501,6 +503,94 @@ export default function CortesMensualesPage() {
   const totalVentas  = filtered.reduce((s, a) => s + Number(a.TotalVentas),  0);
   const totalEgresos = filtered.reduce((s, a) => s + Number(a.TotalEgresos), 0);
 
+  const sedeLabel = selectedSede === "all"
+    ? "Todas las sedes"
+    : (sedeOptions.find((s) => s.IdSede === selectedSede)?.Sede ?? "Sede");
+
+  // Exportar el resumen mensual (página principal) — un renglón por mes
+  const handleExportResumenPDF = () => {
+    if (monthEntries.length === 0) return;
+
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text("Cortes de Caja por Mes", 14, 20);
+    doc.setFontSize(12);
+    doc.text(`Año: ${year}  ·  ${sedeLabel}`, 14, 28);
+    doc.setFontSize(10);
+    doc.text(`Fecha de generación: ${new Date().toLocaleString("es-MX")}`, 14, 34);
+
+    const rows = [...monthEntries]
+      .sort((a, b) => a[0] - b[0])
+      .map(([mes, items]) => {
+        const v = items.reduce((s, a) => s + Number(a.TotalVentas), 0);
+        const e = items.reduce((s, a) => s + Number(a.TotalEgresos), 0);
+        return [MESES[mes - 1], String(items.length), fmt(v), fmt(e), fmt(v - e)];
+      });
+
+    autoTable(doc, {
+      startY: 40,
+      head: [["Mes", "Aperturas", "Ventas", "Egresos", "Neto"]],
+      body: rows,
+      theme: "grid",
+      headStyles: { fillColor: [59, 130, 246] },
+      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
+      foot: [["TOTAL", String(filtered.length), fmt(totalVentas), fmt(totalEgresos), fmt(totalVentas - totalEgresos)]],
+      footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: "bold" },
+    });
+
+    doc.save(`Cortes_por_Mes_${year}_${sedeLabel.replace(/\s+/g, "_")}.pdf`);
+  };
+
+  // Exportar el detalle del mes abierto — un renglón por IdApertura
+  const handleExportDetallePDF = () => {
+    if (!monthDetail || monthDetail.items.length === 0) return;
+    const mesLabel = `${MESES[monthDetail.mes - 1]} ${year}`;
+
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text(`Detalle de Cortes — ${mesLabel}`, 14, 20);
+    doc.setFontSize(12);
+    doc.text(sedeLabel, 14, 28);
+    doc.setFontSize(10);
+    doc.text(`Fecha de generación: ${new Date().toLocaleString("es-MX")}`, 14, 34);
+
+    const rows = monthSedeEntries.flatMap(([, { items: sedeItems }]) =>
+      sedeItems.map((ap) => {
+        const v = Number(ap.TotalVentas);
+        const e = Number(ap.TotalEgresos);
+        return [
+          `#${ap.IdApertura}`,
+          new Date(ap.FechaApertura).toLocaleDateString("es-MX"),
+          ap.Sede,
+          ap.Cajero ?? "—",
+          ap.FechaCierre ? "Cerrado" : "En curso",
+          fmt(v),
+          fmt(e),
+          fmt(v - e),
+        ];
+      })
+    );
+
+    autoTable(doc, {
+      startY: 40,
+      head: [["Apertura", "Fecha", "Sede", "Cajero", "Estado", "Ventas", "Egresos", "Neto"]],
+      body: rows,
+      theme: "grid",
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [59, 130, 246] },
+      columnStyles: { 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" } },
+      foot: [[
+        "TOTAL", "", "", "", "",
+        fmt(monthDetail.items.reduce((s, a) => s + Number(a.TotalVentas), 0)),
+        fmt(monthDetail.items.reduce((s, a) => s + Number(a.TotalEgresos), 0)),
+        fmt(monthDetail.items.reduce((s, a) => s + (Number(a.TotalVentas) - Number(a.TotalEgresos)), 0)),
+      ]],
+      footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: "bold" },
+    });
+
+    doc.save(`Detalle_Cortes_${MESES[monthDetail.mes - 1]}_${year}_${sedeLabel.replace(/\s+/g, "_")}.pdf`);
+  };
+
   return (
     <DashboardLayout>
       <main className="overflow-y-auto flex-1 text-white">
@@ -520,6 +610,15 @@ export default function CortesMensualesPage() {
                 Act.&nbsp;{lastUpdated.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
+            <button
+              onClick={handleExportResumenPDF}
+              disabled={isLoading || monthEntries.length === 0}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-200 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Exportar resumen a PDF"
+            >
+              <FileDown size={15} />
+              <span className="hidden sm:inline">Exportar PDF</span>
+            </button>
             <button
               onClick={() => fetchAperturas(year)}
               disabled={isLoading}
@@ -736,9 +835,19 @@ export default function CortesMensualesPage() {
                     </p>
                   </div>
                 </div>
-                <button onClick={() => setMonthDetailOpen(false)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
-                  <X size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportDetallePDF}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-200 text-xs font-bold transition-all"
+                    title="Exportar detalle a PDF"
+                  >
+                    <FileDown size={15} />
+                    <span className="hidden sm:inline">Exportar PDF</span>
+                  </button>
+                  <button onClick={() => setMonthDetailOpen(false)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
 
               {/* Content */}
