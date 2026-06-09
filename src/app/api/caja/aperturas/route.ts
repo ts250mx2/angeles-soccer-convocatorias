@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 
-function buildAperturaDateFilter(period: string, dateFrom: string | null, dateTo: string | null): string {
+function buildAperturaDateFilter(period: string, dateFrom: string | null, dateTo: string | null, year: string | null): string {
     if (dateFrom && dateTo) {
         return `DATE(AC.FechaApertura) BETWEEN '${dateFrom}' AND '${dateTo}'`;
     }
@@ -13,6 +13,14 @@ function buildAperturaDateFilter(period: string, dateFrom: string | null, dateTo
         case 'month':
             return `YEAR(AC.FechaApertura) = YEAR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '-06:00'))
                 AND MONTH(AC.FechaApertura) = MONTH(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '-06:00'))`;
+        case 'year': {
+            // Filtro por año completo (vista "Cortes de Caja por Mes"). year se sanitiza con parseInt.
+            const y = parseInt(year ?? '', 10);
+            const safeYear = Number.isFinite(y) ? y : null;
+            return safeYear !== null
+                ? `YEAR(AC.FechaApertura) = ${safeYear}`
+                : `YEAR(AC.FechaApertura) = YEAR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '-06:00'))`;
+        }
         case 'week':
         default:
             return `YEARWEEK(AC.FechaApertura, 1) = YEARWEEK(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '-06:00'), 1)`;
@@ -25,8 +33,14 @@ export async function GET(request: Request) {
         const period = searchParams.get('period') || 'week';
         const dateFrom = searchParams.get('dateFrom');
         const dateTo = searchParams.get('dateTo');
+        const year = searchParams.get('year');
 
-        const dateFilter = buildAperturaDateFilter(period, dateFrom, dateTo);
+        const dateFilter = buildAperturaDateFilter(period, dateFrom, dateTo, year);
+
+        // En la vista por año agrupamos por mes en el cliente: ordenamos por mes primero.
+        const orderBy = period === 'year'
+            ? 'ORDER BY MONTH(AC.FechaApertura) ASC, S.Sede ASC, AC.FechaApertura ASC'
+            : 'ORDER BY S.Sede ASC, AC.FechaApertura ASC';
 
         const query = `
             SELECT
@@ -34,6 +48,8 @@ export async function GET(request: Request) {
                 AC.IdSede,
                 S.Sede,
                 AC.FechaApertura AS FechaApertura,
+                MONTH(AC.FechaApertura) AS Mes,
+                YEAR(AC.FechaApertura)  AS Anio,
                 UA.Usuario AS UsuarioApertura,
                 AC.FechaCierre AS FechaCierre,
                 UC.Usuario AS UsuarioCierre,
@@ -68,7 +84,7 @@ export async function GET(request: Request) {
                 GROUP BY IdApertura, IdSedePago
             ) E ON E.IdApertura = AC.IdApertura AND E.IdSedePago = AC.IdSede
             WHERE ${dateFilter}
-            ORDER BY S.Sede ASC, AC.FechaApertura ASC
+            ${orderBy}
         `;
 
         const [rows] = await pool.query(query) as any[];

@@ -21,6 +21,7 @@ import {
   LayoutList,
   ShoppingCart,
   Receipt,
+  CalendarRange,
 } from "lucide-react";
 
 interface NavItem {
@@ -117,6 +118,11 @@ export default function Sidebar() {
           label: "Cortes de Caja",
           href: "/caja",
           icon: <Receipt size={16} />,
+        },
+        {
+          label: "Cortes de Caja por Mes",
+          href: "/cortes-mensuales",
+          icon: <CalendarRange size={16} />,
         },
       ],
     },
