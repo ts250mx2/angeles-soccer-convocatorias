@@ -18,7 +18,12 @@ interface Player {
   Beca: string | null;
   IdSede: number;
   SedeNombre: string;
+  Adeudo: number;
+  Pagado: number;
 }
+
+const fmtMoney = (n: number) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
 
 interface PageConfig {
   startMonth: number;
@@ -203,6 +208,9 @@ export default function SedeDetailPage({ params }: { params: Promise<{ sedeId: s
     return acc;
   }, { alCorriente: 0, conAdeudo: 0, becados: 0 });
 
+  const totalAdeudo = players.reduce((acc, p) => acc + (p.Adeudo || 0), 0);
+  const totalRecaudado = players.reduce((acc, p) => acc + (p.Pagado || 0), 0);
+
   const handleExportPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(18);
@@ -259,15 +267,20 @@ export default function SedeDetailPage({ params }: { params: Promise<{ sedeId: s
         }
         if (missing.length > 0) statusText = `DEBE: ${missing.join(', ')}`;
       }
-      return [p.Categoria, p.IdJugador, p.Jugador, p.Beca && String(p.Beca) !== '0' ? `SÍ (${p.Beca})` : 'NO', statusText];
+      return [p.Categoria, p.IdJugador, p.Jugador, p.Beca && String(p.Beca) !== '0' ? `SÍ (${p.Beca})` : 'NO', statusText, fmtMoney(p.Adeudo)];
     });
+
+    const totalAdeudo = filteredPlayers.reduce((acc, p) => acc + (p.Adeudo || 0), 0);
 
     autoTable(doc, {
       startY: (doc as any).lastAutoTable.finalY + 15,
-      head: [['Categoría', 'ID', 'Jugador', 'Beca', 'Estado']],
+      head: [['Categoría', 'ID', 'Jugador', 'Beca', 'Estado', 'Adeudo']],
       body: tableData,
+      foot: [['', '', '', '', 'TOTAL ADEUDO', fmtMoney(totalAdeudo)]],
       theme: 'grid',
       headStyles: { fillColor: [30, 41, 59] },
+      footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: 'bold' },
+      columnStyles: { 5: { halign: 'right' } },
       didDrawCell: (data) => {
         if (data.section === 'body' && data.column.index === 4) {
           const text = data.cell.text[0];
@@ -315,17 +328,23 @@ export default function SedeDetailPage({ params }: { params: Promise<{ sedeId: s
 
           <div className="mb-8 flex flex-wrap gap-2 items-stretch">
             {[
-              { id: 'all', label: 'Total', val: players.length, color: 'slate' },
-              { id: 'activos', label: 'Activos', val: players.filter(p => p.Status === 0).length, color: 'emerald' },
-              { id: 'bajas', label: 'Bajas', val: players.filter(p => p.Status === 2).length, color: 'rose' },
-              { id: 'corriente', label: 'Al Corriente', val: stats.alCorriente, color: 'blue' },
-              { id: 'adeudo', label: 'Con Adeudo', val: stats.conAdeudo, color: 'amber' },
-              { id: 'beca', label: 'Becados', val: stats.becados, color: 'purple' },
+              { id: 'all', label: 'Total', val: players.length, color: 'slate', sub: null, subLabel: null, subClass: '' },
+              { id: 'activos', label: 'Activos', val: players.filter(p => p.Status === 0).length, color: 'emerald', sub: null, subLabel: null, subClass: '' },
+              { id: 'bajas', label: 'Bajas', val: players.filter(p => p.Status === 2).length, color: 'rose', sub: null, subLabel: null, subClass: '' },
+              { id: 'corriente', label: 'Al Corriente', val: stats.alCorriente, color: 'blue', sub: fmtMoney(totalRecaudado), subLabel: 'Recaudado', subClass: 'text-emerald-400' },
+              { id: 'adeudo', label: 'Con Adeudo', val: stats.conAdeudo, color: 'amber', sub: fmtMoney(totalAdeudo), subLabel: 'Total adeudo', subClass: 'text-rose-400' },
+              { id: 'beca', label: 'Becados', val: stats.becados, color: 'purple', sub: null, subLabel: null, subClass: '' },
             ].map(f => (
               <button key={f.id} onClick={() => setActiveFilter(f.id as any)}
                 className={`flex-1 min-w-[110px] p-3 rounded-2xl text-center transition-all border ${activeFilter === f.id ? `bg-${f.color}-500/20 border-${f.color}-500/40 shadow-lg scale-[1.02]` : `bg-white/5 border-white/10 hover:bg-white/10`}`}>
                 <p className={`text-[9px] uppercase font-bold text-${f.color}-400 mb-1 tracking-wider whitespace-nowrap`}>{f.label}</p>
                 <p className="text-xl font-black text-white">{f.val}</p>
+                {f.sub && (
+                  <div className="mt-1 pt-1 border-t border-white/10">
+                    <p className="text-[7px] uppercase font-bold text-slate-500 tracking-wider">{f.subLabel}</p>
+                    <p className={`text-xs font-black ${f.subClass} whitespace-nowrap`}>{f.sub}</p>
+                  </div>
+                )}
               </button>
             ))}
           </div>
@@ -403,6 +422,12 @@ export default function SedeDetailPage({ params }: { params: Promise<{ sedeId: s
                                 );
                               })}
                             </div>
+                          </div>
+                          <div className="flex flex-col items-center gap-1 min-w-[84px]">
+                            <p className="text-[8px] uppercase font-bold text-slate-500">Adeudo</p>
+                            <p className={`text-sm font-black ${player.Adeudo > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                              {fmtMoney(player.Adeudo)}
+                            </p>
                           </div>
                           <div className="text-right flex flex-col items-end gap-2">
                             {getStatusBadge(player.Status)}

@@ -4,10 +4,12 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   KeyRound, DollarSign, TrendingDown, Lock, MapPin,
   RefreshCw, Calendar, X, AlertCircle, Wallet, Scissors, ChevronRight,
-  CreditCard, Shirt, Receipt, Ticket, Sparkles,
+  CreditCard, Shirt, Receipt, Ticket, Sparkles, FileDown,
 } from "lucide-react";
 
 type Period = "today" | "yesterday" | "week" | "month" | "custom";
@@ -187,6 +189,149 @@ export default function CajaPage() {
       setCorteLoading(false);
     }
   }, []);
+
+  // Exporta el corte de caja abierto a un PDF presentable.
+  const handleExportCortePDF = () => {
+    if (!corteData) return;
+    const c = corteData;
+    const money = (n: number) => fmt(Number(n) || 0);
+
+    const doc = new jsPDF();
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+
+    // ── Encabezado ──
+    doc.setFillColor(30, 58, 138);
+    doc.rect(0, 0, pageW, 28, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.text("CORTE DE CAJA", 14, 13);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text("Ángeles Soccer", 14, 21);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(`Apertura #${c.idApertura}`, pageW - 14, 12, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(c.cerrado ? "CERRADO" : "EN CURSO", pageW - 14, 19, { align: "right" });
+
+    const fechaAp = new Date(c.fechaApertura).toLocaleDateString("es-MX", {
+      weekday: "long", day: "2-digit", month: "long", year: "numeric",
+    });
+    const fechaApCap = fechaAp.charAt(0).toUpperCase() + fechaAp.slice(1);
+
+    doc.setTextColor(30, 41, 59);
+
+    const headStyles = { fillColor: [37, 99, 235] as [number, number, number], textColor: 255, fontStyle: "bold" as const, halign: "left" as const };
+    const labelCol = { 0: { cellWidth: 65 } };
+    const money2 = { 1: { halign: "right" as const, fontStyle: "bold" as const } };
+
+    // ── Datos generales ──
+    autoTable(doc, {
+      startY: 34,
+      head: [[{ content: "DATOS GENERALES", colSpan: 2 }]],
+      body: [
+        ["Sede", c.sede || "—"],
+        ["Fecha", fechaApCap],
+        ["Hora de apertura", fmtTime(c.fechaApertura)],
+        ["Hora de cierre", c.fechaCierre ? fmtTime(c.fechaCierre) : "—"],
+        ["Cajero", c.cajero || "—"],
+        ["Supervisor apertura", c.usuarioApertura || "—"],
+        ["Supervisor cierre", c.usuarioCierre || "—"],
+      ],
+      theme: "grid",
+      headStyles,
+      bodyStyles: { fontSize: 9 },
+      columnStyles: { 0: { cellWidth: 65, fontStyle: "bold" } },
+    });
+
+    // ── Resumen de ventas ──
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 5,
+      head: [[{ content: "RESUMEN DE VENTAS", colSpan: 2 }]],
+      body: [
+        ["Fondo de caja", money(c.fondoCaja)],
+        ["Ventas membresías", money(c.ventasMembresias)],
+        ["Ventas uniformes", money(c.ventasUniformes)],
+        ["Total ventas", money(c.totalVentas)],
+        ["Ventas en dólares", money(c.ventasDolares)],
+        ["Total gastos", money(c.totalGastos)],
+      ],
+      theme: "grid",
+      headStyles,
+      bodyStyles: { fontSize: 9 },
+      columnStyles: { ...labelCol, ...money2 },
+      didParseCell: (data: any) => {
+        if (data.section === "body" && data.row.index === 3) {
+          data.cell.styles.fillColor = [219, 234, 254];
+        }
+      },
+    });
+
+    // ── Captura por forma de pago ──
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 5,
+      head: [[{ content: "CAPTURA (FORMAS DE PAGO)", colSpan: 2 }]],
+      body: [
+        ["Efectivo", money(c.captura.efectivo)],
+        ["Tarjeta crédito", money(c.captura.tarjetaCredito)],
+        ["Tarjeta débito", money(c.captura.tarjetaDebito)],
+        ["Depósitos", money(c.captura.depositos)],
+        ["Transferencias", money(c.captura.transferencias)],
+        ["Open Pay", money(c.captura.openPay)],
+        ["Dólares", money(c.captura.dolares)],
+      ],
+      theme: "grid",
+      headStyles,
+      bodyStyles: { fontSize: 9 },
+      columnStyles: { 0: { cellWidth: 65 }, 1: { halign: "right" } },
+    });
+
+    // ── Arqueo de efectivo ──
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 5,
+      head: [[{ content: "ARQUEO DE EFECTIVO", colSpan: 2 }]],
+      body: [
+        ["Fondo de caja", money(c.fondoCaja)],
+        ["Ventas en efectivo", money(c.ventasEfectivo)],
+        ["Gastos en efectivo", money(c.gastosEfectivo)],
+        ["Efectivo en caja (calculado)", money(c.efectivoCaja)],
+        ["Efectivo capturado", money(c.efectivoCaptura)],
+        ["Diferencia", money(c.diferencia)],
+        ["Diferencia dólares", money(c.difDolares)],
+      ],
+      theme: "grid",
+      headStyles,
+      bodyStyles: { fontSize: 9 },
+      columnStyles: { ...labelCol, ...money2 },
+      didParseCell: (data: any) => {
+        if (data.section === "body" && (data.row.index === 5 || data.row.index === 6)) {
+          const val = data.row.index === 5 ? c.diferencia : c.difDolares;
+          data.cell.styles.fillColor = val === 0 ? [220, 252, 231] : [254, 226, 226];
+          data.cell.styles.textColor = val === 0 ? [22, 101, 52] : [153, 27, 27];
+        }
+      },
+    });
+
+    // ── Firmas + pie ──
+    let y = (doc as any).lastAutoTable.finalY + 24;
+    if (y > pageH - 20) { doc.addPage(); y = 40; }
+    doc.setDrawColor(120);
+    doc.line(22, y, 92, y);
+    doc.line(pageW - 92, y, pageW - 22, y);
+    doc.setFontSize(9);
+    doc.setTextColor(80);
+    doc.text("Cajero", 57, y + 5, { align: "center" });
+    doc.text("Supervisor", pageW - 57, y + 5, { align: "center" });
+
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text(`Generado el ${new Date().toLocaleString("es-MX")}`, 14, pageH - 8);
+
+    doc.save(`Corte_Caja_${(c.sede || "Sede").replace(/\s+/g, "_")}_Apertura${c.idApertura}.pdf`);
+  };
 
   // Ventas modal (desglose por forma de pago — frmProcCorteCaja)
   const [ventasOpen, setVentasOpen]       = useState(false);
@@ -692,9 +837,20 @@ export default function CajaPage() {
                     </p>
                   </div>
                 </div>
-                <button onClick={() => setCorteOpen(false)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
-                  <X size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportCortePDF}
+                    disabled={!corteData || corteLoading}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-200 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Exportar corte a PDF"
+                  >
+                    <FileDown size={15} />
+                    <span className="hidden sm:inline">PDF</span>
+                  </button>
+                  <button onClick={() => setCorteOpen(false)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
 
               {/* Content */}
