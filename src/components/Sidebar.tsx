@@ -22,6 +22,8 @@ import {
   ShoppingCart,
   Receipt,
   CalendarRange,
+  LayoutGrid,
+  QrCode,
 } from "lucide-react";
 
 interface NavItem {
@@ -49,6 +51,12 @@ export default function Sidebar() {
       label: "Dashboard",
       href: "/dashboard",
       icon: <LayoutDashboard size={18} />,
+      adminOnly: true,
+    },
+    {
+      label: "QR Accesos",
+      href: "/qr-accesos",
+      icon: <QrCode size={18} />,
       adminOnly: true,
     },
     {
@@ -123,6 +131,11 @@ export default function Sidebar() {
           label: "Cortes de Caja por Mes",
           href: "/cortes-mensuales",
           icon: <CalendarRange size={16} />,
+        },
+        {
+          label: "Ventas por Tipo de Producto",
+          href: "/ventas/por-tipo",
+          icon: <LayoutGrid size={16} />,
         },
       ],
     },

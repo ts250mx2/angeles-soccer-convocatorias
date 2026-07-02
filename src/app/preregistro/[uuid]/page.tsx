@@ -1,17 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
-  User, MapPin, GraduationCap, Phone, Mail, IdCard,
-  Loader2, CheckCircle2, AlertCircle, ShieldCheck, Home, Users, Search, Shield,
+  User, MapPin, Phone, Mail, UserPlus,
+  Loader2, CheckCircle2, AlertCircle, ShieldCheck, Users, Shield,
 } from "lucide-react";
 
-interface Estado { IdEstado: number; Estado: string; }
-interface Escuela {
-  IdEscuela: number; Escuela: string; Municipio: string | null;
-  Colonia: string | null; CodigoPostal: string | null; NivelEducativo: string | null;
-}
 interface SedeInfo { IdSede: number; Sede: string; Estado: string; }
 
 const EMPTY = {
@@ -43,7 +38,6 @@ function calcAge(dobStr: string): number | null {
 }
 
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
-const CURP_RE = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
 
 const inputCls =
   "w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 text-base outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition placeholder:text-slate-400 disabled:bg-slate-100 disabled:text-slate-500";
@@ -56,44 +50,29 @@ export default function PreregistroPage() {
   const [bootLoading, setBootLoading] = useState(true);
   const [sede, setSede] = useState<SedeInfo | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [estados, setEstados] = useState<Estado[]>([]);
 
   const [form, setForm] = useState<Form>(EMPTY);
   const setField = useCallback((k: keyof Form, v: string) => {
     setForm((f) => ({ ...f, [k]: EMAIL_FIELDS.has(k) ? v : v.toUpperCase() }));
   }, []);
 
-  // CP autollenado
-  const [cpStatus, setCpStatus] = useState<"idle" | "loading" | "ok" | "notfound">("idle");
-  const [colonias, setColonias] = useState<string[]>([]);
-  const [coloniaManual, setColoniaManual] = useState(false);
-
-  // Escuela autocomplete
-  const [escResults, setEscResults] = useState<Escuela[]>([]);
-  const [escOpen, setEscOpen] = useState(false);
-  const [escLoading, setEscLoading] = useState(false);
-  const escBoxRef = useRef<HTMLDivElement>(null);
-
   const [errors, setErrors] = useState<Partial<Record<keyof Form, string>>>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [busy, setBusy] = useState<null | "submit" | "sibling">(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [addedCount, setAddedCount] = useState(0);
+  const [siblingBanner, setSiblingBanner] = useState(false);
 
-  // ── Boot: validar UUID + cargar estados ──
+  // ── Boot: validar UUID de la sede ──
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [sedeRes, estRes] = await Promise.all([
-          fetch(`/api/preregistro/sede/${uuid}`),
-          fetch(`/api/preregistro/estados`),
-        ]);
-        const sedeJson = await sedeRes.json();
-        const estJson = await estRes.json();
+        const res = await fetch(`/api/preregistro/sede/${uuid}`);
+        const json = await res.json();
         if (!alive) return;
-        if (sedeJson.success) setSede(sedeJson.data);
-        else setLinkError(sedeJson.message ?? "Enlace no válido");
-        if (estJson.success) setEstados(estJson.data);
+        if (json.success) setSede(json.data);
+        else setLinkError(json.message ?? "Enlace no válido");
       } catch {
         if (alive) setLinkError("No se pudo cargar el formulario. Revisa tu conexión.");
       } finally {
@@ -102,73 +81,6 @@ export default function PreregistroPage() {
     })();
     return () => { alive = false; };
   }, [uuid]);
-
-  // ── CP autollenado cuando hay 5 dígitos ──
-  useEffect(() => {
-    const cp = form.CodigoPostal;
-    if (!/^\d{5}$/.test(cp)) {
-      setCpStatus("idle");
-      setColonias([]);
-      return;
-    }
-    let alive = true;
-    setCpStatus("loading");
-    (async () => {
-      try {
-        const res = await fetch(`/api/preregistro/cp/${cp}`);
-        const json = await res.json();
-        if (!alive) return;
-        if (json.success) {
-          setColonias(json.data.colonias ?? []);
-          setColoniaManual(false);
-          setForm((f) => ({
-            ...f,
-            Estado: (json.data.estado ?? f.Estado ?? "").toUpperCase(),
-            Municipio: (json.data.municipio ?? f.Municipio ?? "").toUpperCase(),
-            Colonia: "",
-            // si cambia el estado, reiniciamos escuela
-            IdEscuela: "", Escuela: "",
-          }));
-          setCpStatus("ok");
-        } else {
-          setColonias([]);
-          setColoniaManual(true);
-          setCpStatus("notfound");
-        }
-      } catch {
-        if (alive) { setCpStatus("notfound"); setColoniaManual(true); }
-      }
-    })();
-    return () => { alive = false; };
-  }, [form.CodigoPostal]);
-
-  // ── Escuela autocomplete (debounce) ──
-  useEffect(() => {
-    if (!escOpen) return;
-    const estado = form.Estado;
-    const q = form.Escuela.trim();
-    if (!estado) { setEscResults([]); return; }
-    let alive = true;
-    setEscLoading(true);
-    const t = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/preregistro/escuelas?estado=${encodeURIComponent(estado)}&q=${encodeURIComponent(q)}`);
-        const json = await res.json();
-        if (alive && json.success) setEscResults(json.data);
-      } catch { /* noop */ }
-      finally { if (alive) setEscLoading(false); }
-    }, 300);
-    return () => { alive = false; clearTimeout(t); };
-  }, [form.Escuela, form.Estado, escOpen]);
-
-  // cerrar dropdown escuela al click fuera
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (escBoxRef.current && !escBoxRef.current.contains(e.target as Node)) setEscOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, []);
 
   const now = new Date();
   const maxBirth = ymd(new Date(now.getFullYear() - 3, now.getMonth(), now.getDate()));
@@ -184,25 +96,20 @@ export default function PreregistroPage() {
       if (age === null) e.FechaNacimiento = "Fecha inválida";
       else if (age < 3 || age > 18) e.FechaNacimiento = "La edad debe ser de 3 a 18 años";
     }
-    if (!form.EntidadNacimiento) e.EntidadNacimiento = "Requerido";
     if (form.Genero !== "1" && form.Genero !== "2") e.Genero = "Requerido";
-    if (form.CURP.trim() && !CURP_RE.test(form.CURP.trim().toUpperCase())) e.CURP = "CURP inválida (18 caracteres)";
-    if (form.CodigoPostal.trim() && !/^\d{5}$/.test(form.CodigoPostal.trim())) e.CodigoPostal = "5 dígitos";
     if (form.CorreoElectronicoPadre.trim() && !isEmail(form.CorreoElectronicoPadre.trim())) e.CorreoElectronicoPadre = "Correo inválido";
     if (form.CorreoElectronicoMadre.trim() && !isEmail(form.CorreoElectronicoMadre.trim())) e.CorreoElectronicoMadre = "Correo inválido";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = async (ev: React.FormEvent) => {
-    ev.preventDefault();
+  const savePlayer = async (): Promise<boolean> => {
     setSubmitError(null);
     if (!validate()) {
       const first = document.querySelector("[data-error='true']");
       first?.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
+      return false;
     }
-    setSubmitting(true);
     try {
       const res = await fetch(`/api/preregistro`, {
         method: "POST",
@@ -210,13 +117,39 @@ export default function PreregistroPage() {
         body: JSON.stringify({ uuid, ...form }),
       });
       const json = await res.json();
-      if (json.success) setDone(true);
-      else setSubmitError(json.message ?? "No se pudo guardar el preregistro");
+      if (json.success) return true;
+      setSubmitError(json.message ?? "No se pudo guardar el preregistro");
+      return false;
     } catch {
       setSubmitError("Error de conexión. Inténtalo de nuevo.");
-    } finally {
-      setSubmitting(false);
+      return false;
     }
+  };
+
+  const handleSubmit = async (ev?: React.FormEvent) => {
+    ev?.preventDefault();
+    if (busy) return;
+    setBusy("submit");
+    const ok = await savePlayer();
+    if (ok) setDone(true);
+    setBusy(null);
+  };
+
+  // Guarda al jugador actual y prepara el formulario para un hermano:
+  // conserva apellidos y datos de contacto; limpia nombre, fecha de nacimiento y género.
+  const handleAddSibling = async () => {
+    if (busy) return;
+    setBusy("sibling");
+    const ok = await savePlayer();
+    if (ok) {
+      setAddedCount((c) => c + 1);
+      setForm((f) => ({ ...f, Nombre: "", FechaNacimiento: "", Genero: "" }));
+      setErrors({});
+      setSiblingBanner(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      setTimeout(() => setSiblingBanner(false), 2600);
+    }
+    setBusy(null);
   };
 
   // ── Pantallas de estado ──
@@ -245,11 +178,14 @@ export default function PreregistroPage() {
         <div className="bg-emerald-100 p-4 rounded-2xl"><CheckCircle2 className="text-emerald-600" size={48} /></div>
         <h1 className="text-2xl font-black text-slate-800">¡Preregistro enviado!</h1>
         <p className="text-sm text-slate-600 max-w-sm">
-          Gracias. El preregistro de <span className="font-bold">{form.Nombre} {form.ApellidoPaterno}</span> se
-          recibió correctamente en la sede <span className="font-bold">{sede.Sede}</span>.
+          {addedCount > 0 ? (
+            <>Se recibieron <span className="font-bold">{addedCount + 1}</span> preregistros de tu familia en la sede <span className="font-bold">{sede.Sede}</span>. ¡Gracias!</>
+          ) : (
+            <>Gracias. El preregistro de <span className="font-bold">{form.Nombre} {form.ApellidoPaterno}</span> se recibió correctamente en la sede <span className="font-bold">{sede.Sede}</span>.</>
+          )}
         </p>
         <button
-          onClick={() => { setForm(EMPTY); setColonias([]); setCpStatus("idle"); setErrors({}); setDone(false); window.scrollTo(0, 0); }}
+          onClick={() => { setForm(EMPTY); setErrors({}); setDone(false); setAddedCount(0); setSiblingBanner(false); window.scrollTo(0, 0); }}
           className="mt-2 px-5 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition"
         >
           Registrar otro jugador
@@ -280,6 +216,15 @@ export default function PreregistroPage() {
 
       <form onSubmit={handleSubmit} className="px-4 mt-5 space-y-6" noValidate>
 
+        {addedCount > 0 && (
+          <div className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold border transition-colors ${siblingBanner ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-blue-50 border-blue-200 text-blue-700"}`}>
+            <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
+            {siblingBanner
+              ? "¡Hermano agregado! Captura los datos del siguiente."
+              : `${addedCount} jugador(es) agregado(s) en esta familia.`}
+          </div>
+        )}
+
         {/* ── Datos del jugador ── */}
         <Section icon={<User size={16} />} title="Datos del jugador">
           <Field label="Nombre(s)" required error={errors.Nombre}>
@@ -297,27 +242,12 @@ export default function PreregistroPage() {
             <input type="date" min={minBirth} max={maxBirth} className={inputCls}
               value={form.FechaNacimiento} onChange={(e) => setField("FechaNacimiento", e.target.value)} />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Género" required error={errors.Genero}>
-              <select className={inputCls} value={form.Genero} onChange={(e) => setField("Genero", e.target.value)}>
-                <option value="">Selecciona</option>
-                <option value="1">Masculino</option>
-                <option value="2">Femenino</option>
-              </select>
-            </Field>
-            <Field label="Entidad de nacimiento" required error={errors.EntidadNacimiento}>
-              <select className={inputCls} value={form.EntidadNacimiento} onChange={(e) => setField("EntidadNacimiento", e.target.value)}>
-                <option value="">Selecciona</option>
-                {estados.map((e) => <option key={e.IdEstado} value={e.Estado}>{e.Estado}</option>)}
-              </select>
-            </Field>
-          </div>
-          <Field label="CURP" error={errors.CURP} hint="Opcional — 18 caracteres">
-            <div className="relative">
-              <IdCard size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input className={`${inputCls} pl-9 uppercase`} maxLength={18} value={form.CURP}
-                onChange={(e) => setField("CURP", e.target.value.toUpperCase())} placeholder="CURP" />
-            </div>
+          <Field label="Género" required error={errors.Genero}>
+            <select className={inputCls} value={form.Genero} onChange={(e) => setField("Genero", e.target.value)}>
+              <option value="">Selecciona</option>
+              <option value="1">Masculino</option>
+              <option value="2">Femenino</option>
+            </select>
           </Field>
           <Field label="Contacto de emergencia" hint="Nombre y teléfono">
             <input className={inputCls} value={form.ContactoEmergencia} onChange={(e) => setField("ContactoEmergencia", e.target.value)} placeholder="Ej. Ana López 81 1234 5678" />
@@ -365,90 +295,6 @@ export default function PreregistroPage() {
           </div>
         </Section>
 
-        {/* ── Domicilio ── */}
-        <Section icon={<Home size={16} />} title="Domicilio">
-          <Field label="Calle">
-            <input className={inputCls} value={form.Calle} onChange={(e) => setField("Calle", e.target.value)} />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="No. Exterior">
-              <input className={inputCls} value={form.NumExterior} onChange={(e) => setField("NumExterior", e.target.value)} />
-            </Field>
-            <Field label="No. Interior">
-              <input className={inputCls} value={form.NumInterior} onChange={(e) => setField("NumInterior", e.target.value)} />
-            </Field>
-          </div>
-          <Field label="Código Postal" error={errors.CodigoPostal} hint="5 dígitos — autocompleta estado, municipio y colonia">
-            <div className="relative">
-              <input inputMode="numeric" maxLength={5} className={inputCls} value={form.CodigoPostal}
-                onChange={(e) => setField("CodigoPostal", e.target.value.replace(/\D/g, "").slice(0, 5))} placeholder="Ej. 64000" />
-              {cpStatus === "loading" && <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />}
-              {cpStatus === "ok" && <CheckCircle2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500" />}
-            </div>
-            {cpStatus === "notfound" && <p className="text-xs text-amber-600 mt-1">CP no encontrado, captura estado/municipio/colonia manualmente.</p>}
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Estado">
-              <select className={inputCls} value={form.Estado}
-                onChange={(e) => setField("Estado", e.target.value)}>
-                <option value="">Selecciona</option>
-                {estados.map((e) => <option key={e.IdEstado} value={e.Estado}>{e.Estado}</option>)}
-              </select>
-            </Field>
-            <Field label="Municipio">
-              <input className={inputCls} value={form.Municipio} onChange={(e) => setField("Municipio", e.target.value)} />
-            </Field>
-          </div>
-          <Field label="Colonia">
-            {colonias.length > 0 && !coloniaManual ? (
-              <select className={inputCls} value={form.Colonia}
-                onChange={(e) => {
-                  if (e.target.value === "__otra__") { setColoniaManual(true); setField("Colonia", ""); }
-                  else setField("Colonia", e.target.value);
-                }}>
-                <option value="">Selecciona colonia</option>
-                {colonias.map((c) => <option key={c} value={c.toUpperCase()}>{c.toUpperCase()}</option>)}
-                <option value="__otra__">OTRA (ESPECIFICAR)…</option>
-              </select>
-            ) : (
-              <input className={inputCls} value={form.Colonia} onChange={(e) => setField("Colonia", e.target.value)} placeholder="Colonia" />
-            )}
-          </Field>
-        </Section>
-
-        {/* ── Escuela ── */}
-        <Section icon={<GraduationCap size={16} />} title="Escuela">
-          <Field label="Escuela" hint={form.Estado ? "Busca en el catálogo o escríbela manualmente" : "Captura primero el Estado / CP"}>
-            <div className="relative" ref={escBoxRef}>
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                className={`${inputCls} pl-9`}
-                value={form.Escuela}
-                onFocus={() => setEscOpen(true)}
-                onChange={(e) => { setField("Escuela", e.target.value); setField("IdEscuela", ""); setEscOpen(true); }}
-                placeholder={form.Estado ? "Buscar escuela..." : "Escribe el nombre de la escuela"}
-              />
-              {form.IdEscuela && <CheckCircle2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500" />}
-              {escOpen && form.Estado && (
-                <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-xl max-h-64 overflow-y-auto">
-                  {escLoading ? (
-                    <div className="px-4 py-3 text-sm text-slate-400 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Buscando...</div>
-                  ) : escResults.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-slate-400">Sin resultados. Puedes dejar el nombre escrito.</div>
-                  ) : escResults.map((es) => (
-                    <button type="button" key={es.IdEscuela}
-                      onClick={() => { setForm((f) => ({ ...f, Escuela: (es.Escuela ?? "").toUpperCase(), IdEscuela: String(es.IdEscuela) })); setEscOpen(false); }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b border-slate-100 last:border-0">
-                      <p className="text-sm font-semibold text-slate-800">{es.Escuela}</p>
-                      <p className="text-xs text-slate-500">{[es.Municipio, es.Colonia, es.NivelEducativo].filter(Boolean).join(" · ")}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Field>
-        </Section>
-
         {submitError && (
           <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-3 text-sm">
             <AlertCircle size={16} /> {submitError}
@@ -462,13 +308,23 @@ export default function PreregistroPage() {
 
       {/* Sticky submit */}
       <div className="fixed bottom-0 inset-x-0 bg-white/90 backdrop-blur border-t border-slate-200 p-3">
-        <div className="max-w-md mx-auto">
+        <div className="max-w-md mx-auto flex gap-2">
           <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-blue-600 text-white font-black text-base shadow-lg shadow-blue-600/20 hover:bg-blue-700 active:scale-[0.99] transition disabled:opacity-60"
+            type="button"
+            onClick={handleAddSibling}
+            disabled={busy !== null}
+            className="flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl border-2 border-blue-600 text-blue-700 bg-white font-black text-sm hover:bg-blue-50 active:scale-[0.99] transition disabled:opacity-60"
           >
-            {submitting ? <><Loader2 size={18} className="animate-spin" /> Enviando...</> : <>Enviar preregistro</>}
+            {busy === "sibling" ? <Loader2 size={18} className="animate-spin" /> : <UserPlus size={18} />}
+            Agregar hermano
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSubmit()}
+            disabled={busy !== null}
+            className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-blue-600 text-white font-black text-base shadow-lg shadow-blue-600/20 hover:bg-blue-700 active:scale-[0.99] transition disabled:opacity-60"
+          >
+            {busy === "submit" ? <><Loader2 size={18} className="animate-spin" /> Enviando...</> : <>Enviar</>}
           </button>
         </div>
       </div>
