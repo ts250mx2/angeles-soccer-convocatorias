@@ -1,6 +1,7 @@
 "use client";
 
 import Sidebar from "./Sidebar";
+import AgentChatWidget from "./AgentChatWidget";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -13,6 +14,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {children}
       </div>
+      <AgentChatWidget />
     </div>
   );
 }

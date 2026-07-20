@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { z } from 'zod';
+import { createSessionToken, SESSION_COOKIE, sessionCookieOptions } from '@/lib/auth';
 
 const loginSchema = z.object({
     login: z.string().min(1, 'Usuario requerido'),
@@ -22,10 +23,19 @@ export async function POST(request: Request) {
         );
 
         if (Array.isArray(rows) && rows.length > 0) {
-            // Login successful
-            // In a real app, we would set a session/token here.
-            // For now, we return success.
-            return NextResponse.json({ success: true, user: rows[0] });
+            const user = rows[0] as any;
+            const response = NextResponse.json({ success: true, user });
+
+            // Sesión de servidor: cookie httpOnly firmada. El rol no viaja en la
+            // cookie; se revalida contra la base de datos en cada request.
+            const token = createSessionToken(Number(user.IdUsuario));
+            if (token) {
+                response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
+            } else {
+                console.warn('[login] AUTH_SECRET no configurado: no se emitió cookie de sesión.');
+            }
+
+            return response;
         } else {
             return NextResponse.json(
                 { success: false, message: 'Credenciales inválidas' },

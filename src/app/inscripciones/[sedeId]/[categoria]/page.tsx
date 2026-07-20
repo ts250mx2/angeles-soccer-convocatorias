@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, Search, User, CheckCircle2, XCircle, Clock, MapPin, Users } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -21,6 +21,10 @@ export default function InscripcionesJugadoresPage({ params }: { params: Promise
   const sedeId = resolvedParams.sedeId;
   const decodedCategoria = decodeURIComponent(resolvedParams.categoria);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // La temporada seleccionada viaja por la URL desde el listado de sedes.
+  const temporada = searchParams.get('temporada');
+  const temporadaQs = temporada ? `?temporada=${temporada}` : '';
   const { user, isInitialized } = useUser();
   const [players, setPlayers] = useState<Player[]>([]);
   const [sedeName, setSedeName] = useState(`Sede ${sedeId}`);
@@ -40,7 +44,9 @@ export default function InscripcionesJugadoresPage({ params }: { params: Promise
   const fetchPlayers = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/inscripciones/players?sedeId=${sedeId}&categoria=${encodeURIComponent(decodedCategoria)}`);
+      const response = await fetch(
+        `/api/inscripciones/players?sedeId=${sedeId}&categoria=${encodeURIComponent(decodedCategoria)}${temporada ? `&temporadaId=${temporada}` : ''}`
+      );
       const data = await response.json();
       if (data.success) {
         setPlayers(data.data);
@@ -121,7 +127,7 @@ export default function InscripcionesJugadoresPage({ params }: { params: Promise
       <main className="overflow-y-auto flex-1 text-white relative">
         <div className="bg-white/5 backdrop-blur-xl border-b border-white/10 px-6 py-4 flex justify-between items-center shadow-lg sticky top-0 z-20">
           <div className="flex items-center gap-4">
-            <Link href={`/inscripciones/${sedeId}`} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+            <Link href={`/inscripciones/${sedeId}${temporadaQs}`} className="p-2 hover:bg-white/10 rounded-full transition-colors">
               <ChevronLeft size={24} />
             </Link>
             <div>

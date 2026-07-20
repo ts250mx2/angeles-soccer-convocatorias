@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, Search, Users, ChevronRight, MapPin } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -41,6 +41,10 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
   const resolvedParams = use(params);
   const sedeId = resolvedParams.sedeId;
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // La temporada seleccionada viaja por la URL desde el listado de sedes.
+  const temporada = searchParams.get('temporada');
+  const temporadaQs = temporada ? `?temporada=${temporada}` : '';
   const { user, isInitialized } = useUser();
   const [categorias, setCategorias] = useState<CategoriaSummary[]>([]);
   const [sedeName, setSedeName] = useState(`Sede ${sedeId}`);
@@ -57,7 +61,9 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
   const fetchCategorias = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/inscripciones/categories?sedeId=${sedeId}`);
+      const response = await fetch(
+        `/api/inscripciones/categories?sedeId=${sedeId}${temporada ? `&temporadaId=${temporada}` : ''}`
+      );
       const data = await response.json();
       if (data.success) {
         setCategorias(data.data);
@@ -94,7 +100,7 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
       <main className="overflow-y-auto flex-1 text-white relative">
         <div className="bg-white/5 backdrop-blur-xl border-b border-white/10 px-6 py-4 flex justify-between items-center shadow-lg sticky top-0 z-20">
           <div className="flex items-center gap-4">
-            <Link href="/inscripciones" className="p-2 hover:bg-white/10 rounded-full transition-colors">
+            <Link href={`/inscripciones${temporadaQs}`} className="p-2 hover:bg-white/10 rounded-full transition-colors">
               <ChevronLeft size={24} />
             </Link>
             <div>
@@ -153,7 +159,7 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {categoriesWithInscritos.map((cat) => (
-                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} />
+                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} temporadaQs={temporadaQs} />
                     ))}
                   </div>
                 </div>
@@ -168,7 +174,7 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-50 hover:opacity-100 transition-all duration-500">
                     {categoriesWithoutInscritos.map((cat) => (
-                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} />
+                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} temporadaQs={temporadaQs} />
                     ))}
                   </div>
                 </div>
@@ -187,10 +193,10 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
   );
 }
 
-function CategoriaCard({ categoria, sedeId }: { categoria: CategoriaSummary, sedeId: string }) {
+function CategoriaCard({ categoria, sedeId, temporadaQs }: { categoria: CategoriaSummary, sedeId: string, temporadaQs: string }) {
   return (
-    <Link 
-      href={`/inscripciones/${sedeId}/${encodeURIComponent(categoria.Categoria)}`}
+    <Link
+      href={`/inscripciones/${sedeId}/${encodeURIComponent(categoria.Categoria)}${temporadaQs}`}
       className="group relative bg-white/5 hover:bg-white/[0.08] border border-white/10 hover:border-blue-500/30 rounded-2xl transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden h-full block backdrop-blur-sm"
     >
       <div className="absolute -inset-24 bg-blue-600/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>

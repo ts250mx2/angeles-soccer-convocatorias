@@ -11,20 +11,28 @@ export async function GET(request: Request) {
         }
 
         const sedeId = parseInt(sedeIdParam);
+        const temporadaId = searchParams.get('temporadaId');
+
+        const params: any[] = [sedeId];
+        let temporadaFilter = '';
+        if (temporadaId) {
+            temporadaFilter = ' AND J.IdTemporadaActiva = ?';
+            params.push(temporadaId);
+        }
 
         const query = `
-            SELECT 
+            SELECT
                 J.Categoria,
                 COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Inscritos,
                 COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas,
                 GROUP_CONCAT(CASE WHEN J.Status = 0 AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != '' THEN J.Beca END) as BecasDetail
             FROM tblJugadores J
-            WHERE J.IdSede = ?
+            WHERE J.IdSede = ?${temporadaFilter}
             GROUP BY J.Categoria
             ORDER BY Inscritos DESC, J.Categoria ASC
         `;
 
-        const [rows] = await pool.query(query, [sedeId]);
+        const [rows] = await pool.query(query, params);
 
         // Also get sede name
         const [sedeRows] = await pool.query(`SELECT Sede FROM tblSedes WHERE IdSede = ?`, [sedeId]);

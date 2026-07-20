@@ -13,23 +13,31 @@ export async function GET(request: Request) {
 
         const sedeId = parseInt(sedeIdParam);
         const categoria = categoriaParam;
+        const temporadaId = searchParams.get('temporadaId');
+
+        const params: any[] = [sedeId, categoria];
+        let temporadaFilter = '';
+        if (temporadaId) {
+            temporadaFilter = ' AND J.IdTemporadaActiva = ?';
+            params.push(temporadaId);
+        }
 
         const query = `
-            SELECT 
-                J.IdJugador, 
-                J.Jugador, 
-                J.Categoria, 
+            SELECT
+                J.IdJugador,
+                J.Jugador,
+                J.Categoria,
                 J.Status,
                 J.Beca,
                 J.IdSede,
                 COALESCE(S.Sede, J.Sede) as SedeNombre
             FROM tblJugadores J
             LEFT JOIN tblSedes S ON J.IdSede = S.IdSede
-            WHERE J.IdSede = ? AND J.Categoria = ?
+            WHERE J.IdSede = ? AND J.Categoria = ?${temporadaFilter}
             ORDER BY J.Jugador ASC
         `;
 
-        const [rows] = await pool.query(query, [sedeId, categoria]);
+        const [rows] = await pool.query(query, params);
 
         return NextResponse.json({ 
             success: true, 

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, MapPin, ChevronRight, UserCheck, Users } from 'lucide-react';
+import { Search, MapPin, ChevronRight, ChevronDown, UserCheck, Users, CalendarRange } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
 
@@ -38,12 +38,20 @@ function formatBecasDetail(becasDetail: string | null): string {
   return sorted.map(([percentage, count]) => `${count} de ${percentage}`).join(', ');
 }
 
+interface Temporada {
+  IdTemporada: number;
+  Temporada: string;
+  EsActiva: boolean;
+}
+
 export default function InscripcionesSedesPage() {
   const router = useRouter();
   const { user, isInitialized } = useUser();
   const [sedes, setSedes] = useState<SedeSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [temporadas, setTemporadas] = useState<Temporada[]>([]);
+  const [temporadaId, setTemporadaId] = useState<number | null>(null);
 
   // Check if user is logged in
   useEffect(() => {
@@ -52,10 +60,11 @@ export default function InscripcionesSedesPage() {
     }
   }, [user, isInitialized, router]);
 
-  const fetchSedes = async () => {
+  const fetchSedes = async (temporada: number | null) => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/inscripciones/sedes');
+      const qs = temporada ? `?temporadaId=${temporada}` : '';
+      const response = await fetch(`/api/inscripciones/sedes${qs}`);
       const data = await response.json();
       if (data.success) {
         setSedes(data.data);
@@ -69,11 +78,30 @@ export default function InscripcionesSedesPage() {
     }
   };
 
+  // Carga las temporadas y arranca en la temporada activa (default).
   useEffect(() => {
-    if (isInitialized && user) {
-      fetchSedes();
-    }
+    if (!isInitialized || !user) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/inscripciones/temporadas');
+        const json = await res.json();
+        if (json.success) {
+          setTemporadas(json.data);
+          setTemporadaId(json.temporadaActiva ?? null);
+        } else {
+          fetchSedes(null);
+        }
+      } catch {
+        fetchSedes(null);
+      }
+    })();
   }, [isInitialized, user]);
+
+  useEffect(() => {
+    if (isInitialized && user && temporadaId !== null) {
+      fetchSedes(temporadaId);
+    }
+  }, [isInitialized, user, temporadaId]);
 
   const filteredSedes = sedes.filter(sede => 
     sede.Sede.toLowerCase().includes(searchQuery.toLowerCase())
@@ -87,9 +115,31 @@ export default function InscripcionesSedesPage() {
       <main className="overflow-y-auto flex-1 text-white p-6 md:p-8 relative">
         <div className="max-w-7xl mx-auto">
           
-          <div className="mb-12">
-            <h1 className="text-3xl font-black text-white mb-2">Inscripciones por Sede</h1>
-            <p className="text-slate-400">Monitoreo de jugadores inscritos segmentado por campus</p>
+          <div className="mb-12 flex flex-col md:flex-row md:items-end md:justify-between gap-5">
+            <div>
+              <h1 className="text-3xl font-black text-white mb-2">Inscripciones por Sede</h1>
+              <p className="text-slate-400">Monitoreo de jugadores inscritos segmentado por campus</p>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Temporada</label>
+              <div className="relative">
+                <CalendarRange size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
+                <select
+                  value={temporadaId ?? ''}
+                  onChange={(e) => setTemporadaId(e.target.value ? Number(e.target.value) : null)}
+                  /* [color-scheme:dark] hace que el desplegable nativo se pinte oscuro;
+                     sin él las opciones salen en blanco sobre blanco. */
+                  className="appearance-none w-full min-w-[270px] bg-slate-900/80 border border-white/15 rounded-xl pl-9 pr-10 py-2.5 text-white text-sm font-semibold outline-none cursor-pointer hover:bg-slate-800 hover:border-white/25 focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 transition-all [color-scheme:dark]"
+                >
+                  {temporadas.map((t) => (
+                    <option key={t.IdTemporada} value={t.IdTemporada} className="bg-slate-900 text-white">
+                      {t.Temporada}{t.EsActiva ? ' · activa' : ''}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
           </div>
 
           {/* Search and Stats Section */}
@@ -154,7 +204,7 @@ export default function InscripcionesSedesPage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {sedesWithInscritos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} />
+                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} />
                     ))}
                   </div>
                 </div>
@@ -169,7 +219,7 @@ export default function InscripcionesSedesPage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-50 hover:opacity-100 transition-all duration-500">
                     {sedesWithoutInscritos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} />
+                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} />
                     ))}
                   </div>
                 </div>
@@ -188,10 +238,10 @@ export default function InscripcionesSedesPage() {
   );
 }
 
-function SedeCard({ sede }: { sede: SedeSummary }) {
+function SedeCard({ sede, temporadaId }: { sede: SedeSummary; temporadaId: number | null }) {
   return (
-    <Link 
-      href={`/inscripciones/${sede.IdSede}`}
+    <Link
+      href={`/inscripciones/${sede.IdSede}${temporadaId ? `?temporada=${temporadaId}` : ''}`}
       className="group relative bg-white/5 hover:bg-white/[0.08] border border-white/10 hover:border-blue-500/30 rounded-2xl transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden h-full block backdrop-blur-sm"
     >
       <div className="absolute -inset-24 bg-blue-600/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>

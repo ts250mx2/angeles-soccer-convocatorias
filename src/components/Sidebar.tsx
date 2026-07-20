@@ -24,6 +24,7 @@ import {
   CalendarRange,
   LayoutGrid,
   QrCode,
+  Bot,
 } from "lucide-react";
 
 interface NavItem {
@@ -57,6 +58,12 @@ export default function Sidebar() {
       label: "QR Accesos",
       href: "/qr-accesos",
       icon: <QrCode size={18} />,
+      adminOnly: true,
+    },
+    {
+      label: "Agente Inteligente",
+      href: "/agente",
+      icon: <Bot size={18} />,
       adminOnly: true,
     },
     {
@@ -155,7 +162,13 @@ export default function Sidebar() {
     return pathname.startsWith(href);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Borra la cookie de sesión del servidor además del estado local.
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch {
+      /* aunque falle, salimos igualmente */
+    }
     router.push("/login");
   };
 
