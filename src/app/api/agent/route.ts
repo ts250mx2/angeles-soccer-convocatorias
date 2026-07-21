@@ -25,13 +25,14 @@ tblJugadores (J): IdJugador, Jugador, Categoria, Nombre, ApellidoPaterno, Apelli
      última temporada capturada del jugador, NO en cuáles participó realmente.
 
   ** REGLA DE NEGOCIO — pertenencia a una temporada (inscripciones / jugadores activos) **
-  Un jugador pertenece a una temporada si tiene al menos un pago de MENSUALIDAD o
-  INSCRIPCIÓN (IdTipoProducto IN (1,2)) registrado en esa temporada. SIEMPRE usa este patrón:
+  Un jugador pertenece a una temporada si tiene al menos un pago de INSCRIPCIÓN /
+  REINSCRIPCIÓN (IdTipoProducto = 2) registrado en esa temporada. Las MENSUALIDADES
+  (IdTipoProducto = 1) NO cuentan para esto. SIEMPRE usa este patrón:
 
      J.IdJugador IN (
        SELECT A.IdJugador FROM tblPagos A
        INNER JOIN tblProductos B ON A.IdProducto = B.IdProducto
-       WHERE A.IdTemporada = <idTemporada> AND B.IdTipoProducto IN (1,2)
+       WHERE A.IdTemporada = <idTemporada> AND B.IdTipoProducto = 2
      )
 
   Ejemplo — "jugadores inscritos por sede en la temporada activa":
@@ -43,10 +44,13 @@ tblJugadores (J): IdJugador, Jugador, Categoria, Nombre, ApellidoPaterno, Apelli
          SELECT A.IdJugador FROM tblPagos A
          INNER JOIN tblProductos B ON A.IdProducto = B.IdProducto
          WHERE A.IdTemporada = (SELECT IdTemporada FROM tblTemporadas WHERE EsActiva = 1)
-           AND B.IdTipoProducto IN (1,2)
+           AND B.IdTipoProducto = 2
        )
      GROUP BY S.Sede
      ORDER BY Inscritos DESC;
+
+  La FECHA DE INSCRIPCIÓN de un jugador en una temporada es MIN(FechaPago) de sus
+  pagos con IdTipoProducto = 2 en esa temporada.
 
   Si el usuario no menciona temporada, usa la ACTIVA. Si pide otra, resuélvela por nombre
   contra tblTemporadas.Temporada (p.ej. 'ENERO - JULIO 2026') y menciona en la respuesta
