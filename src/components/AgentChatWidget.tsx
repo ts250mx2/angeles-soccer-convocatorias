@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
 import { useAgentChat } from "@/hooks/use-agent-chat";
-import AgentMarkdown from "@/components/AgentMarkdown";
+import AgentAnswer from "@/components/AgentAnswer";
 import {
-  Bot, Send, Loader2, AlertCircle, Database, X, Minus, Trash2,
+  Bot, Send, Loader2, AlertCircle, Database, X, Minus, Trash2, Maximize2,
 } from "lucide-react";
 
 /**
@@ -16,6 +16,7 @@ import {
 export default function AgentChatWidget() {
   const { user, isInitialized } = useUser();
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -62,6 +63,12 @@ export default function AgentChatWidget() {
                   <Trash2 size={14} />
                 </button>
               )}
+              <button
+                onClick={() => { setOpen(false); router.push("/agente"); }}
+                title="Maximizar (abrir Agente Inteligente)"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all">
+                <Maximize2 size={14} />
+              </button>
               <button onClick={() => setOpen(false)} title="Minimizar"
                 className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all">
                 <Minus size={16} />
@@ -101,7 +108,7 @@ export default function AgentChatWidget() {
                   }`}>
                     {m.role === "user" ? m.content : (
                       m.content
-                        ? <AgentMarkdown content={m.content} compact />
+                        ? <AgentAnswer content={m.content} question={messages[i - 1]?.content ?? ""} compact />
                         : (busy && i === messages.length - 1 && !m.error
                             ? <span className="inline-flex items-center gap-1.5 text-slate-400 text-xs"><Loader2 size={12} className="animate-spin" /> Pensando...</span>
                             : null)

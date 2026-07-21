@@ -20,20 +20,37 @@ tblJugadores (J): IdJugador, Jugador, Categoria, Nombre, ApellidoPaterno, Apelli
   FechaNacimiento, Genero(1=M,2=F), CURP, IdSede, Sede, Status(0=ACTIVO, 2=BAJA), Beca(% descuento),
   IdTemporadaActiva, IdEscuela, Padre, TelPadre, Madre, TelMadre, Calle, Colonia, Municipio, Estado,
   CodigoPostal, AnioNacimiento, Talla, Coach.
-  -> INSCRITOS: un jugador cuenta como inscrito si J.Status = 0 (2 = baja).
-  -> TEMPORADA: los jugadores SIEMPRE se acotan por J.IdTemporadaActiva. Un mismo jugador
-     puede existir en varias temporadas, así que contar sin filtrar por temporada
-     INFLA los totales. Si el usuario no menciona temporada, usa la ACTIVA.
-     Patrón correcto para "jugadores inscritos por sede":
-       SELECT S.Sede, COUNT(*) AS Inscritos
-       FROM tblJugadores J
-       INNER JOIN tblSedes S ON J.IdSede = S.IdSede
-       WHERE J.Status = 0
-         AND J.IdTemporadaActiva = (SELECT IdTemporada FROM tblTemporadas WHERE EsActiva = 1)
-       GROUP BY S.Sede
-       ORDER BY Inscritos DESC;
-     Si el usuario pide otra temporada, resuélvela por nombre contra tblTemporadas.Temporada
-     (p.ej. 'ENERO - JULIO 2026') y menciona en la respuesta qué temporada usaste.
+  -> Status: 0 = ACTIVO, 2 = BAJA.
+  -> ⚠️ NO uses J.IdTemporadaActiva para acotar por temporada: ese campo solo refleja la
+     última temporada capturada del jugador, NO en cuáles participó realmente.
+
+  ** REGLA DE NEGOCIO — pertenencia a una temporada (inscripciones / jugadores activos) **
+  Un jugador pertenece a una temporada si tiene al menos un pago de MENSUALIDAD o
+  INSCRIPCIÓN (IdTipoProducto IN (1,2)) registrado en esa temporada. SIEMPRE usa este patrón:
+
+     J.IdJugador IN (
+       SELECT A.IdJugador FROM tblPagos A
+       INNER JOIN tblProductos B ON A.IdProducto = B.IdProducto
+       WHERE A.IdTemporada = <idTemporada> AND B.IdTipoProducto IN (1,2)
+     )
+
+  Ejemplo — "jugadores inscritos por sede en la temporada activa":
+     SELECT S.Sede, COUNT(*) AS Inscritos
+     FROM tblJugadores J
+     INNER JOIN tblSedes S ON J.IdSede = S.IdSede
+     WHERE J.Status = 0
+       AND J.IdJugador IN (
+         SELECT A.IdJugador FROM tblPagos A
+         INNER JOIN tblProductos B ON A.IdProducto = B.IdProducto
+         WHERE A.IdTemporada = (SELECT IdTemporada FROM tblTemporadas WHERE EsActiva = 1)
+           AND B.IdTipoProducto IN (1,2)
+       )
+     GROUP BY S.Sede
+     ORDER BY Inscritos DESC;
+
+  Si el usuario no menciona temporada, usa la ACTIVA. Si pide otra, resuélvela por nombre
+  contra tblTemporadas.Temporada (p.ej. 'ENERO - JULIO 2026') y menciona en la respuesta
+  qué temporada usaste.
 
 tblJugadoresPre (JP): preregistros públicos (mismos campos base + IdSede, IdEscuela, Status, FechaAlta).
 

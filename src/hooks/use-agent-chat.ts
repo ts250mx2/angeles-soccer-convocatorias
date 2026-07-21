@@ -24,8 +24,33 @@ export interface ChatMessage {
 export function useAgentChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
+  const hydrated = useRef(false);
 
-  const clear = useCallback(() => setMessages([]), []);
+  // Rehidrata la conversación previa (al maximizar desde el chat flotante)
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) setMessages(JSON.parse(raw));
+    } catch {
+      /* sessionStorage no disponible */
+    }
+    hydrated.current = true;
+  }, []);
+
+  // Persiste en cada cambio (solo después de rehidratar, para no pisar lo guardado)
+  useEffect(() => {
+    if (!hydrated.current) return;
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {
+      /* cuota llena o no disponible */
+    }
+  }, [messages]);
+
+  const clear = useCallback(() => {
+    setMessages([]);
+    try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* noop */ }
+  }, []);
 
   const send = useCallback(async (text: string) => {
     const prompt = text.trim();

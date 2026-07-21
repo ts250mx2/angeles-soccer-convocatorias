@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { JUGADORES_DE_TEMPORADA_SQL } from '@/lib/temporada';
 
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const temporadaId = searchParams.get('temporadaId');
 
-        // La temporada acota los jugadores por J.IdTemporadaActiva (se aplica en el JOIN
-        // para que las sedes sin jugadores en esa temporada sigan apareciendo en cero).
+        // El filtro va en el JOIN (no en el WHERE) para que las sedes sin jugadores
+        // en esa temporada sigan apareciendo en cero en vez de desaparecer.
         const params: any[] = [];
         let temporadaJoin = '';
         if (temporadaId) {
-            temporadaJoin = ' AND J.IdTemporadaActiva = ?';
+            temporadaJoin = ` AND J.IdJugador IN (${JUGADORES_DE_TEMPORADA_SQL})`;
             params.push(temporadaId);
         }
 

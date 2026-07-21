@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { JUGADORES_DE_TEMPORADA_SQL } from '@/lib/temporada';
 
 export async function GET(request: Request) {
     try {
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
         const params: any[] = [sedeId, categoria];
         let temporadaFilter = '';
         if (temporadaId) {
-            temporadaFilter = ' AND J.IdTemporadaActiva = ?';
+            temporadaFilter = ` AND J.IdJugador IN (${JUGADORES_DE_TEMPORADA_SQL})`;
             params.push(temporadaId);
         }
 
