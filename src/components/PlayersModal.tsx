@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   X, Search, User, ChevronRight, AlertCircle, Loader2, MapPin,
-  FileDown, FileSpreadsheet, CalendarCheck, CheckCircle2, XCircle,
+  FileDown, FileSpreadsheet, CalendarCheck, CheckCircle2, XCircle, AlertTriangle,
 } from "lucide-react";
 import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModal";
 import {
   type PlayerRow, type PlayersConfig, exportPlayersToPdf, exportPlayersToExcel,
-  fecha, MESES_CORTOS, esBeca100, parseMesesPagados,
+  fecha, MESES_CORTOS, esBeca100, parseMesesPagados, MESES_ANTICIPO_SOSPECHOSO,
 } from "@/lib/inscripciones-export";
 
 export type PlayersFilter = "inscritos" | "becados" | "bajas" | "sin-inscripcion" | "todos";
@@ -36,11 +36,14 @@ export default function PlayersModal({
   temporadaId,
   temporadaNombre,
   onClose,
+  onDataChanged,
 }: {
   config: PlayersModalConfig | null;
   temporadaId: number | null;
   temporadaNombre?: string;
   onClose: () => void;
+  /** Se llama cuando un pago cambió, para refrescar también las tarjetas/KPIs de la página. */
+  onDataChanged?: () => void;
 }) {
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [config_, setConfig] = useState<PlayersConfig | undefined>(undefined);
@@ -48,10 +51,14 @@ export default function PlayersModal({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [pagosTarget, setPagosTarget] = useState<PagosTarget | null>(null);
+  // Se incrementa cuando el modal de pagos modifica un pago, para refrescar la lista.
+  const [recarga, setRecarga] = useState(0);
+
+  // El buscador se limpia solo al abrir/cambiar el corte, no en cada recarga.
+  useEffect(() => { setQuery(""); }, [config]);
 
   useEffect(() => {
     if (!config) return;
-    setQuery("");
     let alive = true;
     setIsLoading(true);
     setError(null);
@@ -79,7 +86,7 @@ export default function PlayersModal({
     })();
 
     return () => { alive = false; };
-  }, [config, temporadaId]);
+  }, [config, temporadaId, recarga]);
 
   // Cerrar con Escape (si el modal de pagos está encima, ese se cierra primero)
   useEffect(() => {
@@ -225,6 +232,17 @@ export default function PlayersModal({
                           {p.Status === 0 ? "ACTIVO" : "BAJA"}
                         </span>
                       )}
+                      {/* Mensualidades cobradas mucho antes del arranque: probable
+                          año mal capturado. Se corrige en el modal de pagos. */}
+                      {p.PagosAnticipados > 0 && (
+                        <span
+                          title={`${p.PagosAnticipados} ${p.PagosAnticipados === 1 ? "pago cobrado" : "pagos cobrados"} ${MESES_ANTICIPO_SOSPECHOSO}+ meses antes de que iniciara la temporada. Abre el detalle para corregir el año.`}
+                          className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1"
+                        >
+                          <AlertTriangle size={9} />
+                          {p.PagosAnticipados === 1 ? "PAGO ANTICIPADO" : `${p.PagosAnticipados} PAGOS ANTICIPADOS`}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
@@ -300,6 +318,7 @@ export default function PlayersModal({
       temporadaId={temporadaId}
       temporadaNombre={temporadaNombre}
       onClose={() => setPagosTarget(null)}
+      onDataChanged={() => { setRecarga((r) => r + 1); onDataChanged?.(); }}
     />
     </>
   );

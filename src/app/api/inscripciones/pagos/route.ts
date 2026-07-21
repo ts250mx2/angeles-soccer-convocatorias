@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { TIPO_PRODUCTO_INSCRIPCION, TIPO_PRODUCTO_MENSUALIDAD } from '@/lib/temporada';
+import {
+    TIPO_PRODUCTO_INSCRIPCION,
+    TIPO_PRODUCTO_MENSUALIDAD,
+    DIAS_INSCRIPCION_CERCANA,
+} from '@/lib/temporada';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,6 +93,9 @@ export async function GET(request: Request) {
                 P.IdPago,
                 DATE_FORMAT(P.FechaPago, '%d/%m/%Y %H:%i') as FechaPago,
                 DATE_FORMAT(P.FechaPago, '%Y-%m-%d %H:%i:%s') as FechaOrden,
+                ${temporadaId
+                    ? 'TIMESTAMPDIFF(MONTH, P.FechaPago, TT.FechaInicio)'
+                    : 'NULL'} as MesesAntesDeTemporada,
                 P.Pago,
                 P.Mes,
                 P.Anio,
@@ -125,6 +132,52 @@ export async function GET(request: Request) {
 
         const total = pagos.reduce((sum: number, p: any) => sum + Number(p.Pago ?? 0), 0);
 
+        /* Inscripción sugerida: solo cuando se consulta una temporada y el jugador NO
+           tiene inscripción en ella (si la tuviera, aparecería arriba en `inscripcion`,
+           porque los pagos que no son mensualidad se acotan por IdTemporada).
+
+           Se busca un pago de inscripción del jugador, archivado en OTRA temporada, que
+           se haya cobrado cerca (± DIAS_INSCRIPCION_CERCANA) de alguna de sus
+           mensualidades de esta temporada. Ese pago casi siempre es la inscripción de
+           esta temporada capturada con la temporada equivocada. */
+        let inscripcionSugerida: any = null;
+        const yaInscrito = pagos.some((p: any) => p.IdTipoProducto === TIPO_PRODUCTO_INSCRIPCION);
+
+        if (temporadaId && !yaInscrito) {
+            const [sugeridas] = await pool.query(
+                `SELECT
+                    INS.IdPago,
+                    DATE_FORMAT(INS.FechaPago, '%d/%m/%Y') as FechaPago,
+                    INS.Pago,
+                    INS.IdTemporada as TemporadaActual,
+                    COALESCE(TI.Temporada, 'Sin temporada') as TemporadaActualNombre,
+                    COALESCE(PRI.Producto, 'INSCRIPCIÓN') as Producto,
+                    MIN(ABS(DATEDIFF(INS.FechaPago, MEN.FechaPago))) as DiasDeDistancia
+                 FROM tblPagos INS
+                 INNER JOIN tblProductos PRI ON INS.IdProducto = PRI.IdProducto
+                    AND PRI.IdTipoProducto = ${TIPO_PRODUCTO_INSCRIPCION}
+                 LEFT JOIN tblTemporadas TI ON TI.IdTemporada = INS.IdTemporada
+                 INNER JOIN tblTemporadas TT ON TT.IdTemporada = ?
+                 INNER JOIN tblPagos MEN ON MEN.IdJugador = INS.IdJugador AND MEN.Status = 0
+                 INNER JOIN tblProductos PRM ON MEN.IdProducto = PRM.IdProducto
+                    AND PRM.IdTipoProducto = ${TIPO_PRODUCTO_MENSUALIDAD}
+                 WHERE INS.IdJugador = ?
+                   AND INS.Status = 0
+                   AND (INS.IdTemporada <> ? OR INS.IdTemporada IS NULL)
+                   AND MEN.Anio IS NOT NULL AND MEN.Mes BETWEEN 1 AND 12
+                   AND (MEN.Anio * 100 + MEN.Mes)
+                       BETWEEN (YEAR(TT.FechaInicio) * 100 + MONTH(TT.FechaInicio))
+                           AND (YEAR(TT.FechaFin)   * 100 + MONTH(TT.FechaFin))
+                   AND ABS(DATEDIFF(INS.FechaPago, MEN.FechaPago)) <= ${DIAS_INSCRIPCION_CERCANA}
+                 GROUP BY INS.IdPago, INS.FechaPago, INS.Pago, INS.IdTemporada, TI.Temporada, PRI.Producto
+                 ORDER BY DiasDeDistancia ASC, INS.FechaPago DESC
+                 LIMIT 1`,
+                [temporadaId, parseInt(idJugador), temporadaId]
+            ) as any[];
+
+            if (sugeridas.length > 0) inscripcionSugerida = sugeridas[0];
+        }
+
         return NextResponse.json({
             success: true,
             data: {
@@ -132,6 +185,7 @@ export async function GET(request: Request) {
                 pagos,
                 total,
                 fechaInscripcion: inscripcion?.FechaPago ?? null,
+                inscripcionSugerida,
             },
         });
     } catch (error) {

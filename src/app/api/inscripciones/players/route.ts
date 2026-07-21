@@ -3,6 +3,7 @@ import { pool } from '@/lib/db';
 import {
     JUGADORES_DE_TEMPORADA_SQL,
     MENSUALIDADES_EN_TEMPORADA_SQL,
+    MESES_ANTICIPO_SOSPECHOSO,
     TIPO_PRODUCTO_INSCRIPCION,
     TIPO_PRODUCTO_MENSUALIDAD,
 } from '@/lib/temporada';
@@ -119,7 +120,7 @@ export async function GET(request: Request) {
            Los meses se identifican por Anio*100+Mes: así una temporada que cruce el
            fin de año no mezcla, por ejemplo, el enero de un año con el del otro. */
         let mesesJoin = '';
-        let mesesSelect = "'' as MesesPagados, 0 as InscripcionPagada";
+        let mesesSelect = "'' as MesesPagados, 0 as InscripcionPagada, 0 as PagosAnticipados";
         let meses: { codigo: number; mes: number; anio: number }[] = [];
         let mesActual: number | null = null;
 
@@ -140,13 +141,19 @@ export async function GET(request: Request) {
 
             mesesSelect = `
                 COALESCE(MP.MesesPagados, '') as MesesPagados,
-                CASE WHEN INS.IdJugador IS NOT NULL THEN 1 ELSE 0 END as InscripcionPagada
+                CASE WHEN INS.IdJugador IS NOT NULL THEN 1 ELSE 0 END as InscripcionPagada,
+                COALESCE(MP.PagosAnticipados, 0) as PagosAnticipados
             `;
             mesesJoin = `
                 LEFT JOIN (
                     SELECT
                         P.IdJugador,
-                        GROUP_CONCAT(DISTINCT (P.Anio * 100 + P.Mes)) as MesesPagados
+                        GROUP_CONCAT(DISTINCT (P.Anio * 100 + P.Mes)) as MesesPagados,
+                        /* Cobrados mucho antes de que arrancara la temporada: casi
+                           siempre el año quedó mal capturado. */
+                        SUM(
+                            TIMESTAMPDIFF(MONTH, P.FechaPago, T.FechaInicio) >= ${MESES_ANTICIPO_SOSPECHOSO}
+                        ) as PagosAnticipados
                     FROM tblPagos P
                     INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
                     INNER JOIN tblTemporadas T ON T.IdTemporada = ?

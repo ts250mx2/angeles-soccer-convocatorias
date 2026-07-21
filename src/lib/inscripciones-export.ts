@@ -3,6 +3,9 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
+import { MESES_ANTICIPO_SOSPECHOSO } from "@/lib/temporada";
+
+export { MESES_ANTICIPO_SOSPECHOSO };
 
 export interface PlayerRow {
     IdJugador: number;
@@ -16,6 +19,8 @@ export interface PlayerRow {
     /** Códigos Anio*100+Mes de las mensualidades cubiertas, separados por coma */
     MesesPagados: string;
     InscripcionPagada: number;
+    /** Mensualidades cobradas 3+ meses antes de que iniciara la temporada */
+    PagosAnticipados: number;
 }
 
 export interface MesTemporada {
@@ -44,11 +49,16 @@ export const parseMesesPagados = (raw: string | null): number[] =>
         .map((m) => parseInt(m.trim(), 10))
         .filter((m) => !isNaN(m));
 
+export const esPagoAnticipado = (p: PagoRow): boolean =>
+    p.MesesAntesDeTemporada !== null && p.MesesAntesDeTemporada >= MESES_ANTICIPO_SOSPECHOSO;
+
 export interface PagoRow {
     IdPago: number;
     /** Ya viene formateada por MySQL como "dd/mm/aaaa hh:mm" en hora local. */
     FechaPago: string;
     FechaOrden: string;
+    /** Meses entre la fecha de pago y el inicio de la temporada; null sin temporada. */
+    MesesAntesDeTemporada: number | null;
     Pago: number;
     Mes: number | null;
     Anio: number | null;
@@ -201,6 +211,7 @@ const playerCols = (config?: PlayersConfig): XCol[] => {
         ...base,
         { header: "Meses pagados", width: 26 },
         { header: "Meses pendientes", width: 26 },
+        { header: "Pagos anticipados", width: 16 },
     ];
 };
 
@@ -226,7 +237,12 @@ const playerCells = (p: PlayerRow, config?: PlayersConfig) => {
     const cubiertos = beca100 ? config.meses.map((m) => m.codigo) : pagados;
     const pendientes = config.meses.map((m) => m.codigo).filter((c) => !cubiertos.includes(c));
 
-    return [...base, nombresMeses(cubiertos, config.meses), nombresMeses(pendientes, config.meses)];
+    return [
+        ...base,
+        nombresMeses(cubiertos, config.meses),
+        nombresMeses(pendientes, config.meses),
+        p.PagosAnticipados > 0 ? String(p.PagosAnticipados) : "—",
+    ];
 };
 
 export function exportPlayersToPdf(

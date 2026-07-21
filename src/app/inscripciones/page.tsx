@@ -64,8 +64,10 @@ export default function InscripcionesSedesPage() {
     }
   }, [user, isInitialized, router]);
 
-  const fetchSedes = async (temporada: number | null) => {
-    setIsLoading(true);
+  // silent: refresco en segundo plano (tras editar un pago desde el modal) sin
+  // mostrar los skeletons detrás de la ventana abierta.
+  const fetchSedes = async (temporada: number | null, silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const qs = temporada ? `?temporadaId=${temporada}` : '';
       const response = await fetch(`/api/inscripciones/sedes${qs}`);
@@ -78,7 +80,7 @@ export default function InscripcionesSedesPage() {
     } catch (error) {
       console.error('Error fetching sedes:', error);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
@@ -271,6 +273,7 @@ export default function InscripcionesSedesPage() {
           temporadaId={temporadaId}
           temporadaNombre={temporadaNombre}
           onClose={() => setModal(null)}
+          onDataChanged={() => fetchSedes(temporadaId, true)}
         />
       </main>
     </DashboardLayout>

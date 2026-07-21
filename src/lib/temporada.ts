@@ -16,6 +16,23 @@ export const TIPO_PRODUCTO_INSCRIPCION = 2;
 
 export const TIPO_PRODUCTO_MENSUALIDAD = 1;
 
+/**
+ * Un pago cobrado con esta antelación al inicio de la temporada casi siempre es un
+ * error de captura del año (p.ej. se cobró nov-2025 y quedó amparando nov-2026).
+ * Los pagos legítimos de preventa se concentran 1 o 2 meses antes del arranque.
+ */
+export const MESES_ANTICIPO_SOSPECHOSO = 3;
+
+/**
+ * Ventana en días para emparejar un pago de inscripción con las mensualidades de un
+ * jugador. Si la inscripción se cobró dentro de esta ventana respecto a alguna
+ * mensualidad de la temporada pero quedó archivada en otra temporada, es casi seguro
+ * un error de captura: la inscripción corresponde a la temporada de esas mensualidades.
+ * En los datos el 90% de estos casos cae el mismo día y hay un hueco limpio después de
+ * los 30 días.
+ */
+export const DIAS_INSCRIPCION_CERCANA = 30;
+
 export const JUGADORES_DE_TEMPORADA_SQL = `
     SELECT A.IdJugador
     FROM tblPagos A
