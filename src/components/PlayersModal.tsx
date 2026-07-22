@@ -19,6 +19,8 @@ export interface PlayersModalConfig {
   subtitle?: string;
   filtro: PlayersFilter;
   sedeId?: number;
+  /** Acota a una sola categoría (drill-down desde la vista de categorías). */
+  categoria?: string;
   /** Ruta al drill-down por categorías; si viene, se muestra la liga "Por Categoría" */
   categoriaHref?: string;
 }
@@ -65,6 +67,7 @@ export default function PlayersModal({
 
     const params = new URLSearchParams({ filtro: config.filtro });
     if (config.sedeId !== undefined) params.set("sedeId", String(config.sedeId));
+    if (config.categoria) params.set("categoria", config.categoria);
     if (temporadaId) params.set("temporadaId", String(temporadaId));
 
     (async () => {

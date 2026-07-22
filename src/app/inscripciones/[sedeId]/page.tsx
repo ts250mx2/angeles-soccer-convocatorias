@@ -5,12 +5,18 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, Search, Users, ChevronRight, MapPin } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
+import PlayersModal, { type PlayersModalConfig } from '@/components/PlayersModal';
 
 interface CategoriaSummary {
   Categoria: string;
   Inscritos: number;
   Bajas: number;
   BecasDetail: string | null;
+}
+
+interface Temporada {
+  IdTemporada: number;
+  Temporada: string;
 }
 
 function formatBecasDetail(becasDetail: string | null): string {
@@ -50,6 +56,9 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
   const [sedeName, setSedeName] = useState(`Sede ${sedeId}`);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [temporadaNombre, setTemporadaNombre] = useState<string | undefined>(undefined);
+  const [modal, setModal] = useState<PlayersModalConfig | null>(null);
+  const temporadaId = temporada ? Number(temporada) : null;
 
   // Check if user is logged in
   useEffect(() => {
@@ -85,6 +94,23 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
       fetchCategorias();
     }
   }, [isInitialized, user, sedeId]);
+
+  // Nombre de la temporada seleccionada, para el subtítulo del modal.
+  useEffect(() => {
+    if (!isInitialized || !user || !temporadaId) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/inscripciones/temporadas');
+        const json = await res.json();
+        if (json.success) {
+          const t = (json.data as Temporada[]).find((x) => x.IdTemporada === temporadaId);
+          setTemporadaNombre(t?.Temporada);
+        }
+      } catch {
+        /* el nombre es opcional; el modal degrada a "esta temporada" */
+      }
+    })();
+  }, [isInitialized, user, temporadaId]);
 
   const sortedCategorias = [...categorias].sort((a, b) => b.Inscritos - a.Inscritos);
 
@@ -159,7 +185,7 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {categoriesWithInscritos.map((cat) => (
-                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} temporadaQs={temporadaQs} />
+                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeName={sedeName} temporadaNombre={temporadaNombre} onOpenPlayers={setModal} sedeId={sedeId} />
                     ))}
                   </div>
                 </div>
@@ -174,7 +200,7 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-50 hover:opacity-100 transition-all duration-500">
                     {categoriesWithoutInscritos.map((cat) => (
-                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} temporadaQs={temporadaQs} />
+                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeName={sedeName} temporadaNombre={temporadaNombre} onOpenPlayers={setModal} sedeId={sedeId} />
                     ))}
                   </div>
                 </div>
@@ -188,75 +214,116 @@ export default function InscripcionesSedePage({ params }: { params: Promise<{ se
             </div>
           )}
         </div>
+
+        <PlayersModal
+          config={modal}
+          temporadaId={temporadaId}
+          temporadaNombre={temporadaNombre}
+          onClose={() => setModal(null)}
+          onDataChanged={() => fetchCategorias()}
+        />
       </main>
     </DashboardLayout>
   );
 }
 
-function CategoriaCard({ categoria, sedeId, temporadaQs }: { categoria: CategoriaSummary, sedeId: string, temporadaQs: string }) {
-  return (
-    <Link
-      href={`/inscripciones/${sedeId}/${encodeURIComponent(categoria.Categoria)}${temporadaQs}`}
-      className="group relative bg-white/5 hover:bg-white/[0.08] border border-white/10 hover:border-blue-500/30 rounded-2xl transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden h-full block backdrop-blur-sm"
-    >
-      <div className="absolute -inset-24 bg-blue-600/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
-      
-      <div className="p-5 block relative z-10 h-full">
-        <div className="mb-4 flex justify-between items-center">
-          <div className="bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 border border-blue-500/10">
-            <Users size={18} />
-          </div>
-          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-            Categoría
-          </div>
-        </div>
+function CategoriaCard({
+  categoria,
+  sedeId,
+  sedeName,
+  temporadaNombre,
+  onOpenPlayers,
+}: {
+  categoria: CategoriaSummary;
+  sedeId: string;
+  sedeName: string;
+  temporadaNombre?: string;
+  onOpenPlayers: (config: PlayersModalConfig) => void;
+}) {
+  const becados = categoria.BecasDetail ? categoria.BecasDetail.split(',').filter(Boolean).length : 0;
 
-        <h3 className="text-lg font-black mb-4 text-slate-200 group-hover:text-white transition-colors line-clamp-1 tracking-tight">
-          {categoria.Categoria}
-        </h3>
+  /* Cada área abre el mismo modal que las tarjetas de sede, acotado a esta categoría.
+     La tarjeta ya no navega a una página aparte, así que no puede ser un <Link>. */
+  const open = (filtro: PlayersModalConfig['filtro'], title: string) =>
+    onOpenPlayers({
+      title,
+      subtitle: [sedeName, categoria.Categoria, temporadaNombre].filter(Boolean).join(' · '),
+      filtro,
+      sedeId: Number(sedeId),
+      categoria: categoria.Categoria,
+    });
+
+  const rowClass =
+    'w-full text-left bg-white/[0.03] hover:bg-white/[0.07] p-3 rounded-lg border border-white/5 hover:border-white/15 transition-all cursor-pointer';
+
+  return (
+    <div className="group relative bg-white/5 hover:bg-white/[0.08] border border-white/10 hover:border-blue-500/30 rounded-2xl transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden h-full backdrop-blur-sm">
+      <div className="absolute -inset-24 bg-blue-600/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+
+      <div className="p-5 relative z-10 h-full flex flex-col">
+        <button type="button" onClick={() => open('inscritos', 'Jugadores Inscritos')} className="block text-left">
+          <div className="mb-4 flex justify-between items-center">
+            <div className="bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 border border-blue-500/10">
+              <Users size={18} />
+            </div>
+            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+              Categoría
+            </div>
+          </div>
+
+          <h3 className="text-lg font-black mb-4 text-slate-200 group-hover:text-white transition-colors line-clamp-1 tracking-tight">
+            {categoria.Categoria}
+          </h3>
+        </button>
 
         <div className="space-y-2">
-          <div className="flex justify-between items-center bg-white/[0.03] p-3 rounded-lg border border-white/5">
-            <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-              Jugadores Inscritos
-            </span>
-            <span className="text-xl font-black text-emerald-400">{categoria.Inscritos}</span>
-          </div>
-
-          <div className="flex flex-col bg-white/[0.03] p-3 rounded-lg border border-white/5">
+          <button type="button" onClick={() => open('inscritos', 'Jugadores Inscritos')} className={rowClass}>
             <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                Jugadores Inscritos
+              </span>
+              <span className="text-xl font-black text-emerald-400">{categoria.Inscritos}</span>
+            </div>
+          </button>
+
+          <button type="button" onClick={() => open('becados', 'Jugadores Becados')} className={`${rowClass} flex flex-col`}>
+            <div className="w-full flex justify-between items-center">
               <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
                 <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
                 Jugadores Becados
               </span>
-              <span className="text-xl font-black text-purple-400">
-                {categoria.BecasDetail ? categoria.BecasDetail.split(',').filter(Boolean).length : 0}
-              </span>
+              <span className="text-xl font-black text-purple-400">{becados}</span>
             </div>
             {categoria.BecasDetail && (
               <p className="text-[10px] text-purple-300/80 font-semibold mt-1 self-start ml-3.5 leading-tight">
                 {formatBecasDetail(categoria.BecasDetail)}
               </p>
             )}
-          </div>
+          </button>
 
-          <div className="flex justify-between items-center bg-white/[0.03] p-3 rounded-lg border border-white/5">
-            <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
-              <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-              Jugadores Baja
-            </span>
-            <span className="text-xl font-black text-rose-400">{categoria.Bajas || 0}</span>
-          </div>
+          <button type="button" onClick={() => open('bajas', 'Jugadores Baja')} className={rowClass}>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
+                <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
+                Jugadores Baja
+              </span>
+              <span className="text-xl font-black text-rose-400">{categoria.Bajas || 0}</span>
+            </div>
+          </button>
         </div>
 
-        <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-blue-400 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">
+        <button
+          type="button"
+          onClick={() => open('inscritos', 'Jugadores Inscritos')}
+          className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-blue-400 hover:text-blue-300 transition-colors"
+        >
           <span className="text-[10px] font-black uppercase tracking-widest">Ver Jugadores</span>
           <ChevronRight size={14} />
-        </div>
+        </button>
       </div>
 
       <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-    </Link>
+    </div>
   );
 }
