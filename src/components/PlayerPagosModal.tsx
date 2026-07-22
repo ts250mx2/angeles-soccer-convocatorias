@@ -378,7 +378,19 @@ export default function PlayerPagosModal({
                         </span>
                       </td>
                       <td className="px-3 py-2 text-slate-400 text-xs">{p.FormaPago}</td>
-                      <td className="px-3 py-2 text-right text-emerald-400 font-black whitespace-nowrap">{money(Number(p.Pago))}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        {Number(p.Pago) === 0 ? (
+                          /* Importe en cero = concepto cubierto por beca, no un cobro real. */
+                          <span
+                            title="Concepto cubierto por beca (importe en cero)"
+                            className="text-[9px] font-black px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30"
+                          >
+                            BECADO
+                          </span>
+                        ) : (
+                          <span className="text-emerald-400 font-black">{money(Number(p.Pago))}</span>
+                        )}
+                      </td>
                     </tr>
 
                     {/* El aviso va pegado al renglón del pago que lo provoca */}

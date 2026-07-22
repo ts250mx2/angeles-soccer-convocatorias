@@ -2,20 +2,92 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, MapPin, UserCheck, ChevronRight, ChevronDown, CalendarRange, FileWarning, CalendarX, CheckCircle2, AlertTriangle } from 'lucide-react';
+import {
+  Search, MapPin, UserCheck, UserMinus, ChevronRight, ChevronDown, CalendarRange, History, CalendarClock,
+} from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
 import AdeudosModal, { type AdeudosModalConfig } from '@/components/AdeudosModal';
 
+interface DebeMes {
+  mes: number;
+  cantidad: number;
+}
+
 interface SedeSummary {
   IdSede: number;
   Sede: string;
+  /** 1 = sede de clinics; se excluye de los adeudos. */
+  EsClinics: number;
   Activos: number;
   Bajas: number;
-  PendientesInscripcion: number;
-  PendientesMensualidad: number;
-  AlCorriente: number;
-  Debe: number;
+  ActualDebe: number;
+  ActualAlCorriente: number;
+  ActualBecadosSinInscripcion: number;
+  ActualDebeInscripcion: number;
+  ActualDebeMeses: DebeMes[];
+  AnteriorDebe: number;
+  AnteriorAlCorriente: number;
+  AnteriorBecadosSinInscripcion: number;
+  AnteriorPosiblesBajas: number;
+  AnteriorDebeInscripcion: number;
+  AnteriorDebeMeses: DebeMes[];
+}
+
+const MESES_CORTOS = [
+  'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic',
+];
+
+/**
+ * Desglose del adeudo: un chip por concepto (inscripción y cada mes vencido) con
+ * cuántos jugadores lo deben. Solo se muestran los conceptos con adeudo, para que
+ * la tarjeta no se llene de ceros.
+ */
+function DesgloseAdeudo({ inscripcion, meses, onInscripcion, onMes, size = 'sm' }: {
+  inscripcion: number;
+  meses: DebeMes[];
+  onInscripcion: () => void;
+  onMes: (mes: number) => void;
+  size?: 'sm' | 'xs';
+}) {
+  const conAdeudo = meses.filter((m) => m.cantidad > 0);
+  if (inscripcion === 0 && conAdeudo.length === 0) return null;
+
+  const chip = size === 'xs'
+    ? 'px-1.5 py-0.5 text-[9px] rounded-md'
+    : 'px-2 py-0.5 text-[10px] rounded-md';
+
+  return (
+    <div className="flex flex-wrap gap-1 mt-1.5">
+      {inscripcion > 0 && (
+        <button
+          type="button"
+          onClick={onInscripcion}
+          title={`${inscripcion} deben la inscripción`}
+          className={`${chip} font-black bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-colors`}
+        >
+          Insc. {inscripcion}
+        </button>
+      )}
+      {conAdeudo.map((m) => (
+        <button
+          key={m.mes}
+          type="button"
+          onClick={() => onMes(m.mes)}
+          title={`${m.cantidad} deben ${MESES_CORTOS[m.mes - 1]}`}
+          className={`${chip} font-black bg-orange-500/15 text-orange-300 border border-orange-500/30 hover:bg-orange-500/30 transition-colors`}
+        >
+          {MESES_CORTOS[m.mes - 1]} {m.cantidad}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface TemporadaInfo {
+  seasonId: number;
+  temporadaNombre: string;
 }
 
 interface Temporada {
@@ -32,22 +104,26 @@ export default function AdeudosSedePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [temporadas, setTemporadas] = useState<Temporada[]>([]);
   const [temporadaId, setTemporadaId] = useState<number | null>(null);
+  const [actual, setActual] = useState<TemporadaInfo | null>(null);
+  const [anterior, setAnterior] = useState<TemporadaInfo | null>(null);
   const [modal, setModal] = useState<AdeudosModalConfig | null>(null);
 
   useEffect(() => {
-    if (isInitialized && !user) {
-      router.push('/login');
-    }
+    if (isInitialized && !user) router.push('/login');
   }, [user, isInitialized, router]);
 
   const fetchSedes = async (temporada: number | null, silent = false) => {
     if (!silent) setIsLoading(true);
     try {
       const qs = temporada ? `?temporadaId=${temporada}` : '';
-      const response = await fetch(`/api/adeudos/sedes${qs}`);
+      // no-store: sin esto el navegador puede servir una respuesta vieja y los
+      // campos nuevos llegan como undefined (se veían en cero).
+      const response = await fetch(`/api/adeudos/sedes${qs}`, { cache: 'no-store' });
       const data = await response.json();
       if (data.success) {
         setSedes(data.data);
+        setActual(data.config?.actual ?? null);
+        setAnterior(data.config?.anterior ?? null);
       } else {
         console.error('Error fetching sedes:', data.message);
       }
@@ -58,7 +134,6 @@ export default function AdeudosSedePage() {
     }
   };
 
-  // Carga las temporadas y arranca en la activa (default).
   useEffect(() => {
     if (!isInitialized || !user) return;
     (async () => {
@@ -78,32 +153,57 @@ export default function AdeudosSedePage() {
   }, [isInitialized, user]);
 
   useEffect(() => {
-    if (isInitialized && user && temporadaId !== null) {
-      fetchSedes(temporadaId);
-    }
+    if (isInitialized && user && temporadaId !== null) fetchSedes(temporadaId);
   }, [isInitialized, user, temporadaId]);
 
   const filteredSedes = sedes.filter(sede =>
     sede.Sede.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
   const sedesWithActivos = filteredSedes.filter(sede => sede.Activos > 0);
   const sedesWithoutActivos = filteredSedes.filter(sede => sede.Activos === 0);
 
-  const temporadaNombre = temporadas.find(t => t.IdTemporada === temporadaId)?.Temporada;
+  const sum = (pick: (s: SedeSummary) => number) => sedes.reduce((acc, s) => acc + (pick(s) || 0), 0);
+  // Los adeudos ignoran clinics, así que la plantilla se reporta por separado.
+  const sumSi = (esClinics: number, pick: (s: SedeSummary) => number) =>
+    sedes.filter((s) => (s.EsClinics || 0) === esClinics).reduce((acc, s) => acc + (pick(s) || 0), 0);
+  const activosSedes = sumSi(0, s => s.Activos);
+  const activosClinics = sumSi(1, s => s.Activos);
+  const bajasSedes = sumSi(0, s => s.Bajas);
+  const bajasClinics = sumSi(1, s => s.Bajas);
+  const totalActualDebe = sum(s => s.ActualDebe);
+  const totalActualAlCorriente = sum(s => s.ActualAlCorriente);
+  const totalAnteriorDebe = sum(s => s.AnteriorDebe);
+  const totalAnteriorAlCorriente = sum(s => s.AnteriorAlCorriente);
 
-  const totalActivos = sedes.reduce((acc, s) => acc + s.Activos, 0);
-  const totalPendInsc = sedes.reduce((acc, s) => acc + (s.PendientesInscripcion || 0), 0);
-  const totalPendMens = sedes.reduce((acc, s) => acc + (s.PendientesMensualidad || 0), 0);
-  const totalAlCorriente = sedes.reduce((acc, s) => acc + (s.AlCorriente || 0), 0);
-  const totalDebe = sedes.reduce((acc, s) => acc + (s.Debe || 0), 0);
+  // Desglose global: se suman los conteos por mes de todas las sedes.
+  const sumaMeses = (pick: (s: SedeSummary) => DebeMes[]): DebeMes[] => {
+    const acc = new Map<number, number>();
+    for (const s of sedes) {
+      for (const m of pick(s) ?? []) acc.set(m.mes, (acc.get(m.mes) ?? 0) + m.cantidad);
+    }
+    return [...acc.entries()]
+      .map(([mes, cantidad]) => ({ mes, cantidad }))
+      .sort((a, b) => a.mes - b.mes);
+  };
+  const totalActualInsc = sum(s => s.ActualDebeInscripcion);
+  const totalActualMeses = sumaMeses(s => s.ActualDebeMeses);
+  const totalAnteriorInsc = sum(s => s.AnteriorDebeInscripcion);
+  const totalAnteriorMeses = sumaMeses(s => s.AnteriorDebeMeses);
+  const totalActualBecadosSinInsc = sum(s => s.ActualBecadosSinInscripcion);
+  const totalAnteriorBecadosSinInsc = sum(s => s.AnteriorBecadosSinInscripcion);
+  const totalAnteriorPosiblesBajas = sum(s => s.AnteriorPosiblesBajas);
+
+  // Cortes de la temporada anterior: el modal debe consultar ESA temporada.
+  const scopeAnterior = anterior
+    ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre }
+    : {};
 
   return (
     <DashboardLayout>
       <main className="overflow-y-auto flex-1 text-white p-6 md:p-8 relative">
         <div className="max-w-7xl mx-auto">
 
-          <div className="mb-12 flex flex-col md:flex-row md:items-end md:justify-between gap-5">
+          <div className="mb-10 flex flex-col md:flex-row md:items-end md:justify-between gap-5">
             <div>
               <h1 className="text-3xl font-black text-white mb-2">Adeudos por Sede</h1>
               <p className="text-slate-400">Monitoreo financiero segmentado por campus</p>
@@ -128,8 +228,72 @@ export default function AdeudosSedePage() {
             </div>
           </div>
 
-          {/* Search and Stats Section */}
-          <div className="mb-8 flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
+          {/* ── KPIs ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+            <KpiSplit
+              label="Jugadores Activos"
+              icon={<UserCheck size={18} className="text-emerald-400" />}
+              tone="emerald"
+              valorSedes={activosSedes}
+              valorClinics={activosClinics}
+              onSedes={() => setModal({ title: 'Jugadores Activos · Sedes', subtitle: actual?.temporadaNombre, filtro: 'activos', clinics: 0 })}
+              onClinics={() => setModal({ title: 'Jugadores Activos · Clinics', subtitle: actual?.temporadaNombre, filtro: 'activos', clinics: 1 })}
+            />
+            <KpiSplit
+              label="Jugadores Bajas"
+              icon={<UserMinus size={18} className="text-rose-400" />}
+              tone="rose"
+              valorSedes={bajasSedes}
+              valorClinics={bajasClinics}
+              onSedes={() => setModal({ title: 'Jugadores Baja · Sedes', subtitle: actual?.temporadaNombre, filtro: 'bajas', clinics: 0 })}
+              onClinics={() => setModal({ title: 'Jugadores Baja · Clinics', subtitle: actual?.temporadaNombre, filtro: 'bajas', clinics: 1 })}
+            />
+            <KpiDual
+              label="Adeudos Temporada Anterior"
+              caption={anterior?.temporadaNombre ?? 'Sin temporada anterior'}
+              icon={<History size={18} className="text-amber-400" />}
+              tone="amber"
+              debe={totalAnteriorDebe}
+              alCorriente={totalAnteriorAlCorriente}
+              becadosSinInsc={totalAnteriorBecadosSinInsc}
+              disabled={!anterior}
+              onDebe={() => setModal({ title: 'Con Adeudo · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'debe', ...scopeAnterior })}
+              onAlCorriente={() => setModal({ title: 'Al Corriente · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'al-corriente', ...scopeAnterior })}
+              onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'becado-sin-inscripcion', ...scopeAnterior })}
+              posiblesBajas={totalAnteriorPosiblesBajas}
+              onPosiblesBajas={() => setModal({ title: 'Posibles Bajas · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'posible-baja', ...scopeAnterior })}
+              desglose={
+                <DesgloseAdeudo
+                  inscripcion={totalAnteriorInsc}
+                  meses={totalAnteriorMeses}
+                  onInscripcion={() => setModal({ title: 'Deben Inscripción · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'pendiente-inscripcion', ...scopeAnterior })}
+                  onMes={(mes) => setModal({ title: `Deben ${MESES_CORTOS[mes - 1]} · Temporada Anterior`, subtitle: anterior?.temporadaNombre, filtro: 'debe-mes', mes, ...scopeAnterior })}
+                />
+              }
+            />
+            <KpiDual
+              label="Adeudos Esta Temporada"
+              caption={actual?.temporadaNombre ?? ''}
+              icon={<CalendarClock size={18} className="text-blue-400" />}
+              tone="blue"
+              debe={totalActualDebe}
+              alCorriente={totalActualAlCorriente}
+              becadosSinInsc={totalActualBecadosSinInsc}
+              onDebe={() => setModal({ title: 'Con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'debe' })}
+              onAlCorriente={() => setModal({ title: 'Al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'al-corriente' })}
+              onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'becado-sin-inscripcion' })}
+              desglose={
+                <DesgloseAdeudo
+                  inscripcion={totalActualInsc}
+                  meses={totalActualMeses}
+                  onInscripcion={() => setModal({ title: 'Deben Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'pendiente-inscripcion' })}
+                  onMes={(mes) => setModal({ title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, subtitle: actual?.temporadaNombre, filtro: 'debe-mes', mes })}
+                />
+              }
+            />
+          </div>
+
+          <div className="mb-8">
             <div className="relative w-full md:w-96 group">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-400 transition-colors" size={18} />
               <input
@@ -140,81 +304,12 @@ export default function AdeudosSedePage() {
                 className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 outline-none focus:bg-white/10 focus:border-blue-500/50 transition-all text-white placeholder-slate-400"
               />
             </div>
-
-            <div className="flex gap-4 w-full md:w-auto flex-wrap">
-              <button
-                type="button"
-                onClick={() => setModal({ title: 'Total Activos', subtitle: temporadaNombre, filtro: 'activos' })}
-                className="flex-1 md:flex-none bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 px-4 py-2 rounded-xl flex items-center gap-3 text-left transition-all cursor-pointer"
-              >
-                <div className="bg-emerald-500/20 p-2 rounded-lg">
-                  <UserCheck size={18} className="text-emerald-400" />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Total Activos</p>
-                  <p className="text-xl font-bold">{totalActivos}</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setModal({ title: 'Al Corriente', subtitle: temporadaNombre, filtro: 'al-corriente' })}
-                className="flex-1 md:flex-none bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/20 hover:border-teal-500/40 px-4 py-2 rounded-xl flex items-center gap-3 text-left transition-all cursor-pointer"
-              >
-                <div className="bg-teal-500/20 p-2 rounded-lg">
-                  <CheckCircle2 size={18} className="text-teal-400" />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-teal-400 font-bold">Al Corriente</p>
-                  <p className="text-xl font-bold">{totalAlCorriente}</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setModal({ title: 'Sin Inscripción', subtitle: temporadaNombre, filtro: 'pendiente-inscripcion' })}
-                className="flex-1 md:flex-none bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 px-4 py-2 rounded-xl flex items-center gap-3 text-left transition-all cursor-pointer"
-              >
-                <div className="bg-amber-500/20 p-2 rounded-lg">
-                  <FileWarning size={18} className="text-amber-400" />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-amber-400 font-bold">Sin Inscripción</p>
-                  <p className="text-xl font-bold">{totalPendInsc}</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setModal({ title: 'Deben Mensualidad', subtitle: temporadaNombre, filtro: 'pendiente-mensualidad' })}
-                className="flex-1 md:flex-none bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 hover:border-orange-500/40 px-4 py-2 rounded-xl flex items-center gap-3 text-left transition-all cursor-pointer"
-              >
-                <div className="bg-orange-500/20 p-2 rounded-lg">
-                  <CalendarX size={18} className="text-orange-400" />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-orange-400 font-bold">Deben Mensualidad</p>
-                  <p className="text-xl font-bold">{totalPendMens}</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setModal({ title: 'Con Adeudo', subtitle: temporadaNombre, filtro: 'debe' })}
-                className="flex-1 md:flex-none bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/40 px-4 py-2 rounded-xl flex items-center gap-3 text-left transition-all cursor-pointer"
-              >
-                <div className="bg-rose-500/20 p-2 rounded-lg">
-                  <AlertTriangle size={18} className="text-rose-400" />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-rose-400 font-bold">Con Adeudo</p>
-                  <p className="text-xl font-bold">{totalDebe}</p>
-                </div>
-              </button>
-            </div>
           </div>
 
-          {/* Sedes Grid */}
           {isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {[...Array(8)].map((_, i) => (
-                <div key={i} className="h-48 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+                <div key={i} className="h-64 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
               ))}
             </div>
           ) : filteredSedes.length > 0 ? (
@@ -227,7 +322,7 @@ export default function AdeudosSedePage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {sedesWithActivos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} temporadaNombre={temporadaNombre} onOpenPlayers={setModal} />
+                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} actual={actual} anterior={anterior} onOpenPlayers={setModal} />
                     ))}
                   </div>
                 </div>
@@ -241,7 +336,7 @@ export default function AdeudosSedePage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-50 hover:opacity-100 transition-all duration-500">
                     {sedesWithoutActivos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} temporadaNombre={temporadaNombre} onOpenPlayers={setModal} />
+                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} actual={actual} anterior={anterior} onOpenPlayers={setModal} />
                     ))}
                   </div>
                 </div>
@@ -259,7 +354,7 @@ export default function AdeudosSedePage() {
         <AdeudosModal
           config={modal}
           temporadaId={temporadaId}
-          temporadaNombre={temporadaNombre}
+          temporadaNombre={actual?.temporadaNombre}
           onClose={() => setModal(null)}
           onDataChanged={() => fetchSedes(temporadaId, true)}
         />
@@ -268,112 +363,293 @@ export default function AdeudosSedePage() {
   );
 }
 
-function SedeCard({
-  sede,
-  temporadaId,
-  temporadaNombre,
-  onOpenPlayers,
-}: {
+const TONES: Record<string, { bg: string; border: string; hover: string; text: string }> = {
+  emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', hover: 'hover:bg-emerald-500/20 hover:border-emerald-500/40', text: 'text-emerald-400' },
+  rose: { bg: 'bg-rose-500/10', border: 'border-rose-500/20', hover: 'hover:bg-rose-500/20 hover:border-rose-500/40', text: 'text-rose-400' },
+  amber: { bg: 'bg-amber-500/10', border: 'border-amber-500/20', hover: '', text: 'text-amber-400' },
+  blue: { bg: 'bg-blue-500/10', border: 'border-blue-500/20', hover: '', text: 'text-blue-400' },
+};
+
+/** KPI de plantilla partido en sedes normales y clinics (clinics no entra a adeudos). */
+function KpiSplit({ label, icon, tone, valorSedes, valorClinics, onSedes, onClinics }: {
+  label: string; icon: React.ReactNode; tone: string;
+  valorSedes: number; valorClinics: number;
+  onSedes: () => void; onClinics: () => void;
+}) {
+  const t = TONES[tone];
+  return (
+    <div className={`${t.bg} ${t.border} border px-4 py-3 rounded-2xl`}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`${t.bg} p-1.5 rounded-lg`}>{icon}</div>
+        <p className={`text-[10px] uppercase tracking-wider ${t.text} font-bold`}>{label}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onSedes}
+          className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl px-2 py-1.5 text-left transition-all"
+        >
+          <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Sedes</p>
+          <p className={`text-lg font-black ${t.text}`}>{valorSedes}</p>
+        </button>
+        <button
+          type="button"
+          onClick={onClinics}
+          title="Clinics no entra en los adeudos"
+          className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl px-2 py-1.5 text-left transition-all"
+        >
+          <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Clinics</p>
+          <p className="text-lg font-black text-slate-300">{valorClinics}</p>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** KPI con dos cifras clicables: con adeudo y al corriente. */
+function KpiDual({ label, caption, icon, tone, debe, alCorriente, becadosSinInsc, onDebe, onAlCorriente, onBecados, disabled, desglose, posiblesBajas, onPosiblesBajas }: {
+  label: string; caption: string; icon: React.ReactNode; tone: string;
+  debe: number; alCorriente: number; becadosSinInsc: number;
+  onDebe: () => void; onAlCorriente: () => void; onBecados: () => void;
+  disabled?: boolean; desglose?: React.ReactNode;
+  /** Solo se muestra si se provee (temporadas ya transcurridas). */
+  posiblesBajas?: number; onPosiblesBajas?: () => void;
+}) {
+  const t = TONES[tone];
+  return (
+    <div className={`${t.bg} ${t.border} border px-4 py-3 rounded-2xl`}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`${t.bg} p-1.5 rounded-lg`}>{icon}</div>
+        <div className="min-w-0">
+          <p className={`text-[10px] uppercase tracking-wider ${t.text} font-bold leading-tight`}>{label}</p>
+          <p className="text-[9px] text-slate-500 truncate">{caption}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 items-start">
+        {/* El desglose por concepto vive DENTRO del cuadro de adeudo, para que se
+            lea como parte de esa cifra y no como algo suelto de la tarjeta. */}
+        <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={onDebe}
+            disabled={disabled}
+            className="w-full px-2 py-1.5 text-left hover:bg-rose-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <p className="text-[8px] uppercase font-black text-rose-400/80 tracking-wider">Con adeudo</p>
+            <p className="text-lg font-black text-rose-400">{debe}</p>
+          </button>
+          {!disabled && desglose && <div className="px-2 pb-2">{desglose}</div>}
+        </div>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={onAlCorriente}
+            disabled={disabled}
+            className="w-full bg-teal-500/10 hover:bg-teal-500/25 border border-teal-500/20 rounded-xl px-2 py-1.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <p className="text-[8px] uppercase font-black text-teal-400/80 tracking-wider">Al corriente</p>
+            <p className="text-lg font-black text-teal-400">{alCorriente}</p>
+          </button>
+          <button
+            type="button"
+            onClick={onBecados}
+            disabled={disabled}
+            title="Beca 100% sin pago de inscripción: no deben, pero no están inscritos"
+            className="w-full bg-purple-500/10 hover:bg-purple-500/25 border border-purple-500/20 rounded-xl px-2 py-1.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <p className="text-[8px] uppercase font-black text-purple-300/80 tracking-wider leading-tight">
+              Becados 100% s/inscripción
+            </p>
+            <p className="text-lg font-black text-purple-300">{becadosSinInsc}</p>
+          </button>
+        </div>
+      </div>
+
+      {/* Posibles bajas: deben la inscripción y todos los meses vencidos. */}
+      {posiblesBajas !== undefined && onPosiblesBajas && (
+        <button
+          type="button"
+          onClick={onPosiblesBajas}
+          disabled={disabled}
+          title="No pagaron la inscripción ni un solo mes vencido de esa temporada"
+          className="mt-2 w-full bg-red-600/15 hover:bg-red-600/30 border border-red-600/30 rounded-xl px-2 py-1.5 flex items-center justify-between gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <span className="flex items-center gap-1.5">
+            <UserMinus size={13} className="text-red-300" />
+            <span className="text-[9px] uppercase font-black text-red-300 tracking-wider">Posibles bajas</span>
+          </span>
+          <span className="text-lg font-black text-red-300">{posiblesBajas}</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SedeCard({ sede, temporadaId, actual, anterior, onOpenPlayers }: {
   sede: SedeSummary;
   temporadaId: number | null;
-  temporadaNombre?: string;
+  actual: TemporadaInfo | null;
+  anterior: TemporadaInfo | null;
   onOpenPlayers: (config: AdeudosModalConfig) => void;
 }) {
   const categoriaHref = `/adeudos/sede/${sede.IdSede}${temporadaId ? `?temporada=${temporadaId}` : ''}`;
+  const base = { sedeId: sede.IdSede };
+  const scopeAnterior = anterior
+    ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre }
+    : {};
 
-  const open = (filtro: AdeudosModalConfig['filtro'], title: string) =>
-    onOpenPlayers({
-      title,
-      subtitle: [sede.Sede, temporadaNombre].filter(Boolean).join(' · '),
-      filtro,
-      sedeId: sede.IdSede,
-    });
+  const open = (cfg: Omit<AdeudosModalConfig, 'subtitle'> & { subtitle?: string }) =>
+    onOpenPlayers({ ...cfg, subtitle: cfg.subtitle ?? sede.Sede });
 
-  const statBtn = 'w-full text-left bg-white/[0.03] hover:bg-white/[0.07] p-2 rounded-lg border border-white/5 hover:border-white/15 transition-all cursor-pointer';
+  const rowBtn = 'w-full text-left bg-white/[0.03] hover:bg-white/[0.08] p-2 rounded-lg border border-white/5 hover:border-white/15 transition-all cursor-pointer';
+  const miniBtn = 'p-2 rounded-lg border text-left transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
 
   return (
     <div className="group relative bg-white/5 hover:bg-white/[0.08] border border-white/10 hover:border-blue-500/30 rounded-2xl transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden h-full backdrop-blur-sm">
       <div className="absolute -inset-24 bg-blue-600/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
 
-      <div className="p-5 relative z-10 h-full flex flex-col">
+      <div className="p-4 relative z-10 h-full flex flex-col">
         <Link href={categoriaHref} className="block">
-          <div className="mb-4 flex justify-between items-center">
-            <div className="bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 border border-blue-500/10">
-              <MapPin size={18} />
+          <div className="mb-3 flex justify-between items-center">
+            <div className="bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white p-2 rounded-xl transition-all duration-500 group-hover:scale-110 border border-blue-500/10">
+              <MapPin size={16} />
             </div>
-            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-              Campus
+            <div className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${
+              sede.EsClinics
+                ? 'text-sky-300 bg-sky-500/10 border-sky-500/25'
+                : 'text-slate-500 bg-white/5 border-white/5'
+            }`}>
+              {sede.EsClinics ? 'Clinics' : 'Campus'}
             </div>
           </div>
-
-          <h3 className="text-sm font-black mb-4 text-slate-200 group-hover:text-white transition-colors line-clamp-1 tracking-tight">
+          <h3 className="text-sm font-black mb-3 text-slate-200 group-hover:text-white transition-colors line-clamp-1 tracking-tight">
             {sede.Sede}
           </h3>
         </Link>
 
-        <div className="space-y-2">
-          <button type="button" onClick={() => open('activos', 'Jugadores Activos')} className={statBtn}>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-slate-400 flex items-center gap-2 font-medium">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                Activos
-              </span>
-              <span className="text-xs font-black text-emerald-400">{sede.Activos}</span>
-            </div>
+        {/* Activos / Bajas */}
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => open({ ...base, title: 'Jugadores Activos', filtro: 'activos' })} className={rowBtn}>
+            <p className="text-[8px] uppercase font-black text-slate-500 tracking-wider">Activos</p>
+            <p className="text-base font-black text-emerald-400">{sede.Activos}</p>
           </button>
-          <button type="button" onClick={() => open('al-corriente', 'Al Corriente')} className={statBtn}>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-slate-400 flex items-center gap-2 font-medium">
-                <div className="w-1.5 h-1.5 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.5)]" />
-                Al Corriente
-              </span>
-              <span className="text-xs font-black text-teal-400">{sede.AlCorriente}</span>
-            </div>
+          <button type="button" onClick={() => open({ ...base, title: 'Jugadores Baja', filtro: 'bajas' })} className={rowBtn}>
+            <p className="text-[8px] uppercase font-black text-slate-500 tracking-wider">Bajas</p>
+            <p className="text-base font-black text-rose-400/80">{sede.Bajas}</p>
           </button>
-          <button type="button" onClick={() => open('debe', 'Con Adeudo')} className={statBtn}>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-slate-400 flex items-center gap-2 font-medium">
-                <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-                Debe
-              </span>
-              <span className="text-xs font-black text-rose-400">{sede.Debe}</span>
-            </div>
-          </button>
-          <button type="button" onClick={() => open('bajas', 'Jugadores Baja')} className={statBtn}>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-slate-400 flex items-center gap-2 font-medium">
-                <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-                Bajas
-              </span>
-              <span className="text-xs font-bold text-rose-400/80">{sede.Bajas}</span>
-            </div>
-          </button>
+        </div>
 
-          <div className="grid grid-cols-2 gap-2 mt-4">
+        {/* Temporada anterior */}
+        <p className="mt-3 mb-1 text-[8px] uppercase font-black text-amber-400/70 tracking-wider flex items-center gap-1">
+          <History size={9} /> Temporada anterior
+        </p>
+        <div className="grid grid-cols-2 gap-2 items-start">
+          <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
             <button
               type="button"
-              onClick={() => open('pendiente-inscripcion', 'Sin Inscripción')}
-              className={`p-2 rounded-lg border transition-colors text-left cursor-pointer ${sede.PendientesInscripcion > 0 ? 'bg-amber-500/5 border-amber-500/10 text-amber-400/80 hover:bg-amber-500/15' : 'bg-emerald-500/5 border-emerald-500/10 text-emerald-400/80 hover:bg-emerald-500/15'}`}
+              disabled={!anterior}
+              onClick={() => open({ ...base, ...scopeAnterior, title: 'Con Adeudo · Temporada Anterior', filtro: 'debe', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="w-full p-2 text-left hover:bg-rose-500/15 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <p className="text-[7px] uppercase font-black mb-0.5 tracking-tighter opacity-60">Sin Inscripción</p>
-              <p className="text-[10px] font-black">{sede.PendientesInscripcion > 0 ? `${sede.PendientesInscripcion} deben` : '✓ Al día'}</p>
+              <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider">Con adeudo</p>
+              <p className="text-sm font-black text-rose-400">{sede.AnteriorDebe}</p>
+            </button>
+            {anterior && (
+              <div className="px-2 pb-2">
+                <DesgloseAdeudo
+                  size="xs"
+                  inscripcion={sede.AnteriorDebeInscripcion}
+                  meses={sede.AnteriorDebeMeses ?? []}
+                  onInscripcion={() => open({ ...base, ...scopeAnterior, title: 'Deben Inscripción · Temporada Anterior', filtro: 'pendiente-inscripcion', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+                  onMes={(mes) => open({ ...base, ...scopeAnterior, title: `Deben ${MESES_CORTOS[mes - 1]} · Temporada Anterior`, filtro: 'debe-mes', mes, subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+                />
+              </div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <button
+              type="button"
+              disabled={!anterior}
+              onClick={() => open({ ...base, ...scopeAnterior, title: 'Al Corriente · Temporada Anterior', filtro: 'al-corriente', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className={`w-full ${miniBtn} bg-teal-500/5 border-teal-500/10 hover:bg-teal-500/15`}
+            >
+              <p className="text-[8px] uppercase font-black text-teal-400/70 tracking-wider">Al corriente</p>
+              <p className="text-sm font-black text-teal-400">{sede.AnteriorAlCorriente}</p>
             </button>
             <button
               type="button"
-              onClick={() => open('pendiente-mensualidad', 'Deben Mensualidad')}
-              className={`p-2 rounded-lg border transition-colors text-left cursor-pointer ${sede.PendientesMensualidad > 0 ? 'bg-rose-500/5 border-rose-500/10 text-rose-400/80 hover:bg-rose-500/15' : 'bg-emerald-500/5 border-emerald-500/10 text-emerald-400/80 hover:bg-emerald-500/15'}`}
+              disabled={!anterior}
+              title="Beca 100% sin pago de inscripción"
+              onClick={() => open({ ...base, ...scopeAnterior, title: 'Becados 100% sin Inscripción · Temporada Anterior', filtro: 'becado-sin-inscripcion', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className={`w-full ${miniBtn} bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/15`}
             >
-              <p className="text-[7px] uppercase font-black mb-0.5 tracking-tighter opacity-60">Mensualidad</p>
-              <p className="text-[10px] font-black">{sede.PendientesMensualidad > 0 ? `${sede.PendientesMensualidad} deben` : '✓ Al día'}</p>
+              <p className="text-[8px] uppercase font-black text-purple-300/70 tracking-wider leading-tight">Becados 100% s/insc</p>
+              <p className="text-sm font-black text-purple-300">{sede.AnteriorBecadosSinInscripcion}</p>
+            </button>
+          </div>
+        </div>
+        {anterior && (
+          <button
+            type="button"
+            title="No pagaron la inscripción ni un solo mes vencido de esa temporada"
+            onClick={() => open({ ...base, ...scopeAnterior, title: 'Posibles Bajas · Temporada Anterior', filtro: 'posible-baja', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+            className="mt-2 w-full bg-red-600/10 hover:bg-red-600/25 border border-red-600/25 rounded-lg px-2 py-1.5 flex items-center justify-between gap-2 transition-all"
+          >
+            <span className="text-[8px] uppercase font-black text-red-300 tracking-wider">Posibles bajas</span>
+            <span className="text-sm font-black text-red-300">{sede.AnteriorPosiblesBajas}</span>
+          </button>
+        )}
+
+        {/* Esta temporada */}
+        <p className="mt-3 mb-1 text-[8px] uppercase font-black text-blue-400/70 tracking-wider flex items-center gap-1">
+          <CalendarClock size={9} /> Esta temporada
+        </p>
+        <div className="grid grid-cols-2 gap-2 items-start">
+          <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => open({ ...base, title: 'Con Adeudo · Esta Temporada', filtro: 'debe', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="w-full p-2 text-left hover:bg-rose-500/15 transition-all"
+            >
+              <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider">Con adeudo</p>
+              <p className="text-sm font-black text-rose-400">{sede.ActualDebe}</p>
+            </button>
+            <div className="px-2 pb-2">
+              <DesgloseAdeudo
+                size="xs"
+                inscripcion={sede.ActualDebeInscripcion}
+                meses={sede.ActualDebeMeses ?? []}
+                onInscripcion={() => open({ ...base, title: 'Deben Inscripción · Esta Temporada', filtro: 'pendiente-inscripcion', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                onMes={(mes) => open({ ...base, title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, filtro: 'debe-mes', mes, subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => open({ ...base, title: 'Al Corriente · Esta Temporada', filtro: 'al-corriente', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className={`w-full ${miniBtn} bg-teal-500/5 border-teal-500/10 hover:bg-teal-500/15`}
+            >
+              <p className="text-[8px] uppercase font-black text-teal-400/70 tracking-wider">Al corriente</p>
+              <p className="text-sm font-black text-teal-400">{sede.ActualAlCorriente}</p>
+            </button>
+            <button
+              type="button"
+              title="Beca 100% sin pago de inscripción"
+              onClick={() => open({ ...base, title: 'Becados 100% sin Inscripción · Esta Temporada', filtro: 'becado-sin-inscripcion', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className={`w-full ${miniBtn} bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/15`}
+            >
+              <p className="text-[8px] uppercase font-black text-purple-300/70 tracking-wider leading-tight">Becados 100% s/insc</p>
+              <p className="text-sm font-black text-purple-300">{sede.ActualBecadosSinInscripcion}</p>
             </button>
           </div>
         </div>
 
         <Link
           href={categoriaHref}
-          className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-blue-400 hover:text-blue-300 transition-colors"
+          className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-blue-400 hover:text-blue-300 transition-colors"
         >
-          <span className="text-[10px] font-black uppercase tracking-widest">Ver Categorías</span>
+          <span className="text-[10px] font-black uppercase tracking-widest">Ver por Categoría</span>
           <ChevronRight size={14} />
         </Link>
       </div>

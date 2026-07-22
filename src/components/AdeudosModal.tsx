@@ -3,16 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   X, Search, User, AlertCircle, Loader2, MapPin, FileDown, FileSpreadsheet,
-  CheckCircle2, XCircle,
+  CheckCircle2, XCircle, GraduationCap, ChevronRight,
 } from "lucide-react";
 import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModal";
 import {
   type AdeudoRow, type AdeudosConfig, exportAdeudosToPdf, exportAdeudosToExcel,
-  money, MESES_CORTOS, esBeca100, parseMeses,
+  money, MESES_CORTOS, esBeca100, parseMeses, becaPct, becaLabel,
 } from "@/lib/adeudos-export";
 
 export type AdeudosFilter =
-  | "activos" | "bajas" | "pendiente-inscripcion" | "pendiente-mensualidad" | "al-corriente" | "debe" | "todos";
+  | "activos" | "bajas" | "pendiente-inscripcion" | "pendiente-mensualidad"
+  | "al-corriente" | "becado-sin-inscripcion" | "posible-baja" | "debe" | "debe-mes" | "todos";
 
 export interface AdeudosModalConfig {
   title: string;
@@ -20,6 +21,14 @@ export interface AdeudosModalConfig {
   filtro: AdeudosFilter;
   sedeId?: number;
   categoria?: string;
+  /** Mes concreto para el corte `debe-mes` (desglose del adeudo). */
+  mes?: number;
+  /** 0 = solo sedes normales, 1 = solo clinics. Sin valor, ambas. */
+  clinics?: 0 | 1;
+  /** Temporada a consultar; si se omite se usa la seleccionada en la página.
+   *  Permite que los cortes de "temporada anterior" apunten a esa otra temporada. */
+  temporadaId?: number;
+  temporadaNombre?: string;
 }
 
 const ACCENT: Record<AdeudosFilter, string> = {
@@ -28,7 +37,10 @@ const ACCENT: Record<AdeudosFilter, string> = {
   "pendiente-inscripcion": "bg-amber-500",
   "pendiente-mensualidad": "bg-orange-500",
   "al-corriente": "bg-teal-500",
+  "becado-sin-inscripcion": "bg-purple-500",
+  "posible-baja": "bg-red-600",
   debe: "bg-rose-500",
+  "debe-mes": "bg-orange-500",
   todos: "bg-blue-500",
 };
 
@@ -52,8 +64,14 @@ export default function AdeudosModal({
   const [query, setQuery] = useState("");
   const [pagosTarget, setPagosTarget] = useState<PagosTarget | null>(null);
   const [recarga, setRecarga] = useState(0);
+  // Grupo de beca desplegado (por porcentaje). null = todos colapsados.
+  const [grupoAbierto, setGrupoAbierto] = useState<number | null>(null);
 
-  useEffect(() => { setQuery(""); }, [config]);
+  useEffect(() => { setQuery(""); setGrupoAbierto(null); }, [config]);
+
+  // Temporada efectiva: la del corte si la trae, si no la seleccionada en la página.
+  const temporadaEfectiva = config?.temporadaId ?? temporadaId;
+  const nombreEfectivo = config?.temporadaNombre ?? temporadaNombre;
 
   useEffect(() => {
     if (!config) return;
@@ -64,11 +82,13 @@ export default function AdeudosModal({
     const params = new URLSearchParams({ filtro: config.filtro });
     if (config.sedeId !== undefined) params.set("sedeId", String(config.sedeId));
     if (config.categoria) params.set("categoria", config.categoria);
-    if (temporadaId) params.set("temporadaId", String(temporadaId));
+    if (config.mes !== undefined) params.set("mes", String(config.mes));
+    if (config.clinics !== undefined) params.set("clinics", String(config.clinics));
+    if (temporadaEfectiva) params.set("temporadaId", String(temporadaEfectiva));
 
     (async () => {
       try {
-        const res = await fetch(`/api/adeudos/players?${params}`);
+        const res = await fetch(`/api/adeudos/players?${params}`, { cache: "no-store" });
         const json = await res.json();
         if (!alive) return;
         if (json.success) {
@@ -85,7 +105,7 @@ export default function AdeudosModal({
     })();
 
     return () => { alive = false; };
-  }, [config, temporadaId, recarga]);
+  }, [config, temporadaEfectiva, recarga]);
 
   useEffect(() => {
     if (!config || pagosTarget) return;
@@ -110,10 +130,33 @@ export default function AdeudosModal({
     [filtered]
   );
 
+  /* Agrupado por beca: primero "Sin beca" y luego cada porcentaje distinto,
+     ascendente, con el total de adeudo de cada grupo. */
+  const grupos = useMemo(() => {
+    const map = new Map<number, AdeudoRow[]>();
+    for (const p of filtered) {
+      const pct = becaPct(p.Beca);
+      const arr = map.get(pct);
+      if (arr) arr.push(p);
+      else map.set(pct, [p]);
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([pct, jugadores]) => ({
+        pct,
+        label: becaLabel(pct),
+        jugadores,
+        total: jugadores.reduce((s, p) => s + (Number(p.Adeudo) || 0), 0),
+      }));
+  }, [filtered]);
+
+  // Las exportaciones siguen el mismo orden agrupado que se ve en pantalla.
+  const ordenados = useMemo(() => grupos.flatMap((g) => g.jugadores), [grupos]);
+
   if (!config) return null;
 
   const showSede = config.sedeId === undefined;
-  const exportSubtitle = config.subtitle ?? temporadaNombre ?? "";
+  const exportSubtitle = config.subtitle ?? nombreEfectivo ?? "";
   const canExport = !isLoading && !error && filtered.length > 0 && cfg !== null;
   const meses: number[] = cfg
     ? Array.from({ length: cfg.endMonth - cfg.startMonth + 1 }, (_, i) => cfg.startMonth + i)
@@ -147,14 +190,14 @@ export default function AdeudosModal({
 
           <div className="mt-3 flex items-center justify-end gap-2">
             <button
-              onClick={() => cfg && exportAdeudosToPdf(filtered, cfg, config.title, exportSubtitle)}
+              onClick={() => cfg && exportAdeudosToPdf(ordenados, cfg, config.title, exportSubtitle)}
               disabled={!canExport}
               className={`${expBtn} bg-blue-600/15 hover:bg-blue-600/25 border-blue-500/30 text-blue-200`}
             >
               <FileDown size={13} /> PDF
             </button>
             <button
-              onClick={() => cfg && exportAdeudosToExcel(filtered, cfg, config.title, exportSubtitle)}
+              onClick={() => cfg && exportAdeudosToExcel(ordenados, cfg, config.title, exportSubtitle)}
               disabled={!canExport}
               className={`${expBtn} bg-emerald-600/15 hover:bg-emerald-600/25 border-emerald-500/30 text-emerald-200`}
             >
@@ -198,11 +241,61 @@ export default function AdeudosModal({
               {query && <p className="text-xs opacity-60">No hay coincidencias para &quot;{query}&quot;</p>}
             </div>
           ) : (
-            <div className="bg-white/5 border border-white/10 rounded-2xl divide-y divide-white/5 overflow-hidden">
-              {filtered.map((p) => {
-                const beca100 = esBeca100(p.Beca);
-                const pagados = parseMeses(p.MesesPagados);
+            <div className="space-y-3">
+              {grupos.map((g) => {
+                /* Con búsqueda activa se despliegan todos para no ocultar coincidencias;
+                   si solo hay un grupo tampoco tiene sentido dejarlo colapsado. */
+                const abierto =
+                  query.trim() !== "" || grupos.length === 1 || grupoAbierto === g.pct;
+                const tono =
+                  g.pct === 0
+                    ? { bg: "bg-slate-800/90 hover:bg-slate-700/90", border: "border-white/15", icon: "text-slate-400", text: "text-slate-100" }
+                    : g.pct >= 100
+                      ? { bg: "bg-purple-950/90 hover:bg-purple-900/90", border: "border-purple-500/30", icon: "text-purple-300", text: "text-purple-200" }
+                      : { bg: "bg-amber-950/90 hover:bg-amber-900/90", border: "border-amber-500/30", icon: "text-amber-300", text: "text-amber-200" };
+
                 return (
+                <div key={g.pct}>
+                  {/* Tarjeta del grupo: al hacer clic despliega sus jugadores.
+                      Queda fija (sticky) para seguir visible al bajar la lista. */}
+                  <button
+                    type="button"
+                    onClick={() => setGrupoAbierto(grupoAbierto === g.pct ? null : g.pct)}
+                    title={abierto ? "Ocultar jugadores de este grupo" : "Ver jugadores de este grupo"}
+                    className={`sticky top-0 z-20 w-full px-3.5 py-3 rounded-xl border backdrop-blur-md flex items-center justify-between gap-3 transition-colors text-left ${tono.bg} ${tono.border}`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <ChevronRight
+                        size={16}
+                        className={`${tono.icon} flex-shrink-0 transition-transform ${abierto ? "rotate-90" : ""}`}
+                      />
+                      <GraduationCap size={16} className={`${tono.icon} flex-shrink-0`} />
+                      <span className={`text-sm font-black uppercase tracking-wide ${tono.text}`}>
+                        {g.label}
+                      </span>
+                      <span className="text-[11px] font-black text-slate-200 bg-black/40 px-2 py-0.5 rounded-md whitespace-nowrap">
+                        {g.jugadores.length} {g.jugadores.length === 1 ? "jugador" : "jugadores"}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5 flex-shrink-0">
+                      <span className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Total</span>
+                      {g.pct >= 100 ? (
+                        <span className="text-[11px] font-black text-purple-300">Sin adeudo</span>
+                      ) : (
+                        <span className={`text-base font-black ${g.total > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                          {money(g.total)}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+
+                  {abierto && (
+                  <div className="mt-2 bg-white/5 border border-white/10 rounded-2xl divide-y divide-white/5 overflow-hidden">
+                    {g.jugadores.map((p) => {
+                      // El servidor ya resuelve la beca total; esBeca100 queda de respaldo.
+                      const beca100 = p.BecaTotal !== undefined ? !!p.BecaTotal : esBeca100(p.Beca);
+                      const pagados = parseMeses(p.MesesPagados);
+                      return (
                 <button
                   key={p.IdJugador}
                   type="button"
@@ -269,15 +362,29 @@ export default function AdeudosModal({
                       </div>
                     )}
 
-                    {/* Adeudo */}
+                    {/* Adeudo — el becado total no paga, así que no se muestra monto */}
                     <div className="flex flex-col items-end gap-0.5 min-w-[74px]">
                       <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider">Adeudo</span>
-                      <span className={`text-sm font-black ${p.Adeudo > 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                        {money(Number(p.Adeudo))}
-                      </span>
+                      {beca100 ? (
+                        <span
+                          title="Beca 100%: no genera adeudo"
+                          className="text-[9px] font-black px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30"
+                        >
+                          BECADO
+                        </span>
+                      ) : (
+                        <span className={`text-sm font-black ${p.Adeudo > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                          {money(Number(p.Adeudo))}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </button>
+                      );
+                    })}
+                  </div>
+                  )}
+                </div>
                 );
               })}
             </div>
@@ -299,8 +406,8 @@ export default function AdeudosModal({
 
     <PlayerPagosModal
       target={pagosTarget}
-      temporadaId={temporadaId}
-      temporadaNombre={temporadaNombre}
+      temporadaId={temporadaEfectiva}
+      temporadaNombre={nombreEfectivo}
       onClose={() => setPagosTarget(null)}
       onDataChanged={() => { setRecarga((r) => r + 1); onDataChanged?.(); }}
     />

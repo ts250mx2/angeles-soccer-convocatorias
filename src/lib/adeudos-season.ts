@@ -21,6 +21,12 @@ export interface SeasonMonths {
     numMonthsExpected: number;
     /** Meses ya exigibles a la fecha (start..hasta). 0 si la temporada aún no arranca. */
     mesesExigibles: number;
+    /** Año del inicio, para formar los códigos Anio*100+Mes. */
+    anioInicio: number;
+    /** Código Anio*100+Mes del primer mes de la temporada. */
+    desdeCodigo: number;
+    /** Código del último mes exigible. Menor que desdeCodigo si aún no arranca. */
+    hastaCodigo: number;
     temporadaNombre: string;
 }
 
@@ -45,6 +51,14 @@ export function resolveSeasonMonths(season: SeasonRow, now: Date = new Date()): 
     const esPasada = now.getTime() > finCierre.getTime();
 
     const hastaMonth = esPasada ? endMonth : currentMonth;
+    const anioInicio = inicio.getUTCFullYear();
+
+    /* Códigos Anio*100+Mes: las mensualidades se emparejan por el mes-año que
+       amparan y no por su IdTemporada, porque hay pagos capturados bajo una
+       temporada que cubren meses de otra (y así no los veía ninguna).
+       Nota: asume que la temporada no cruza el año, como todas las actuales. */
+    const desdeCodigo = anioInicio * 100 + startMonth;
+    const hastaCodigo = anioInicio * 100 + hastaMonth;
 
     return {
         seasonId: season.IdTemporada,
@@ -54,6 +68,9 @@ export function resolveSeasonMonths(season: SeasonRow, now: Date = new Date()): 
         numMonthsExpected: Math.max(0, endMonth - startMonth + 1),
         // Meses ya vencidos: 0 mientras la temporada no arranca (hastaMonth < startMonth).
         mesesExigibles: Math.max(0, hastaMonth - startMonth + 1),
+        anioInicio,
+        desdeCodigo,
+        hastaCodigo,
         temporadaNombre: season.Temporada,
     };
 }

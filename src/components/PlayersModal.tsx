@@ -4,15 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   X, Search, User, ChevronRight, AlertCircle, Loader2, MapPin,
-  FileDown, FileSpreadsheet, CalendarCheck, CheckCircle2, XCircle, AlertTriangle,
+  FileDown, FileSpreadsheet, CalendarCheck, CheckCircle2, XCircle, AlertTriangle, ListTree,
 } from "lucide-react";
 import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModal";
 import {
   type PlayerRow, type PlayersConfig, exportPlayersToPdf, exportPlayersToExcel,
+  exportMovimientosToExcel,
   fecha, MESES_CORTOS, esBeca100, parseMesesPagados, MESES_ANTICIPO_SOSPECHOSO,
 } from "@/lib/inscripciones-export";
 
-export type PlayersFilter = "inscritos" | "becados" | "bajas" | "sin-inscripcion" | "todos";
+export type PlayersFilter = "activos" | "inscritos" | "becados" | "bajas" | "sin-inscripcion" | "todos";
 
 export interface PlayersModalConfig {
   title: string;
@@ -21,11 +22,14 @@ export interface PlayersModalConfig {
   sedeId?: number;
   /** Acota a una sola categoría (drill-down desde la vista de categorías). */
   categoria?: string;
+  /** 0 = solo sedes normales, 1 = solo clinics. Sin valor, ambas. */
+  clinics?: 0 | 1;
   /** Ruta al drill-down por categorías; si viene, se muestra la liga "Por Categoría" */
   categoriaHref?: string;
 }
 
 const ACCENT: Record<PlayersFilter, { dot: string; text: string; chip: string }> = {
+  activos: { dot: "bg-sky-500", text: "text-sky-400", chip: "bg-sky-500/10 border-sky-500/20 text-sky-300" },
   inscritos: { dot: "bg-emerald-500", text: "text-emerald-400", chip: "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" },
   becados: { dot: "bg-purple-500", text: "text-purple-400", chip: "bg-purple-500/10 border-purple-500/20 text-purple-300" },
   bajas: { dot: "bg-rose-500", text: "text-rose-400", chip: "bg-rose-500/10 border-rose-500/20 text-rose-300" },
@@ -53,6 +57,7 @@ export default function PlayersModal({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [pagosTarget, setPagosTarget] = useState<PagosTarget | null>(null);
+  const [descargandoMov, setDescargandoMov] = useState(false);
   // Se incrementa cuando el modal de pagos modifica un pago, para refrescar la lista.
   const [recarga, setRecarga] = useState(0);
 
@@ -68,11 +73,12 @@ export default function PlayersModal({
     const params = new URLSearchParams({ filtro: config.filtro });
     if (config.sedeId !== undefined) params.set("sedeId", String(config.sedeId));
     if (config.categoria) params.set("categoria", config.categoria);
+    if (config.clinics !== undefined) params.set("clinics", String(config.clinics));
     if (temporadaId) params.set("temporadaId", String(temporadaId));
 
     (async () => {
       try {
-        const res = await fetch(`/api/inscripciones/players?${params}`);
+        const res = await fetch(`/api/inscripciones/players?${params}`, { cache: "no-store" });
         const json = await res.json();
         if (!alive) return;
         if (json.success) {
@@ -98,6 +104,33 @@ export default function PlayersModal({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [config, pagosTarget, onClose]);
+
+  /* Trae los movimientos de los jugadores que están en pantalla (respeta el buscador)
+     y arma el Excel. Los ids van por POST porque pueden ser cientos. */
+  const descargarMovimientos = async (lista: PlayerRow[], title: string, subtitle: string) => {
+    if (lista.length === 0) return;
+    setDescargandoMov(true);
+    try {
+      const res = await fetch("/api/inscripciones/movimientos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idJugadores: lista.map((p) => p.IdJugador),
+          temporadaId: temporadaId ?? undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setError(json.message ?? "No se pudieron obtener los movimientos");
+        return;
+      }
+      await exportMovimientosToExcel(json.data, lista, title, subtitle);
+    } catch {
+      setError("Error de conexión al obtener los movimientos");
+    } finally {
+      setDescargandoMov(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -157,6 +190,15 @@ export default function PlayersModal({
               className={`${expBtn} bg-emerald-600/15 hover:bg-emerald-600/25 border-emerald-500/30 text-emerald-200`}
             >
               <FileSpreadsheet size={13} /> Excel
+            </button>
+            <button
+              onClick={() => descargarMovimientos(filtered, config.title, exportSubtitle)}
+              disabled={!canExport || descargandoMov}
+              title="Excel con el detalle de pagos de cada jugador del listado"
+              className={`${expBtn} bg-violet-600/15 hover:bg-violet-600/25 border-violet-500/30 text-violet-200`}
+            >
+              {descargandoMov ? <Loader2 size={13} className="animate-spin" /> : <ListTree size={13} />}
+              Excel de Movimientos
             </button>
           </div>
         </div>

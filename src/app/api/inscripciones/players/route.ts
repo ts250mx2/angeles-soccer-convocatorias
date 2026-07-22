@@ -34,6 +34,7 @@ function expandirMeses(desde: number, hasta: number) {
  * sede o temporada para no devolver la tabla completa.
  *
  * filtro:
+ *   activos         Status 0, plantilla completa (sin exigir pertenencia a la temporada)
  *   inscritos       Status 0 y con pago de inscripción en la temporada
  *   becados         los anteriores, con beca
  *   bajas           Status 2
@@ -57,6 +58,9 @@ export async function GET(request: Request) {
         }
 
         const esSinInscripcion = filtro === 'sin-inscripcion';
+        /* Plantilla completa: todos los Status 0 de la sede, sin exigir pertenencia a
+           la temporada. Sirve para contrastar el total de activos contra los inscritos. */
+        const esActivos = filtro === 'activos';
 
         if (esSinInscripcion && !temporadaId) {
             return NextResponse.json(
@@ -76,6 +80,12 @@ export async function GET(request: Request) {
             where.push('J.Categoria = ?');
             params.push(categoria);
         }
+        // '0' = solo sedes normales, '1' = solo clinics, ausente = ambas.
+        const clinicsParam = searchParams.get('clinics');
+        if (clinicsParam === '0' || clinicsParam === '1') {
+            where.push('COALESCE(S.EsClinics, 0) = ?');
+            params.push(Number(clinicsParam));
+        }
 
         if (esSinInscripcion) {
             /* Pagó mensualidad de los meses-año de la temporada pero nunca la inscripción.
@@ -85,6 +95,8 @@ export async function GET(request: Request) {
             params.push(temporadaId);
             where.push(`J.IdJugador NOT IN (${JUGADORES_DE_TEMPORADA_SQL})`);
             params.push(temporadaId);
+            where.push('J.Status = 0');
+        } else if (esActivos) {
             where.push('J.Status = 0');
         } else {
             if (temporadaId) {

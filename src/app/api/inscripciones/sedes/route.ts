@@ -25,13 +25,15 @@ export async function GET(request: Request) {
                 SELECT
                     S.IdSede,
                     S.Sede,
+                    COALESCE(S.EsClinics, 0) as EsClinics,
+                    COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
                     COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Inscritos,
                     COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas,
                     0 as SinInscripcion,
                     GROUP_CONCAT(CASE WHEN J.Status = 0 AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != '' THEN J.Beca END) as BecasDetail
                 FROM tblSedes S
                 LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
-                GROUP BY S.IdSede, S.Sede
+                GROUP BY S.IdSede, S.Sede, S.EsClinics
                 ORDER BY Inscritos DESC, S.Sede ASC
             `);
             return NextResponse.json({ success: true, data: allRows });
@@ -41,6 +43,9 @@ export async function GET(request: Request) {
             SELECT
                 S.IdSede,
                 S.Sede,
+                COALESCE(S.EsClinics, 0) as EsClinics,
+                -- Plantilla completa de la sede, sin acotar a la temporada.
+                COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
                 COUNT(CASE WHEN J.Status = 0 AND INS.IdJugador IS NOT NULL THEN 1 END) as Inscritos,
                 COUNT(CASE WHEN J.Status = 2 AND INS.IdJugador IS NOT NULL THEN 1 END) as Bajas,
                 COUNT(CASE WHEN J.Status = 0 AND MEN.IdJugador IS NOT NULL AND INS.IdJugador IS NULL THEN 1 END) as SinInscripcion,
@@ -57,13 +62,16 @@ export async function GET(request: Request) {
             LEFT JOIN (
                 SELECT DISTINCT IdJugador FROM (${MENSUALIDADES_EN_TEMPORADA_SQL}) M
             ) MEN ON MEN.IdJugador = J.IdJugador
-            GROUP BY S.IdSede, S.Sede
+            GROUP BY S.IdSede, S.Sede, S.EsClinics
             ORDER BY Inscritos DESC, S.Sede ASC
         `;
 
         const [rows] = await pool.query(query, [temporadaId, temporadaId]);
 
-        return NextResponse.json({ success: true, data: rows });
+        return NextResponse.json(
+            { success: true, data: rows },
+            { headers: { 'Cache-Control': 'no-store' } }
+        );
     } catch (error) {
         console.error('Error fetching sedes for inscripciones:', error);
         return NextResponse.json(

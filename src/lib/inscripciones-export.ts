@@ -271,6 +271,178 @@ export function exportPlayersToPdf(
     doc.save(`${safeName(title)}_${safeName(subtitle)}.pdf`);
 }
 
+// ══ Movimientos (pagos) de todos los jugadores del listado ══
+
+export interface MovimientoRow {
+    IdJugador: number;
+    Jugador: string;
+    Categoria: string;
+    Beca: string | null;
+    StatusJugador: number;
+    SedeNombre: string;
+    IdPago: number;
+    Recibo: string | null;
+    Referencia: string | null;
+    FechaPago: string;
+    FechaOrden: string;
+    Pago: number;
+    Mes: number | null;
+    Anio: number | null;
+    Producto: string;
+    IdTipoProducto: number | null;
+    TipoProducto: string;
+    FormaPago: string;
+    SedePago: string;
+    Temporada: string;
+}
+
+const MOV_COLS: XCol[] = [
+    { header: "ID", width: 9 },
+    { header: "Jugador", width: 34 },
+    { header: "Categoría", width: 14 },
+    { header: "Sede", width: 20 },
+    { header: "Beca", width: 8 },
+    { header: "Recibo", width: 12 },
+    { header: "Fecha", width: 17 },
+    { header: "Concepto", width: 32 },
+    { header: "Tipo", width: 22 },
+    { header: "Mes", width: 16 },
+    { header: "Forma de pago", width: 16 },
+    { header: "Sede de cobro", width: 20 },
+    { header: "Importe", width: 14, money: true },
+];
+
+const BORDER = {
+    top: { style: "thin" as const }, left: { style: "thin" as const },
+    bottom: { style: "thin" as const }, right: { style: "thin" as const },
+};
+
+/**
+ * Excel de movimientos: un renglón por pago, agrupado por jugador con subtotal,
+ * más una hoja resumen con el total por jugador.
+ */
+export async function exportMovimientosToExcel(
+    movimientos: MovimientoRow[],
+    players: PlayerRow[],
+    title: string,
+    subtitle: string,
+) {
+    const wb = new ExcelJS.Workbook();
+
+    // ── Hoja 1: detalle agrupado por jugador ──
+    const ws = wb.addWorksheet("Movimientos");
+    excelHeader(ws, title, subtitle, MOV_COLS);
+
+    // Se respeta el orden del listado en pantalla y se incluyen los jugadores
+    // sin movimientos, para que el archivo no los omita en silencio.
+    const porJugador = new Map<number, MovimientoRow[]>();
+    for (const m of movimientos) {
+        const arr = porJugador.get(m.IdJugador);
+        if (arr) arr.push(m);
+        else porJugador.set(m.IdJugador, [m]);
+    }
+
+    let granTotal = 0;
+    const resumen: { p: PlayerRow; movs: number; total: number }[] = [];
+
+    for (const p of players) {
+        const movs = porJugador.get(p.IdJugador) ?? [];
+        const subtotal = movs.reduce((s, m) => s + (Number(m.Pago) || 0), 0);
+        granTotal += subtotal;
+        resumen.push({ p, movs: movs.length, total: subtotal });
+
+        if (movs.length === 0) {
+            const row = ws.addRow([
+                p.IdJugador, p.Jugador, p.Categoria || "—", p.SedeNombre || "—",
+                p.Beca && String(p.Beca) !== "0" ? String(p.Beca) : "—",
+                "—", "—", "SIN MOVIMIENTOS", "—", "—", "—", "—", 0,
+            ]);
+            row.eachCell((cell) => {
+                cell.border = BORDER;
+                cell.font = { italic: true, color: { argb: "FF94A3B8" } };
+            });
+            continue;
+        }
+
+        for (const m of movs) {
+            const row = ws.addRow([
+                m.IdJugador,
+                m.Jugador,
+                m.Categoria || "—",
+                m.SedeNombre || "—",
+                m.Beca && String(m.Beca) !== "0" ? String(m.Beca) : "—",
+                m.Recibo ?? String(m.IdPago),
+                fecha(m.FechaPago),
+                m.Producto,
+                m.TipoProducto,
+                mesLabel(m.Mes, m.Anio),
+                m.FormaPago,
+                m.SedePago,
+                Number(m.Pago) || 0,
+            ]);
+            row.eachCell((cell) => { cell.border = BORDER; });
+        }
+
+        // Subtotal del jugador
+        const sub = ws.addRow(["", "", "", "", "", "", "", "", "", "", "", `Subtotal ${p.Jugador}`, subtotal]);
+        sub.font = { bold: true };
+        sub.eachCell((cell) => {
+            cell.border = BORDER;
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+        });
+    }
+
+    const tot = ws.addRow(["", "", "", "", "", "", "", "", "", "", "", "TOTAL GENERAL", granTotal]);
+    tot.font = { bold: true, size: 12 };
+    tot.eachCell((cell) => {
+        cell.border = BORDER;
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+    });
+
+    // ── Hoja 2: resumen por jugador ──
+    const RES_COLS: XCol[] = [
+        { header: "ID", width: 9 },
+        { header: "Jugador", width: 34 },
+        { header: "Categoría", width: 14 },
+        { header: "Sede", width: 20 },
+        { header: "Estatus", width: 11 },
+        { header: "Beca", width: 8 },
+        { header: "Inscripción", width: 12 },
+        { header: "Movimientos", width: 13 },
+        { header: "Total pagado", width: 15, money: true },
+    ];
+    const ws2 = wb.addWorksheet("Resumen");
+    excelHeader(ws2, `${title} · resumen por jugador`, subtitle, RES_COLS);
+
+    resumen.forEach(({ p, movs, total }) => {
+        const row = ws2.addRow([
+            p.IdJugador,
+            p.Jugador,
+            p.Categoria || "—",
+            p.SedeNombre || "—",
+            p.Status === 0 ? "ACTIVO" : "BAJA",
+            p.Beca && String(p.Beca) !== "0" ? String(p.Beca) : "—",
+            p.InscripcionPagada || esBeca100(p.Beca) ? "SI" : "NO",
+            movs,
+            total,
+        ]);
+        row.eachCell((cell) => { cell.border = BORDER; });
+    });
+
+    const tot2 = ws2.addRow([
+        `TOTAL: ${resumen.length} jugador(es)`, "", "", "", "", "", "",
+        resumen.reduce((s, r) => s + r.movs, 0),
+        granTotal,
+    ]);
+    tot2.font = { bold: true };
+    tot2.eachCell((cell) => {
+        cell.border = BORDER;
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+    });
+
+    await downloadWorkbook(wb, `Movimientos_${safeName(title)}_${safeName(subtitle)}.xlsx`);
+}
+
 export async function exportPlayersToExcel(
     players: PlayerRow[], title: string, subtitle: string, config?: PlayersConfig,
 ) {

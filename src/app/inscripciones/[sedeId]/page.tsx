@@ -285,6 +285,7 @@ function CategoriaCard({
               </span>
               <span className="text-xl font-black text-emerald-400">{categoria.Inscritos}</span>
             </div>
+            <p className="text-[9px] text-slate-500 italic mt-0.5 ml-3.5 leading-tight">incluye becados</p>
           </button>
 
           <button type="button" onClick={() => open('becados', 'Jugadores Becados')} className={`${rowClass} flex flex-col`}>

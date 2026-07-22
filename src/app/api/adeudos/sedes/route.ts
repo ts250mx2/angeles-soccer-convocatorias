@@ -1,113 +1,93 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { resolveSeasonMonths, type SeasonRow } from '@/lib/adeudos-season';
+import { loadSeasonAndPrevious, countsByGroup, SIN_ADEUDOS } from '@/lib/adeudos-db';
 
 export const dynamic = 'force-dynamic';
 
-/** Temporada seleccionada, o la activa si no viene ninguna. */
-async function loadSeason(temporadaId: string | null): Promise<SeasonRow | null> {
-    if (temporadaId) {
-        const [rows] = await pool.query(
-            'SELECT IdTemporada, Temporada, FechaInicio, FechaFin FROM tblTemporadas WHERE IdTemporada = ? LIMIT 1',
-            [temporadaId]
-        ) as any[];
-        if (rows.length) return rows[0];
-    }
-    const [act] = await pool.query(
-        'SELECT IdTemporada, Temporada, FechaInicio, FechaFin FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1'
-    ) as any[];
-    return act[0] ?? null;
-}
-
+/**
+ * Resumen de adeudos por sede para la temporada seleccionada y la anterior.
+ *
+ * Por sede devuelve: activos, bajas, y para cada temporada (actual / anterior)
+ * cuántos deben algo y cuántos van al corriente. La temporada anterior ya terminó,
+ * así que ahí cuentan todos sus meses; en la actual solo los meses ya vencidos.
+ */
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const temporadaId = searchParams.get('temporadaId');
 
-        const season = await loadSeason(temporadaId);
-        if (!season) {
+        const seasons = await loadSeasonAndPrevious(temporadaId);
+        if (!seasons) {
             return NextResponse.json({ success: false, message: 'No se encontró temporada' }, { status: 404 });
         }
+        const { actual, anterior } = seasons;
 
-        const m = resolveSeasonMonths(season);
-
-        const query = `
-            SELECT
+        // Activos / bajas no dependen de la temporada.
+        const [baseRows] = await pool.query(
+            `SELECT
                 S.IdSede,
                 S.Sede,
+                COALESCE(S.EsClinics, 0) as EsClinics,
                 COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
-                COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas,
-                -- Sin inscripción: activo sin pago de inscripción
-                SUM(CASE WHEN INSCRIPCION.IdJugador IS NULL AND J.Status = 0 THEN 1 ELSE 0 END) as PendientesInscripcion,
-                -- Debe mensualidad: le falta al menos un mes YA VENCIDO (hasta hoy)
-                SUM(CASE WHEN COALESCE(MENSUALIDADES.PagosCount, 0) < ? AND J.Status = 0 THEN 1 ELSE 0 END) as PendientesMensualidad,
-                -- Al corriente: con inscripción y sin meses vencidos por pagar
-                SUM(CASE WHEN J.Status = 0
-                          AND INSCRIPCION.IdJugador IS NOT NULL
-                          AND COALESCE(MENSUALIDADES.PagosCount, 0) >= ?
-                    THEN 1 ELSE 0 END) as AlCorriente,
-                -- Debe: activo que debe algo (inscripción o un mes vencido). Partición de Activos con AlCorriente.
-                SUM(CASE WHEN J.Status = 0
-                          AND (INSCRIPCION.IdJugador IS NULL OR COALESCE(MENSUALIDADES.PagosCount, 0) < ?)
-                    THEN 1 ELSE 0 END) as Debe
-            FROM tblSedes S
-            LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
-            LEFT JOIN (
-                SELECT P.IdJugador
-                FROM tblPagos P
-                INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
-                WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0
-                GROUP BY P.IdJugador
-            ) INSCRIPCION ON J.IdJugador = INSCRIPCION.IdJugador
-            LEFT JOIN (
-                SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as PagosCount
-                FROM tblPagos P
-                INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
-                WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 1 AND P.Status = 0
-                  AND P.Mes >= ? AND P.Mes <= ?
-                GROUP BY P.IdJugador
-            ) MENSUALIDADES ON J.IdJugador = MENSUALIDADES.IdJugador
-            GROUP BY S.IdSede, S.Sede
-            ORDER BY S.Sede
-        `;
+                COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas
+             FROM tblSedes S
+             LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
+             GROUP BY S.IdSede, S.Sede, S.EsClinics
+             ORDER BY S.Sede`
+        ) as any[];
 
-        // El rango de mensualidades va hasta el mes exigible (hastaMonth), no al fin de
-        // temporada, para que "vencido" signifique "ya debía estar pagado a la fecha".
-        const [rows] = await pool.query(query, [
-            m.mesesExigibles,      // PendientesMensualidad
-            m.mesesExigibles,      // AlCorriente
-            m.mesesExigibles,      // Debe
-            m.seasonId,
-            m.seasonId,
-            m.startMonth,
-            m.hastaMonth,
-        ]) as any[];
+        const actualCounts = await countsByGroup(actual, 'sede');
+        const anteriorCounts = anterior ? await countsByGroup(anterior, 'sede') : null;
 
-        // COUNT() llega como número pero SUM(CASE...) como string; se coercionan
-        // para que el cliente pueda sumarlos (0 + "501" concatenaría en vez de sumar).
-        const data = rows.map((r: any) => ({
-            IdSede: r.IdSede,
-            Sede: r.Sede,
-            Activos: Number(r.Activos) || 0,
-            Bajas: Number(r.Bajas) || 0,
-            PendientesInscripcion: Number(r.PendientesInscripcion) || 0,
-            PendientesMensualidad: Number(r.PendientesMensualidad) || 0,
-            AlCorriente: Number(r.AlCorriente) || 0,
-            Debe: Number(r.Debe) || 0,
-        }));
+        const data = (baseRows as any[]).map((r: any) => {
+            const a = actualCounts.get(r.IdSede) ?? SIN_ADEUDOS;
+            const p = anteriorCounts?.get(r.IdSede) ?? SIN_ADEUDOS;
+            return {
+                IdSede: r.IdSede,
+                Sede: r.Sede,
+                EsClinics: Number(r.EsClinics) || 0,
+                Activos: Number(r.Activos) || 0,
+                Bajas: Number(r.Bajas) || 0,
+                ActualDebe: a.debe,
+                ActualAlCorriente: a.alCorriente,
+                ActualBecadosSinInscripcion: a.becadosSinInscripcion,
+                ActualDebeInscripcion: a.debeInscripcion,
+                ActualDebeMeses: a.debeMeses,
+                AnteriorDebe: p.debe,
+                AnteriorAlCorriente: p.alCorriente,
+                AnteriorBecadosSinInscripcion: p.becadosSinInscripcion,
+                AnteriorPosiblesBajas: p.posiblesBajas,
+                AnteriorDebeInscripcion: p.debeInscripcion,
+                AnteriorDebeMeses: p.debeMeses,
+            };
+        });
 
+        // no-store para que el navegador no reutilice una respuesta previa cuando
+        // se agregan campos nuevos al resumen.
         return NextResponse.json({
             success: true,
             data,
             config: {
-                seasonId: m.seasonId,
-                temporadaNombre: m.temporadaNombre,
-                startMonth: m.startMonth,
-                endMonth: m.endMonth,
-                hastaMonth: m.hastaMonth,
-                numMonthsExpected: m.numMonthsExpected,
+                actual: {
+                    seasonId: actual.seasonId,
+                    temporadaNombre: actual.temporadaNombre,
+                    startMonth: actual.startMonth,
+                    endMonth: actual.endMonth,
+                    hastaMonth: actual.hastaMonth,
+                    mesesExigibles: actual.mesesExigibles,
+                },
+                anterior: anterior
+                    ? {
+                          seasonId: anterior.seasonId,
+                          temporadaNombre: anterior.temporadaNombre,
+                          startMonth: anterior.startMonth,
+                          endMonth: anterior.endMonth,
+                          hastaMonth: anterior.hastaMonth,
+                          mesesExigibles: anterior.mesesExigibles,
+                      }
+                    : null,
             },
-        });
+        }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
         console.error('Error fetching sedes for adeudos:', error);
         return NextResponse.json(

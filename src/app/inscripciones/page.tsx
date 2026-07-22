@@ -6,10 +6,15 @@ import { Search, MapPin, ChevronRight, ChevronDown, UserCheck, Users, CalendarRa
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
 import PlayersModal, { type PlayersModalConfig } from '@/components/PlayersModal';
+import Meter from '@/components/Meter';
 
 interface SedeSummary {
   IdSede: number;
   Sede: string;
+  /** 1 = sede de clinics. */
+  EsClinics: number;
+  /** Plantilla completa (Status 0), sin acotar a la temporada. */
+  Activos: number;
   Inscritos: number;
   Bajas: number;
   /** Pagaron mensualidad de los meses de la temporada pero no la inscripción */
@@ -70,7 +75,8 @@ export default function InscripcionesSedesPage() {
     if (!silent) setIsLoading(true);
     try {
       const qs = temporada ? `?temporadaId=${temporada}` : '';
-      const response = await fetch(`/api/inscripciones/sedes${qs}`);
+      // no-store: evita que el navegador sirva una respuesta previa sin los campos nuevos.
+      const response = await fetch(`/api/inscripciones/sedes${qs}`, { cache: 'no-store' });
       const data = await response.json();
       if (data.success) {
         setSedes(data.data);
@@ -118,6 +124,16 @@ export default function InscripcionesSedesPage() {
 
   const temporadaNombre = temporadas.find(t => t.IdTemporada === temporadaId)?.Temporada;
 
+  /* Plantilla activa separada por tipo de sede (clinics aparte). El avance de
+     inscripción se mide solo sobre sedes normales: clinics no maneja inscripción,
+     así que incluirlo hundiría el porcentaje sin significar nada. */
+  const sumaPorTipo = (esClinics: number, campo: 'Activos' | 'Inscritos') =>
+    sedes.filter(s => (s.EsClinics || 0) === esClinics)
+         .reduce((acc, s) => acc + (Number(s[campo]) || 0), 0);
+  const activosSedes = sumaPorTipo(0, 'Activos');
+  const activosClinics = sumaPorTipo(1, 'Activos');
+  const inscritosSedes = sumaPorTipo(0, 'Inscritos');
+
   return (
     <DashboardLayout>
       <main className="overflow-y-auto flex-1 text-white p-6 md:p-8 relative">
@@ -164,19 +180,57 @@ export default function InscripcionesSedesPage() {
             </div>
 
             <div className="flex gap-4 w-full md:w-auto flex-wrap">
-              <button
-                type="button"
-                onClick={() => setModal({ title: 'Total Inscritos', subtitle: temporadaNombre, filtro: 'inscritos' })}
-                className="flex-1 md:flex-none bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 px-4 py-2 rounded-xl flex items-center gap-3 text-left transition-all cursor-pointer"
-              >
-                <div className="bg-emerald-500/20 p-2 rounded-lg">
-                  <UserCheck size={18} className="text-emerald-400" />
+              {/* Plantilla activa separada por tipo de sede, igual que en adeudos. */}
+              <div className="flex-1 md:flex-none bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="bg-sky-500/20 p-1.5 rounded-lg">
+                    <Users size={16} className="text-sky-400" />
+                  </div>
+                  <p className="text-[10px] uppercase tracking-wider text-sky-400 font-bold">Jugadores Activos</p>
                 </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Total Inscritos</p>
-                  <p className="text-xl font-bold">{sedes.reduce((acc, curr) => acc + curr.Inscritos, 0)}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModal({ title: 'Jugadores Activos · Sedes', subtitle: temporadaNombre, filtro: 'activos', clinics: 0 })}
+                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
+                  >
+                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Sedes</p>
+                    <p className="text-lg font-black text-sky-400">{activosSedes}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModal({ title: 'Jugadores Activos · Clinics', subtitle: temporadaNombre, filtro: 'activos', clinics: 1 })}
+                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
+                  >
+                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Clinics</p>
+                    <p className="text-lg font-black text-slate-300">{activosClinics}</p>
+                  </button>
                 </div>
-              </button>
+              </div>
+              <div className="flex-1 md:flex-none bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl min-w-[190px]">
+                <button
+                  type="button"
+                  onClick={() => setModal({ title: 'Total Inscritos', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0 })}
+                  className="w-full flex items-center gap-3 text-left cursor-pointer"
+                >
+                  <div className="bg-emerald-500/20 p-2 rounded-lg">
+                    <UserCheck size={18} className="text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Total Inscritos</p>
+                    <p className="text-xl font-bold leading-tight">{inscritosSedes}</p>
+                    <p className="text-[9px] text-slate-500 italic leading-tight">incluye becados</p>
+                  </div>
+                </button>
+                {/* Avance de inscripción sobre la plantilla activa de sedes normales. */}
+                <div className="mt-2">
+                  <Meter
+                    valor={inscritosSedes}
+                    total={activosSedes}
+                    etiqueta={`${inscritosSedes} de ${activosSedes} activos`}
+                  />
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setModal({ title: 'Total Bajas', subtitle: temporadaNombre, filtro: 'bajas' })}
@@ -202,19 +256,6 @@ export default function InscripcionesSedesPage() {
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-amber-400 font-bold">Sin Inscripción</p>
                   <p className="text-xl font-bold">{sedes.reduce((acc, curr) => acc + (curr.SinInscripcion || 0), 0)}</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setModal({ title: 'Todas las Sedes', subtitle: temporadaNombre, filtro: 'todos' })}
-                className="flex-1 md:flex-none bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 hover:border-blue-500/40 px-4 py-2 rounded-xl flex items-center gap-3 text-left transition-all cursor-pointer"
-              >
-                <div className="bg-blue-500/20 p-2 rounded-lg">
-                  <MapPin size={18} className="text-blue-400" />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-blue-400 font-bold">Total Sedes</p>
-                  <p className="text-xl font-bold">{sedes.length}</p>
                 </div>
               </button>
             </div>
@@ -333,6 +374,16 @@ function SedeCard({
         </Link>
 
         <div className="space-y-2">
+          <button type="button" onClick={() => open('activos', 'Jugadores Activos')} className={rowClass}>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
+                <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
+                Jugadores Activos
+              </span>
+              <span className="text-xl font-black text-sky-400">{sede.Activos}</span>
+            </div>
+          </button>
+
           <button type="button" onClick={() => open('inscritos', 'Jugadores Inscritos')} className={rowClass}>
             <div className="flex justify-between items-center">
               <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
@@ -340,6 +391,11 @@ function SedeCard({
                 Jugadores Inscritos
               </span>
               <span className="text-xl font-black text-emerald-400">{sede.Inscritos}</span>
+            </div>
+            <p className="text-[9px] text-slate-500 italic mt-0.5 ml-3.5 leading-tight">incluye becados</p>
+            {/* Avance de inscripción de esta sede sobre su plantilla activa */}
+            <div className="mt-2">
+              <Meter size="xs" valor={sede.Inscritos} total={sede.Activos} etiqueta={`de ${sede.Activos} activos`} />
             </div>
           </button>
 

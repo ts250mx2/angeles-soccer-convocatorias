@@ -19,6 +19,8 @@ export interface AdeudoRow {
     Adeudo: number;
     MissingCount: number;
     PagosCount: number;
+    /** Beca 100%: no paga nada, nunca tiene adeudo. */
+    BecaTotal?: number;
 }
 
 export interface AdeudosConfig {
@@ -44,6 +46,15 @@ export const money = (n: number): string =>
 
 export const esBeca100 = (beca: string | null): boolean =>
     beca !== null && beca !== undefined && String(beca).includes("100");
+
+/** Porcentaje de beca normalizado a 0-100. Sin beca / valor inválido => 0. */
+export const becaPct = (beca: string | null | undefined): number => {
+    const n = parseFloat(String(beca ?? "").trim());
+    return isNaN(n) ? 0 : Math.max(0, Math.min(100, n));
+};
+
+/** Etiqueta del grupo de beca para el listado agrupado. */
+export const becaLabel = (pct: number): string => (pct === 0 ? "Sin beca" : `Beca ${pct}%`);
 
 export const parseMeses = (raw: string | null): number[] =>
     (raw ?? "")
