@@ -1,38 +1,54 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { resolveSeasonMonths, type SeasonRow } from '@/lib/adeudos-season';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+
+async function loadSeason(temporadaId: string | null): Promise<SeasonRow | null> {
+    if (temporadaId) {
+        const [rows] = await pool.query(
+            'SELECT IdTemporada, Temporada, FechaInicio, FechaFin FROM tblTemporadas WHERE IdTemporada = ? LIMIT 1',
+            [temporadaId]
+        ) as any[];
+        if (rows.length) return rows[0];
+    }
+    const [act] = await pool.query(
+        'SELECT IdTemporada, Temporada, FechaInicio, FechaFin FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1'
+    ) as any[];
+    return act[0] ?? null;
+}
+
+export async function GET(request: Request) {
     try {
-        // 1. Get active season info
-        const [seasonRows] = await pool.query(
-            'SELECT IdTemporada, FechaInicio, FechaFin FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1'
-        );
+        const { searchParams } = new URL(request.url);
+        const temporadaId = searchParams.get('temporadaId');
+        const sedeId = searchParams.get('sedeId');
 
-        if (!Array.isArray(seasonRows) || seasonRows.length === 0) {
-            return NextResponse.json({ success: false, message: 'No se encontró temporada actual' }, { status: 404 });
+        const season = await loadSeason(temporadaId);
+        if (!season) {
+            return NextResponse.json({ success: false, message: 'No se encontró temporada' }, { status: 404 });
         }
 
-        const activeSeason = seasonRows[0] as any;
-        const seasonId = activeSeason.IdTemporada;
-        const startMonth = new Date(activeSeason.FechaInicio).getUTCMonth() + 1;
-        const endMonth = new Date(activeSeason.FechaFin).getUTCMonth() + 1;
-        const currentMonth = new Date().getUTCMonth() + 1;
+        const m = resolveSeasonMonths(season);
 
-        // "todos los meses de la temporada activa"
-        const numMonthsExpected = Math.max(0, endMonth - startMonth + 1);
+        // Filtro opcional por sede (para el drill-down sede -> categorías).
+        const sedeClause = sedeId ? 'WHERE J.IdSede = ?' : '';
 
-        // 2. Query to get category summary with the new logic
         const query = `
-            SELECT 
+            SELECT
                 J.Categoria,
                 COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
                 COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas,
-                -- Players with missing registration (Type 2)
                 SUM(CASE WHEN INSCRIPCION.IdJugador IS NULL AND J.Status = 0 THEN 1 ELSE 0 END) as PendientesInscripcion,
-                -- Players with missing at least one mensualidad (Type 1) in the range
-                SUM(CASE WHEN COALESCE(MENSUALIDADES.PagosCount, 0) < ? AND J.Status = 0 THEN 1 ELSE 0 END) as PendientesMensualidad
+                SUM(CASE WHEN COALESCE(MENSUALIDADES.PagosCount, 0) < ? AND J.Status = 0 THEN 1 ELSE 0 END) as PendientesMensualidad,
+                SUM(CASE WHEN J.Status = 0
+                          AND INSCRIPCION.IdJugador IS NOT NULL
+                          AND COALESCE(MENSUALIDADES.PagosCount, 0) >= ?
+                    THEN 1 ELSE 0 END) as AlCorriente,
+                SUM(CASE WHEN J.Status = 0
+                          AND (INSCRIPCION.IdJugador IS NULL OR COALESCE(MENSUALIDADES.PagosCount, 0) < ?)
+                    THEN 1 ELSE 0 END) as Debe
             FROM tblJugadores J
-            -- Check for registration payment (IdTipoProducto = 2)
             LEFT JOIN (
                 SELECT P.IdJugador
                 FROM tblPagos P
@@ -40,7 +56,6 @@ export async function GET() {
                 WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0
                 GROUP BY P.IdJugador
             ) INSCRIPCION ON J.IdJugador = INSCRIPCION.IdJugador
-            -- Check for mensualidades count (IdTipoProducto = 1)
             LEFT JOIN (
                 SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as PagosCount
                 FROM tblPagos P
@@ -49,28 +64,57 @@ export async function GET() {
                   AND P.Mes >= ? AND P.Mes <= ?
                 GROUP BY P.IdJugador
             ) MENSUALIDADES ON J.IdJugador = MENSUALIDADES.IdJugador
+            ${sedeClause}
             GROUP BY J.Categoria
             ORDER BY J.Categoria
         `;
 
-        const [rows] = await pool.query(query, [
-            numMonthsExpected, 
-            seasonId, 
-            seasonId, 
-            startMonth, 
-            endMonth
-        ]);
+        const params: any[] = [
+            m.mesesExigibles,      // PendientesMensualidad
+            m.mesesExigibles,      // AlCorriente
+            m.mesesExigibles,      // Debe
+            m.seasonId,
+            m.seasonId,
+            m.startMonth,
+            m.hastaMonth,
+        ];
+        if (sedeId) params.push(parseInt(sedeId));
 
-        return NextResponse.json({ 
-            success: true, 
+        const [rawRows] = await pool.query(query, params) as any[];
+
+        // COUNT() llega como número pero SUM(CASE...) como string; se coercionan.
+        const rows = rawRows.map((r: any) => ({
+            Categoria: r.Categoria,
+            Activos: Number(r.Activos) || 0,
+            Bajas: Number(r.Bajas) || 0,
+            PendientesInscripcion: Number(r.PendientesInscripcion) || 0,
+            PendientesMensualidad: Number(r.PendientesMensualidad) || 0,
+            AlCorriente: Number(r.AlCorriente) || 0,
+            Debe: Number(r.Debe) || 0,
+        }));
+
+        // Nombre de la sede, para el encabezado del drill-down.
+        let sedeName: string | null = null;
+        if (sedeId) {
+            const [sedeRows] = await pool.query(
+                'SELECT Sede FROM tblSedes WHERE IdSede = ? LIMIT 1',
+                [parseInt(sedeId)]
+            ) as any[];
+            sedeName = sedeRows.length ? sedeRows[0].Sede : null;
+        }
+
+        return NextResponse.json({
+            success: true,
             data: rows,
+            sedeName,
             config: {
-                seasonId,
-                startMonth,
-                endMonth,
-                currentMonth,
-                numMonthsExpected
-            }
+                seasonId: m.seasonId,
+                temporadaNombre: m.temporadaNombre,
+                startMonth: m.startMonth,
+                endMonth: m.endMonth,
+                hastaMonth: m.hastaMonth,
+                numMonthsExpected: m.numMonthsExpected,
+            },
         });
     } catch (error) {
         console.error('Error fetching categories for adeudos:', error);

@@ -32,7 +32,7 @@ tblJugadores (J): IdJugador, Jugador, Categoria, Nombre, ApellidoPaterno, Apelli
      J.IdJugador IN (
        SELECT A.IdJugador FROM tblPagos A
        INNER JOIN tblProductos B ON A.IdProducto = B.IdProducto
-       WHERE A.IdTemporada = <idTemporada> AND B.IdTipoProducto = 2
+       WHERE A.IdTemporada = <idTemporada> AND B.IdTipoProducto = 2 AND A.Status = 0
      )
 
   Ejemplo — "jugadores inscritos por sede en la temporada activa":
@@ -44,7 +44,7 @@ tblJugadores (J): IdJugador, Jugador, Categoria, Nombre, ApellidoPaterno, Apelli
          SELECT A.IdJugador FROM tblPagos A
          INNER JOIN tblProductos B ON A.IdProducto = B.IdProducto
          WHERE A.IdTemporada = (SELECT IdTemporada FROM tblTemporadas WHERE EsActiva = 1)
-           AND B.IdTipoProducto = 2
+           AND B.IdTipoProducto = 2 AND A.Status = 0
        )
      GROUP BY S.Sede
      ORDER BY Inscritos DESC;

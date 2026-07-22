@@ -38,6 +38,7 @@ export const JUGADORES_DE_TEMPORADA_SQL = `
     FROM tblPagos A
     INNER JOIN tblProductos B ON A.IdProducto = B.IdProducto
     WHERE A.IdTemporada = ? AND B.IdTipoProducto = ${TIPO_PRODUCTO_INSCRIPCION}
+      AND A.Status = 0
 `;
 
 /**
