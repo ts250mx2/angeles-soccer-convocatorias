@@ -92,20 +92,34 @@ export async function countsByGroup(
     const meses: number[] = [];
     for (let mes = m.startMonth; mes <= m.hastaMonth; mes++) meses.push(mes);
 
+    /* Mes de inicio del adeudo POR JUGADOR: el mes en que pagó su inscripción
+       (MONTH de la FechaPago del pago de inscripción), acotado al rango de la
+       temporada. Sin inscripción se toma el inicio de la temporada. Así un jugador
+       que se inscribió a mitad de temporada no arrastra los meses previos.
+       INS.IniCode ya viene acotado; %100 recupera el mes (la temporada no cruza año). */
+    const mesIniExpr = `COALESCE(INS.IniCode % 100, ${m.startMonth})`;
+
     /* Columnas por mes generadas a partir de enteros derivados del servidor
        (nunca de la petición), así que no hay riesgo de inyección. */
     const flagsPorMes = meses
         .map((mes) => `MAX(CASE WHEN (P.Anio * 100 + P.Mes) = ${m.anioInicio * 100 + mes} THEN 1 ELSE 0 END) as M${mes}`)
         .join(', ');
+
+    // Meses vencidos no pagados por jugador, contados desde su mes de inscripción.
+    const faltantesExpr = meses.length
+        ? meses
+              .map((mes) => `(CASE WHEN ${mes} >= ${mesIniExpr} AND COALESCE(MEN.M${mes}, 0) = 0 THEN 1 ELSE 0 END)`)
+              .join(' + ')
+        : '0';
+
     const conteosPorMes = meses
         .map((mes) => `SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
+                                 AND ${mes} >= ${mesIniExpr}
                                  AND COALESCE(MEN.M${mes}, 0) = 0
                             THEN 1 ELSE 0 END) as Debe${mes}`)
         .join(', ');
 
     const params: any[] = [
-        m.mesesExigibles,   // Debe
-        m.mesesExigibles,   // AlCorriente
         m.seasonId,         // inscripción (sí va por temporada: no tiene mes)
         m.desdeCodigo,      // mensualidades: rango mes-año exigible
         m.hastaCodigo,
@@ -117,12 +131,12 @@ export async function countsByGroup(
             ${groupCol} as Grupo,
             SUM(CASE WHEN J.Status = 0
                       AND NOT ${ES_BECA_TOTAL}
-                      AND (INS.IdJugador IS NULL OR COALESCE(MEN.PagosCount, 0) < ?)
+                      AND (INS.IdJugador IS NULL OR (${faltantesExpr}) > 0)
                  THEN 1 ELSE 0 END) as Debe,
             -- Al corriente exige estar inscrito; el becado sin inscripción va aparte.
             SUM(CASE WHEN J.Status = 0
                       AND INS.IdJugador IS NOT NULL
-                      AND (${ES_BECA_TOTAL} OR COALESCE(MEN.PagosCount, 0) >= ?)
+                      AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
                  THEN 1 ELSE 0 END) as AlCorriente,
             SUM(CASE WHEN J.Status = 0 AND ${ES_BECA_TOTAL} AND INS.IdJugador IS NULL
                  THEN 1 ELSE 0 END) as BecadosSinInscripcion,
@@ -137,7 +151,11 @@ export async function countsByGroup(
          FROM tblJugadores J
          LEFT JOIN tblSedes SD ON SD.IdSede = J.IdSede
          LEFT JOIN (
-             SELECT P.IdJugador
+             SELECT P.IdJugador,
+                    -- Mes-año en que se pagó la inscripción, acotado al rango de la temporada.
+                    GREATEST(${m.desdeCodigo},
+                             LEAST(${m.anioInicio * 100 + m.endMonth},
+                                   MIN(YEAR(P.FechaPago) * 100 + MONTH(P.FechaPago)))) as IniCode
              FROM tblPagos P
              INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
              WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0

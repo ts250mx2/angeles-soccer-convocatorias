@@ -105,12 +105,15 @@ export async function GET(request: Request) {
                 J.IdSede,
                 COALESCE(S.Sede, J.Sede) as SedeNombre,
                 CASE WHEN INSCRIPCION.IdJugador IS NOT NULL THEN 1 ELSE 0 END as InscripcionPagada,
+                INSCRIPCION.MesInscripcion,
                 COALESCE(MENSUALIDADES.MesesPagados, '') as MesesPagados,
                 COALESCE(PAGOS.Pagado, 0) as Pagado
             FROM tblJugadores J
             LEFT JOIN tblSedes S ON J.IdSede = S.IdSede
             LEFT JOIN (
-                SELECT P.IdJugador
+                SELECT P.IdJugador,
+                       -- Mes del pago de inscripción, acotado al rango de la temporada.
+                       GREATEST(?, LEAST(?, MIN(YEAR(P.FechaPago) * 100 + MONTH(P.FechaPago)))) % 100 as MesInscripcion
                 FROM tblPagos P
                 INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
                 WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0
@@ -137,10 +140,13 @@ export async function GET(request: Request) {
             LIMIT ${MAX_ROWS}
         `;
 
+        const finCodigo = m.anioInicio * 100 + m.endMonth;
         const queryParams = [
+            m.desdeCodigo,                      // INSCRIPCION: GREATEST (piso del rango)
+            finCodigo,                          // INSCRIPCION: LEAST (techo del rango)
             seasonId,                           // INSCRIPCION (va por temporada: no tiene mes)
             m.desdeCodigo,                      // MENSUALIDADES: desde el primer mes-año
-            m.anioInicio * 100 + m.endMonth,    // hasta el fin de temporada (los cuadritos
+            finCodigo,                          // hasta el fin de temporada (los cuadritos
                                                 // muestran también los meses por vencer)
             seasonId,                           // PAGOS
             ...whereParams,
@@ -171,13 +177,23 @@ export async function GET(request: Request) {
         ) as any[];
         const inscriptionFee = inscRows.length ? (Number(inscRows[0].Precio) || 0) : 0;
 
-        // Adeudo = meses faltantes (inicio..hastaMonth) x mensualidad (menos beca) + inscripción pendiente
+        /* Adeudo = meses faltantes x mensualidad (menos beca) + inscripción pendiente.
+           Los meses faltantes se cuentan desde el mes en que el jugador pagó su
+           inscripción (no desde el inicio de la temporada): quien se inscribió a
+           mitad de temporada no arrastra los meses previos a su inscripción. */
         const computed = (rows as any[]).map((p) => {
             const paid = String(p.MesesPagados || '')
                 .split(',').map((x: string) => parseInt(x.trim())).filter((x: number) => !isNaN(x));
 
+            // Mes de inicio del adeudo del jugador: su inscripción, o el inicio de la
+            // temporada si no la ha pagado (o si el dato viniera fuera de rango).
+            const mesIns = Number(p.MesInscripcion);
+            const mesInicio = Number.isInteger(mesIns) && mesIns >= m.startMonth && mesIns <= m.endMonth
+                ? mesIns
+                : m.startMonth;
+
             let missing = 0;
-            for (let mes = m.startMonth; mes <= m.hastaMonth; mes++) {
+            for (let mes = mesInicio; mes <= m.hastaMonth; mes++) {
                 if (!paid.includes(mes)) missing++;
             }
             // Meses pagados dentro del rango de la temporada (para el corte "pendiente mensualidad")
@@ -198,6 +214,7 @@ export async function GET(request: Request) {
                 Adeudo: Math.round(adeudo * 100) / 100,
                 Pagado: Number(p.Pagado) || 0,
                 MissingCount: missing,
+                MesInicio: mesInicio,
                 PagosCount: pagosCount,
                 // Beca total: no paga nada, así que nunca tiene adeudo aunque no
                 // existan registros de mensualidad (suelen capturarse en $0 o no
@@ -231,9 +248,11 @@ export async function GET(request: Request) {
                 case 'debe':
                     return p.Status === 0 && !becado && (!p.InscripcionPagada || p.MissingCount > 0);
                 case 'debe-mes': {
-                    // Activos que no tienen pagado ese mes concreto de la temporada.
+                    // Deben ese mes concreto: no lo pagaron y ya estaban inscritos para
+                    // entonces (el mes es igual o posterior a su mes de inscripción).
                     if (mesFiltro === null || isNaN(mesFiltro)) return false;
                     if (p.Status !== 0 || becado) return false;
+                    if (mesFiltro < p.MesInicio) return false;
                     const pagados = String(p.MesesPagados || '')
                         .split(',').map((x: string) => parseInt(x.trim())).filter((x: number) => !isNaN(x));
                     return !pagados.includes(mesFiltro);
