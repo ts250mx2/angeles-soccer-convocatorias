@@ -1,25 +1,11 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { resolveSeasonMonths, type SeasonRow } from '@/lib/adeudos-season';
+import { loadSeasonAndPrevious } from '@/lib/adeudos-db';
 
 export const dynamic = 'force-dynamic';
 
 // Tope de seguridad: el alcance global (KPIs) puede abarcar toda la tabla.
 const MAX_ROWS = 6000;
-
-async function loadSeason(temporadaId: string | null): Promise<SeasonRow | null> {
-    if (temporadaId) {
-        const [rows] = await pool.query(
-            'SELECT IdTemporada, Temporada, FechaInicio, FechaFin FROM tblTemporadas WHERE IdTemporada = ? LIMIT 1',
-            [temporadaId]
-        ) as any[];
-        if (rows.length) return rows[0];
-    }
-    const [act] = await pool.query(
-        'SELECT IdTemporada, Temporada, FechaInicio, FechaFin FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1'
-    ) as any[];
-    return act[0] ?? null;
-}
 
 /**
  * Jugadores con su estatus de adeudo en la temporada seleccionada.
@@ -61,12 +47,11 @@ export async function GET(request: Request) {
             );
         }
 
-        const season = await loadSeason(temporadaId);
-        if (!season) {
+        const seasons = await loadSeasonAndPrevious(temporadaId);
+        if (!seasons) {
             return NextResponse.json({ success: false, message: 'No se encontró temporada' }, { status: 404 });
         }
-
-        const m = resolveSeasonMonths(season);
+        const m = seasons.actual;
         const seasonId = m.seasonId;
 
         const categorias = categoriaParam ? categoriaParam.split(',').map((c) => c.trim()) : [];
@@ -95,6 +80,39 @@ export async function GET(request: Request) {
             whereParams.push(...categorias);
         }
 
+        /* Inscripción sospechosa: pago de inscripción registrado en OTRA temporada
+           (no la seleccionada) pero cobrado a menos de 2 meses del inicio de esta;
+           probablemente es la inscripción de esta temporada capturada con la temporada
+           equivocada. Toma la más reciente que cumpla y guarda bajo qué temporada está.
+           No se restringe a la temporada inmediata anterior: hay pagos archivados dos o
+           más temporadas atrás (p.ej. inscripción de ENE-JUL 2026 archivada en ENE-JUL
+           2025 por elegir el año equivocado). */
+        const sospJoin = `LEFT JOIN (
+                   SELECT s.IdJugador, s.IdPago, s.Fecha, s.IdTemporada, s.TempNombre
+                   FROM (
+                       SELECT P.IdJugador, P.IdPago,
+                              DATE_FORMAT(P.FechaPago, '%d/%m/%Y') as Fecha,
+                              P.IdTemporada,
+                              COALESCE(T.Temporada, 'otra temporada') as TempNombre,
+                              ROW_NUMBER() OVER (PARTITION BY P.IdJugador ORDER BY P.FechaPago DESC, P.IdPago DESC) as rn
+                       FROM tblPagos P
+                       INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+                       LEFT JOIN tblTemporadas T ON T.IdTemporada = P.IdTemporada
+                       WHERE PR.IdTipoProducto = 2 AND P.Status = 0
+                         AND P.IdTemporada IS NOT NULL AND P.IdTemporada <> ?
+                         AND P.FechaPago >= DATE_SUB(?, INTERVAL 2 MONTH)
+                   ) s
+                   WHERE s.rn = 1
+               ) SOSP ON SOSP.IdJugador = J.IdJugador`;
+        const sospSelect = `,
+                CASE WHEN SOSP.IdJugador IS NOT NULL
+                       AND INSCRIPCION.IdJugador IS NULL
+                       AND NOT ((COALESCE(S.EsKeeper, 0) = 1 OR UPPER(J.Categoria) LIKE '%PORTERO%') AND KINS.IdJugador IS NOT NULL)
+                     THEN 1 ELSE 0 END as PosibleInscTempAnterior,
+                SOSP.IdPago as SospIdPago,
+                SOSP.Fecha as SospFecha,
+                SOSP.TempNombre as SospTempNombre`;
+
         const query = `
             SELECT
                 J.IdJugador,
@@ -104,10 +122,14 @@ export async function GET(request: Request) {
                 J.Beca,
                 J.IdSede,
                 COALESCE(S.Sede, J.Sede) as SedeNombre,
-                CASE WHEN INSCRIPCION.IdJugador IS NOT NULL THEN 1 ELSE 0 END as InscripcionPagada,
+                -- Portero (sede keeper o categoría PORTERO): cualquier inscripción (KINS) cuenta.
+                CASE WHEN INSCRIPCION.IdJugador IS NOT NULL
+                       OR ((COALESCE(S.EsKeeper, 0) = 1 OR UPPER(J.Categoria) LIKE '%PORTERO%') AND KINS.IdJugador IS NOT NULL)
+                     THEN 1 ELSE 0 END as InscripcionPagada,
                 INSCRIPCION.MesInscripcion,
                 COALESCE(MENSUALIDADES.MesesPagados, '') as MesesPagados,
                 COALESCE(PAGOS.Pagado, 0) as Pagado
+                ${sospSelect}
             FROM tblJugadores J
             LEFT JOIN tblSedes S ON J.IdSede = S.IdSede
             LEFT JOIN (
@@ -119,6 +141,13 @@ export async function GET(request: Request) {
                 WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0
                 GROUP BY P.IdJugador
             ) INSCRIPCION ON J.IdJugador = INSCRIPCION.IdJugador
+            LEFT JOIN (
+                -- Cualquier inscripción, de cualquier temporada (regla keeper).
+                SELECT DISTINCT P.IdJugador
+                FROM tblPagos P
+                INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+                WHERE PR.IdTipoProducto = 2 AND P.Status = 0
+            ) KINS ON KINS.IdJugador = J.IdJugador
             LEFT JOIN (
                 SELECT P.IdJugador, GROUP_CONCAT(DISTINCT P.Mes) as MesesPagados
                 FROM tblPagos P
@@ -135,6 +164,7 @@ export async function GET(request: Request) {
                 WHERE P.IdTemporada = ? AND PR.IdTipoProducto IN (1, 2) AND P.Status = 0
                 GROUP BY P.IdJugador
             ) PAGOS ON J.IdJugador = PAGOS.IdJugador
+            ${sospJoin}
             WHERE ${where.join(' AND ')}
             ORDER BY J.Categoria ASC, J.Jugador ASC
             LIMIT ${MAX_ROWS}
@@ -149,6 +179,8 @@ export async function GET(request: Request) {
             finCodigo,                          // hasta el fin de temporada (los cuadritos
                                                 // muestran también los meses por vencer)
             seasonId,                           // PAGOS
+            seasonId,                           // SOSP: distinta de la seleccionada
+            m.fechaInicioISO,                   // SOSP: 2 meses antes del inicio
             ...whereParams,
         ];
 
@@ -273,6 +305,9 @@ export async function GET(request: Request) {
             config: {
                 seasonId,
                 temporadaNombre: m.temporadaNombre,
+                // Destino para reasignar una inscripción sospechosa (la temporada consultada).
+                temporadaDestinoId: seasonId,
+                temporadaDestinoNombre: m.temporadaNombre,
                 startMonth: m.startMonth,
                 endMonth: m.endMonth,
                 hastaMonth: m.hastaMonth,

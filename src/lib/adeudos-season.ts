@@ -27,6 +27,8 @@ export interface SeasonMonths {
     desdeCodigo: number;
     /** Código del último mes exigible. Menor que desdeCodigo si aún no arranca. */
     hastaCodigo: number;
+    /** FechaInicio en formato 'YYYY-MM-DD' (para comparaciones de fecha en SQL). */
+    fechaInicioISO: string;
     temporadaNombre: string;
 }
 
@@ -71,6 +73,7 @@ export function resolveSeasonMonths(season: SeasonRow, now: Date = new Date()): 
         anioInicio,
         desdeCodigo,
         hastaCodigo,
+        fechaInicioISO: `${inicio.getUTCFullYear()}-${String(startMonth).padStart(2, '0')}-${String(inicio.getUTCDate()).padStart(2, '0')}`,
         temporadaNombre: season.Temporada,
     };
 }

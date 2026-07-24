@@ -34,12 +34,22 @@ interface InscripcionSugerida {
   DiasDeDistancia: number;
 }
 
+export interface InscripcionSospechosa {
+  idPago: number;
+  fecha: string;
+  /** Temporada bajo la que está archivada actualmente. */
+  tempNombreActual: string;
+  temporadaDestinoId: number;
+  temporadaDestinoNombre: string;
+}
+
 export default function PlayerPagosModal({
   target,
   temporadaId,
   temporadaNombre,
   onClose,
   onDataChanged,
+  inscripcionSospechosa,
 }: {
   target: PagosTarget | null;
   temporadaId: number | null;
@@ -47,6 +57,9 @@ export default function PlayerPagosModal({
   onClose: () => void;
   /** Se llama cuando un pago cambió (año o temporada), para refrescar la lista. */
   onDataChanged?: () => void;
+  /** Inscripción de la temporada anterior que podría ser de la temporada seleccionada
+   *  (detectada en adeudos). Muestra un aviso con botón para reasignarla. */
+  inscripcionSospechosa?: InscripcionSospechosa | null;
 }) {
   const [jugador, setJugador] = useState<JugadorInfo | null>(null);
   const [pagos, setPagos] = useState<PagoRow[]>([]);
@@ -178,6 +191,37 @@ export default function PlayerPagosModal({
     }
   };
 
+  // Reasigna la inscripción sospechosa (detectada en adeudos) a la temporada destino.
+  const moverSospechosa = async () => {
+    if (!inscripcionSospechosa) return;
+    setMoviendo(true);
+    setAvisoCorreccion(null);
+    try {
+      const res = await fetch("/api/inscripciones/pagos/temporada", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idPago: inscripcionSospechosa.idPago,
+          temporadaId: inscripcionSospechosa.temporadaDestinoId,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setAvisoCorreccion(json.message ?? "No se pudo mover la inscripción");
+        return;
+      }
+      setAvisoCorreccion(
+        `Inscripción ${inscripcionSospechosa.idPago} movida a ${inscripcionSospechosa.temporadaDestinoNombre}. El jugador ya cuenta como inscrito.`
+      );
+      setRecarga((r) => r + 1);
+      onDataChanged?.();
+    } catch {
+      setAvisoCorreccion("Error de conexión al mover la inscripción");
+    } finally {
+      setMoviendo(false);
+    }
+  };
+
   useEffect(() => {
     if (!target) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -267,8 +311,35 @@ export default function PlayerPagosModal({
           </div>
         </div>
 
+        {/* Inscripción de la temporada anterior pagada cerca del inicio de esta
+            temporada (detectada en adeudos): probable inscripción de esta temporada. */}
+        {inscripcionSospechosa && (
+          <div className="mx-5 mt-4 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3.5 py-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle size={16} className="text-amber-300 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-amber-100/90 leading-relaxed">
+                  Este jugador tiene una <span className="font-black">inscripción</span> pagada el{" "}
+                  <span className="font-bold">{inscripcionSospechosa.fecha}</span> a menos de 2 meses del
+                  inicio de <span className="font-bold">{inscripcionSospechosa.temporadaDestinoNombre}</span>,
+                  pero registrada en <span className="font-bold">{inscripcionSospechosa.tempNombreActual}</span>.{" "}
+                  <span className="font-bold">Podría ser la inscripción de {inscripcionSospechosa.temporadaDestinoNombre}.</span>
+                </p>
+                <button
+                  onClick={moverSospechosa}
+                  disabled={moviendo}
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold transition-all disabled:opacity-50"
+                >
+                  {moviendo ? <Loader2 size={12} className="animate-spin" /> : <CalendarCheck size={12} />}
+                  Mover a {inscripcionSospechosa.temporadaDestinoNombre}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Inscripción de otra temporada que parece corresponder a la seleccionada */}
-        {sugerida && (
+        {sugerida && !inscripcionSospechosa && (
           <div className="mx-5 mt-4 bg-purple-500/10 border border-purple-500/30 rounded-xl px-3.5 py-3">
             <div className="flex items-start gap-2.5">
               <CalendarCheck size={16} className="text-purple-300 flex-shrink-0 mt-0.5" />

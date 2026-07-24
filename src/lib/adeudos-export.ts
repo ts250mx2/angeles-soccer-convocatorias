@@ -21,6 +21,15 @@ export interface AdeudoRow {
     PagosCount: number;
     /** Beca 100%: no paga nada, nunca tiene adeudo. */
     BecaTotal?: number;
+    /** 1 si tiene una inscripción de la temporada anterior pagada cerca del inicio
+     *  de esta temporada (posible inscripción de esta temporada mal capturada). */
+    PosibleInscTempAnterior?: number;
+    /** IdPago de esa inscripción sospechosa (para reasignarla). */
+    SospIdPago?: number | null;
+    /** Fecha en que se pagó, formateada dd/mm/aaaa. */
+    SospFecha?: string | null;
+    /** Temporada bajo la que está archivada esa inscripción. */
+    SospTempNombre?: string | null;
 }
 
 export interface AdeudosConfig {

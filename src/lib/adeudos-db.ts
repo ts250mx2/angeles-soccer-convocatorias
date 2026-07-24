@@ -19,6 +19,27 @@ export const ES_BECA_TOTAL = `(COALESCE(NULLIF(TRIM(J.Beca), ''), '0') + 0) >= 1
 export const SIN_CLINICS = `COALESCE(SD.EsClinics, 0) = 0`;
 
 /**
+ * Jugador "tipo portero": sede keeper (tblSedes.EsKeeper = 1) o categoría que
+ * contenga PORTERO. Estos no re-pagan inscripción cada temporada, así que cualquier
+ * inscripción previa cuenta. Requiere el alias de sede SD y la tabla de jugadores J.
+ */
+export const ES_KEEPER_O_PORTERO =
+    `(COALESCE(SD.EsKeeper, 0) = 1 OR UPPER(J.Categoria) LIKE '%PORTERO%')`;
+
+/**
+ * "Está inscrito" para el cálculo de adeudos.
+ *
+ * Normal: tiene un pago de inscripción registrado en ESA temporada (INS).
+ * Portero (sede keeper o categoría PORTERO): basta con tener CUALQUIER pago de
+ * inscripción, de cualquier temporada (KINS).
+ *
+ * Requiere el alias de sede SD, la tabla J y los LEFT JOIN INS (inscripción de la
+ * temporada) y KINS (cualquier inscripción).
+ */
+export const ESTA_INSCRITO =
+    `(INS.IdJugador IS NOT NULL OR (${ES_KEEPER_O_PORTERO} AND KINS.IdJugador IS NOT NULL))`;
+
+/**
  * Resuelve la temporada seleccionada (o la activa) y la INMEDIATA ANTERIOR.
  *
  * "Anterior" se decide por FechaInicio (con IdTemporada como desempate) y no por
@@ -131,21 +152,21 @@ export async function countsByGroup(
             ${groupCol} as Grupo,
             SUM(CASE WHEN J.Status = 0
                       AND NOT ${ES_BECA_TOTAL}
-                      AND (INS.IdJugador IS NULL OR (${faltantesExpr}) > 0)
+                      AND (NOT ${ESTA_INSCRITO} OR (${faltantesExpr}) > 0)
                  THEN 1 ELSE 0 END) as Debe,
             -- Al corriente exige estar inscrito; el becado sin inscripción va aparte.
             SUM(CASE WHEN J.Status = 0
-                      AND INS.IdJugador IS NOT NULL
+                      AND ${ESTA_INSCRITO}
                       AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
                  THEN 1 ELSE 0 END) as AlCorriente,
-            SUM(CASE WHEN J.Status = 0 AND ${ES_BECA_TOTAL} AND INS.IdJugador IS NULL
+            SUM(CASE WHEN J.Status = 0 AND ${ES_BECA_TOTAL} AND NOT ${ESTA_INSCRITO}
                  THEN 1 ELSE 0 END) as BecadosSinInscripcion,
             -- Posible baja: no pagó la inscripción ni un solo mes ya vencido.
             SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
-                      AND INS.IdJugador IS NULL
+                      AND NOT ${ESTA_INSCRITO}
                       AND COALESCE(MEN.PagosCount, 0) = 0
                  THEN 1 ELSE 0 END) as PosiblesBajas,
-            SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL} AND INS.IdJugador IS NULL
+            SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL} AND NOT ${ESTA_INSCRITO}
                  THEN 1 ELSE 0 END) as DebeInscripcion
             ${conteosPorMes ? ', ' + conteosPorMes : ''}
          FROM tblJugadores J
@@ -161,6 +182,13 @@ export async function countsByGroup(
              WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0
              GROUP BY P.IdJugador
          ) INS ON INS.IdJugador = J.IdJugador
+         LEFT JOIN (
+             -- Cualquier inscripción, de cualquier temporada (para la regla keeper).
+             SELECT DISTINCT P.IdJugador
+             FROM tblPagos P
+             INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+             WHERE PR.IdTipoProducto = 2 AND P.Status = 0
+         ) KINS ON KINS.IdJugador = J.IdJugador
          LEFT JOIN (
              SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as PagosCount
                     ${flagsPorMes ? ', ' + flagsPorMes : ''}

@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   X, Search, User, AlertCircle, Loader2, MapPin, FileDown, FileSpreadsheet,
-  CheckCircle2, XCircle, GraduationCap, ChevronRight,
+  CheckCircle2, XCircle, GraduationCap, ChevronRight, AlertTriangle,
 } from "lucide-react";
-import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModal";
+import PlayerPagosModal, { type PagosTarget, type InscripcionSospechosa } from "@/components/PlayerPagosModal";
 import {
   type AdeudoRow, type AdeudosConfig, exportAdeudosToPdf, exportAdeudosToExcel,
   money, MESES_CORTOS, esBeca100, parseMeses, becaPct, becaLabel,
@@ -63,6 +63,23 @@ export default function AdeudosModal({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [pagosTarget, setPagosTarget] = useState<PagosTarget | null>(null);
+  const [sospechosa, setSospechosa] = useState<InscripcionSospechosa | null>(null);
+
+  // Abre el detalle del jugador; si trae inscripción sospechosa la pasa al modal.
+  const abrirDetalle = (p: AdeudoRow) => {
+    setPagosTarget({ idJugador: p.IdJugador, jugador: p.Jugador });
+    setSospechosa(
+      p.PosibleInscTempAnterior === 1 && p.SospIdPago && cfg
+        ? {
+            idPago: Number(p.SospIdPago),
+            fecha: String(p.SospFecha ?? ""),
+            tempNombreActual: String(p.SospTempNombre ?? "otra temporada"),
+            temporadaDestinoId: cfg.seasonId,
+            temporadaDestinoNombre: cfg.temporadaNombre,
+          }
+        : null
+    );
+  };
   const [recarga, setRecarga] = useState(0);
   // Grupo de beca desplegado (por porcentaje). null = todos colapsados.
   const [grupoAbierto, setGrupoAbierto] = useState<number | null>(null);
@@ -299,7 +316,7 @@ export default function AdeudosModal({
                 <button
                   key={p.IdJugador}
                   type="button"
-                  onClick={() => setPagosTarget({ idJugador: p.IdJugador, jugador: p.Jugador })}
+                  onClick={() => abrirDetalle(p)}
                   title="Ver pagos del jugador"
                   className="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-white/[0.08] transition-colors cursor-pointer"
                 >
@@ -319,6 +336,14 @@ export default function AdeudosModal({
                       )}
                       {p.Status !== 0 && (
                         <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-rose-500/15 text-rose-400 border border-rose-500/25">BAJA</span>
+                      )}
+                      {p.PosibleInscTempAnterior === 1 && (
+                        <span
+                          title="Tiene una inscripción de la temporada anterior pagada cerca del inicio de esta; podría ser la de esta temporada"
+                          className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 inline-flex items-center gap-1"
+                        >
+                          <AlertTriangle size={9} /> posible insc. ya pagada
+                        </span>
                       )}
                     </div>
                   </div>
@@ -408,7 +433,8 @@ export default function AdeudosModal({
       target={pagosTarget}
       temporadaId={temporadaEfectiva}
       temporadaNombre={nombreEfectivo}
-      onClose={() => setPagosTarget(null)}
+      inscripcionSospechosa={sospechosa}
+      onClose={() => { setPagosTarget(null); setSospechosa(null); }}
       onDataChanged={() => { setRecarga((r) => r + 1); onDataChanged?.(); }}
     />
     </>
