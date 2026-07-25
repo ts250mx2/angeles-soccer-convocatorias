@@ -1,5 +1,6 @@
 import { pool } from '@/lib/db';
 import { resolveSeasonMonths, type SeasonMonths, type SeasonRow } from '@/lib/adeudos-season';
+import { ES_VENTA_PUBLICO, esKeeperOPortero } from '@/lib/jugador-filtros';
 
 const SEASON_COLS = 'IdTemporada, Temporada, FechaInicio, FechaFin';
 
@@ -12,19 +13,29 @@ const SEASON_COLS = 'IdTemporada, Temporada, FechaInicio, FechaFin';
 export const ES_BECA_TOTAL = `(COALESCE(NULLIF(TRIM(J.Beca), ''), '0') + 0) >= 100`;
 
 /**
- * Las sedes de clinics (tblSedes.EsClinics = 1) no manejan inscripción ni
- * mensualidades como el resto, así que se excluyen de todo cálculo de adeudo.
- * Requiere tener la sede unida con el alias SD.
+ * Categoría de futsal: se maneja como clinics (fuera del esquema de inscripción /
+ * mensualidades), así que se excluye del cálculo de adeudos igual que la sede FUTSAL
+ * (que es EsClinics = 1). Cubre a los jugadores con categoría futsal aunque estén en
+ * una sede normal. Requiere la tabla de jugadores con el alias J.
  */
-export const SIN_CLINICS = `COALESCE(SD.EsClinics, 0) = 0`;
+export const ES_FUTSAL_CATEGORIA = `UPPER(J.Categoria) LIKE '%FUTSAL%'`;
 
 /**
- * Jugador "tipo portero": sede keeper (tblSedes.EsKeeper = 1) o categoría que
- * contenga PORTERO. Estos no re-pagan inscripción cada temporada, así que cualquier
- * inscripción previa cuenta. Requiere el alias de sede SD y la tabla de jugadores J.
+ * Las sedes de clinics (tblSedes.EsClinics = 1), las categorías de futsal y los
+ * registros de venta al público no manejan inscripción ni mensualidades como el resto,
+ * así que se excluyen de todo cálculo de adeudo. Requiere la sede unida con el alias SD
+ * y la tabla de jugadores con el alias J.
  */
-export const ES_KEEPER_O_PORTERO =
-    `(COALESCE(SD.EsKeeper, 0) = 1 OR UPPER(J.Categoria) LIKE '%PORTERO%')`;
+export const SIN_CLINICS =
+    `(COALESCE(SD.EsClinics, 0) = 0 AND NOT ${ES_FUTSAL_CATEGORIA} AND NOT ${ES_VENTA_PUBLICO})`;
+
+/**
+ * Jugador "tipo portero": sede keeper (tblSedes.EsKeeper = 1) o categoría de
+ * portero/keeper (contiene PORT o KEEP). Estos no re-pagan inscripción cada temporada,
+ * así que cualquier inscripción previa cuenta. Requiere el alias de sede SD y la tabla
+ * de jugadores J.
+ */
+export const ES_KEEPER_O_PORTERO = esKeeperOPortero('SD');
 
 /**
  * "Está inscrito" para el cálculo de adeudos.
@@ -82,7 +93,11 @@ export async function loadSeasonAndPrevious(
 
 export interface AdeudoCounts {
     debe: number;
+    /** Al corriente, EXCLUYENDO keepers/porteros (que van en su propio conteo). */
     alCorriente: number;
+    /** Keepers/porteros al corriente (inscritos y sin meses vencidos), separados de
+     *  "al corriente" porque cuentan como inscritos con la regla de portero. */
+    keepers: number;
     /** Beca 100% sin pago de inscripción: no deben, pero tampoco están inscritos. */
     becadosSinInscripcion: number;
     /** Deben absolutamente todo: sin inscripción y sin un solo mes vencido pagado. */
@@ -155,10 +170,18 @@ export async function countsByGroup(
                       AND (NOT ${ESTA_INSCRITO} OR (${faltantesExpr}) > 0)
                  THEN 1 ELSE 0 END) as Debe,
             -- Al corriente exige estar inscrito; el becado sin inscripción va aparte.
+            -- Los keepers/porteros al corriente se cuentan por separado (Keepers).
             SUM(CASE WHEN J.Status = 0
                       AND ${ESTA_INSCRITO}
+                      AND NOT ${ES_KEEPER_O_PORTERO}
                       AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
                  THEN 1 ELSE 0 END) as AlCorriente,
+            -- Keepers/porteros al corriente (misma condición, pero tipo portero).
+            SUM(CASE WHEN J.Status = 0
+                      AND ${ESTA_INSCRITO}
+                      AND ${ES_KEEPER_O_PORTERO}
+                      AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
+                 THEN 1 ELSE 0 END) as Keepers,
             SUM(CASE WHEN J.Status = 0 AND ${ES_BECA_TOTAL} AND NOT ${ESTA_INSCRITO}
                  THEN 1 ELSE 0 END) as BecadosSinInscripcion,
             -- Posible baja: no pagó la inscripción ni un solo mes ya vencido.
@@ -209,6 +232,7 @@ export async function countsByGroup(
         out.set(r.Grupo, {
             debe: Number(r.Debe) || 0,
             alCorriente: Number(r.AlCorriente) || 0,
+            keepers: Number(r.Keepers) || 0,
             becadosSinInscripcion: Number(r.BecadosSinInscripcion) || 0,
             /* Sin meses vencidos la condición "debe todos los meses" se cumpliría
                de forma vacía, así que el corte solo aplica con temporada transcurrida. */
@@ -221,6 +245,6 @@ export async function countsByGroup(
 }
 
 export const SIN_ADEUDOS: AdeudoCounts = {
-    debe: 0, alCorriente: 0, becadosSinInscripcion: 0, posiblesBajas: 0,
+    debe: 0, alCorriente: 0, keepers: 0, becadosSinInscripcion: 0, posiblesBajas: 0,
     debeInscripcion: 0, debeMeses: [],
 };

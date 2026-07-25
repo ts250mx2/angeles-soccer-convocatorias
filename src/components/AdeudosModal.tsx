@@ -13,7 +13,7 @@ import {
 
 export type AdeudosFilter =
   | "activos" | "bajas" | "pendiente-inscripcion" | "pendiente-mensualidad"
-  | "al-corriente" | "becado-sin-inscripcion" | "posible-baja" | "debe" | "debe-mes" | "todos";
+  | "al-corriente" | "keepers" | "becado-sin-inscripcion" | "posible-baja" | "debe" | "debe-mes" | "todos";
 
 export interface AdeudosModalConfig {
   title: string;
@@ -25,6 +25,10 @@ export interface AdeudosModalConfig {
   mes?: number;
   /** 0 = solo sedes normales, 1 = solo clinics. Sin valor, ambas. */
   clinics?: 0 | 1;
+  /** Segmento de plantilla: 'normal' (sin keepers/excluidos/venta pública),
+   *  'keepers', 'ventapublico' o 'excluido' (clinics/futsal). Solo aplica a los
+   *  cortes de plantilla (activos/bajas). */
+  grupo?: 'normal' | 'keepers' | 'ventapublico' | 'excluido';
   /** Temporada a consultar; si se omite se usa la seleccionada en la página.
    *  Permite que los cortes de "temporada anterior" apunten a esa otra temporada. */
   temporadaId?: number;
@@ -37,6 +41,7 @@ const ACCENT: Record<AdeudosFilter, string> = {
   "pendiente-inscripcion": "bg-amber-500",
   "pendiente-mensualidad": "bg-orange-500",
   "al-corriente": "bg-teal-500",
+  keepers: "bg-cyan-500",
   "becado-sin-inscripcion": "bg-purple-500",
   "posible-baja": "bg-red-600",
   debe: "bg-rose-500",
@@ -101,6 +106,7 @@ export default function AdeudosModal({
     if (config.categoria) params.set("categoria", config.categoria);
     if (config.mes !== undefined) params.set("mes", String(config.mes));
     if (config.clinics !== undefined) params.set("clinics", String(config.clinics));
+    if (config.grupo) params.set("grupo", config.grupo);
     if (temporadaEfectiva) params.set("temporadaId", String(temporadaEfectiva));
 
     (async () => {
@@ -324,6 +330,11 @@ export default function AdeudosModal({
                     <p className="text-sm font-bold text-slate-200 truncate">{p.Jugador}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">ID {p.IdJugador}</span>
+                      {p.Categoria && (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                          {p.Categoria}
+                        </span>
+                      )}
                       {showSede && p.SedeNombre && (
                         <span className="text-[10px] text-slate-500 flex items-center gap-1">
                           <MapPin size={9} /> {p.SedeNombre}

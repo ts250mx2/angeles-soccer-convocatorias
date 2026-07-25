@@ -18,11 +18,13 @@ interface CategoriaSummary {
   Bajas: number;
   ActualDebe: number;
   ActualAlCorriente: number;
+  ActualKeepers: number;
   ActualBecadosSinInscripcion: number;
   ActualDebeInscripcion: number;
   ActualDebeMeses: DebeMes[];
   AnteriorDebe: number;
   AnteriorAlCorriente: number;
+  AnteriorKeepers: number;
   AnteriorBecadosSinInscripcion: number;
   AnteriorPosiblesBajas: number;
   AnteriorDebeInscripcion: number;
@@ -159,6 +161,9 @@ export default function AdeudosSedeCategoriasPage({ params }: { params: Promise<
             </span>
             <span className="bg-teal-500/20 px-3 py-1.5 rounded-xl border border-teal-500/30 text-sm font-bold text-teal-400">
               {sum(c => c.ActualAlCorriente)} al corriente
+            </span>
+            <span className="bg-cyan-500/20 px-3 py-1.5 rounded-xl border border-cyan-500/30 text-sm font-bold text-cyan-300">
+              {sum(c => c.ActualKeepers)} porteros
             </span>
           </div>
         </div>
@@ -323,6 +328,16 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, onOpenPl
             <button
               type="button"
               disabled={!anterior}
+              title="Keepers/porteros al corriente (regla de portero)"
+              onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Porteros al Corriente · Temporada Anterior', filtro: 'keepers', subtitle: label(anterior?.temporadaNombre) })}
+              className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
+            >
+              <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>
+              <p className="text-sm font-black text-cyan-300">{categoria.AnteriorKeepers}</p>
+            </button>
+            <button
+              type="button"
+              disabled={!anterior}
               title="Beca 100% sin pago de inscripción"
               onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Becados 100% sin Inscripción · Temporada Anterior', filtro: 'becado-sin-inscripcion', subtitle: label(anterior?.temporadaNombre) })}
               className={`w-full ${miniBtn} bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/15`}
@@ -374,6 +389,15 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, onOpenPl
             >
               <p className="text-[8px] uppercase font-black text-teal-400/70 tracking-wider">Al corriente</p>
               <p className="text-sm font-black text-teal-400">{categoria.ActualAlCorriente}</p>
+            </button>
+            <button
+              type="button"
+              title="Keepers/porteros al corriente (regla de portero)"
+              onClick={() => onOpenPlayers({ ...base, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers', subtitle: label(actual?.temporadaNombre) })}
+              className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
+            >
+              <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>
+              <p className="text-sm font-black text-cyan-300">{categoria.ActualKeepers}</p>
             </button>
             <button
               type="button"

@@ -20,14 +20,23 @@ interface SedeSummary {
   /** 1 = sede de clinics; se excluye de los adeudos. */
   EsClinics: number;
   Activos: number;
+  ActivosNormal: number;
+  ActivosKeepers: number;
+  ActivosVentaPublico: number;
+  ActivosExcluido: number;
   Bajas: number;
+  BajasNormal: number;
+  BajasKeepers: number;
+  BajasExcluido: number;
   ActualDebe: number;
   ActualAlCorriente: number;
+  ActualKeepers: number;
   ActualBecadosSinInscripcion: number;
   ActualDebeInscripcion: number;
   ActualDebeMeses: DebeMes[];
   AnteriorDebe: number;
   AnteriorAlCorriente: number;
+  AnteriorKeepers: number;
   AnteriorBecadosSinInscripcion: number;
   AnteriorPosiblesBajas: number;
   AnteriorDebeInscripcion: number;
@@ -163,17 +172,21 @@ export default function AdeudosSedePage() {
   const sedesWithoutActivos = filteredSedes.filter(sede => sede.Activos === 0);
 
   const sum = (pick: (s: SedeSummary) => number) => sedes.reduce((acc, s) => acc + (pick(s) || 0), 0);
-  // Los adeudos ignoran clinics, así que la plantilla se reporta por separado.
-  const sumSi = (esClinics: number, pick: (s: SedeSummary) => number) =>
-    sedes.filter((s) => (s.EsClinics || 0) === esClinics).reduce((acc, s) => acc + (pick(s) || 0), 0);
-  const activosSedes = sumSi(0, s => s.Activos);
-  const activosClinics = sumSi(1, s => s.Activos);
-  const bajasSedes = sumSi(0, s => s.Bajas);
-  const bajasClinics = sumSi(1, s => s.Bajas);
+  // Plantilla partida en grupos mutuamente excluyentes (normal / keepers / venta
+  // pública / excluido[clinics+futsal]). Los conteos vienen ya calculados del backend.
+  const activosSedes = sum(s => s.ActivosNormal);
+  const activosKeepers = sum(s => s.ActivosKeepers);
+  const activosVentaPublico = sum(s => s.ActivosVentaPublico);
+  const activosClinics = sum(s => s.ActivosExcluido);
+  const bajasSedes = sum(s => s.BajasNormal);
+  const bajasKeepers = sum(s => s.BajasKeepers);
+  const bajasClinics = sum(s => s.BajasExcluido);
   const totalActualDebe = sum(s => s.ActualDebe);
   const totalActualAlCorriente = sum(s => s.ActualAlCorriente);
+  const totalActualKeepers = sum(s => s.ActualKeepers);
   const totalAnteriorDebe = sum(s => s.AnteriorDebe);
   const totalAnteriorAlCorriente = sum(s => s.AnteriorAlCorriente);
+  const totalAnteriorKeepers = sum(s => s.AnteriorKeepers);
 
   // Desglose global: se suman los conteos por mes de todas las sedes.
   const sumaMeses = (pick: (s: SedeSummary) => DebeMes[]): DebeMes[] => {
@@ -234,19 +247,22 @@ export default function AdeudosSedePage() {
               label="Jugadores Activos"
               icon={<UserCheck size={18} className="text-emerald-400" />}
               tone="emerald"
-              valorSedes={activosSedes}
-              valorClinics={activosClinics}
-              onSedes={() => setModal({ title: 'Jugadores Activos · Sedes', subtitle: actual?.temporadaNombre, filtro: 'activos', clinics: 0 })}
-              onClinics={() => setModal({ title: 'Jugadores Activos · Clinics', subtitle: actual?.temporadaNombre, filtro: 'activos', clinics: 1 })}
+              segments={[
+                { label: 'Sedes', value: activosSedes, onClick: () => setModal({ title: 'Jugadores Activos · Sedes', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'normal' }) },
+                { label: 'Keepers', value: activosKeepers, onClick: () => setModal({ title: 'Jugadores Activos · Keepers/Porteros', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'keepers' }) },
+                { label: 'Venta público', value: activosVentaPublico, muted: true, title: 'Venta al público: no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Activos · Venta al Público', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'ventapublico' }) },
+                { label: 'Clinics', value: activosClinics, muted: true, title: 'Clinics/futsal no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Activos · Clinics', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'excluido' }) },
+              ]}
             />
             <KpiSplit
               label="Jugadores Bajas"
               icon={<UserMinus size={18} className="text-rose-400" />}
               tone="rose"
-              valorSedes={bajasSedes}
-              valorClinics={bajasClinics}
-              onSedes={() => setModal({ title: 'Jugadores Baja · Sedes', subtitle: actual?.temporadaNombre, filtro: 'bajas', clinics: 0 })}
-              onClinics={() => setModal({ title: 'Jugadores Baja · Clinics', subtitle: actual?.temporadaNombre, filtro: 'bajas', clinics: 1 })}
+              segments={[
+                { label: 'Sedes', value: bajasSedes, onClick: () => setModal({ title: 'Jugadores Baja · Sedes', subtitle: actual?.temporadaNombre, filtro: 'bajas', grupo: 'normal' }) },
+                { label: 'Keepers', value: bajasKeepers, onClick: () => setModal({ title: 'Jugadores Baja · Keepers/Porteros', subtitle: actual?.temporadaNombre, filtro: 'bajas', grupo: 'keepers' }) },
+                { label: 'Clinics', value: bajasClinics, muted: true, title: 'Clinics/futsal no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Baja · Clinics', subtitle: actual?.temporadaNombre, filtro: 'bajas', grupo: 'excluido' }) },
+              ]}
             />
             <KpiDual
               label="Adeudos Temporada Anterior"
@@ -255,10 +271,12 @@ export default function AdeudosSedePage() {
               tone="amber"
               debe={totalAnteriorDebe}
               alCorriente={totalAnteriorAlCorriente}
+              keepers={totalAnteriorKeepers}
               becadosSinInsc={totalAnteriorBecadosSinInsc}
               disabled={!anterior}
               onDebe={() => setModal({ title: 'Con Adeudo · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'debe', ...scopeAnterior })}
               onAlCorriente={() => setModal({ title: 'Al Corriente · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'al-corriente', ...scopeAnterior })}
+              onKeepers={() => setModal({ title: 'Porteros al Corriente · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'keepers', ...scopeAnterior })}
               onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'becado-sin-inscripcion', ...scopeAnterior })}
               posiblesBajas={totalAnteriorPosiblesBajas}
               onPosiblesBajas={() => setModal({ title: 'Posibles Bajas · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'posible-baja', ...scopeAnterior })}
@@ -278,9 +296,11 @@ export default function AdeudosSedePage() {
               tone="blue"
               debe={totalActualDebe}
               alCorriente={totalActualAlCorriente}
+              keepers={totalActualKeepers}
               becadosSinInsc={totalActualBecadosSinInsc}
               onDebe={() => setModal({ title: 'Con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'debe' })}
               onAlCorriente={() => setModal({ title: 'Al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'al-corriente' })}
+              onKeepers={() => setModal({ title: 'Porteros al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers' })}
               onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'becado-sin-inscripcion' })}
               desglose={
                 <DesgloseAdeudo
@@ -370,11 +390,18 @@ const TONES: Record<string, { bg: string; border: string; hover: string; text: s
   blue: { bg: 'bg-blue-500/10', border: 'border-blue-500/20', hover: '', text: 'text-blue-400' },
 };
 
-/** KPI de plantilla partido en sedes normales y clinics (clinics no entra a adeudos). */
-function KpiSplit({ label, icon, tone, valorSedes, valorClinics, onSedes, onClinics }: {
-  label: string; icon: React.ReactNode; tone: string;
-  valorSedes: number; valorClinics: number;
-  onSedes: () => void; onClinics: () => void;
+interface KpiSegment {
+  label: string;
+  value: number;
+  onClick: () => void;
+  /** Texto atenuado (para grupos que no entran a adeudos: clinics, venta público). */
+  muted?: boolean;
+  title?: string;
+}
+
+/** KPI de plantilla partido en segmentos (normal / keepers / venta público / clinics). */
+function KpiSplit({ label, icon, tone, segments }: {
+  label: string; icon: React.ReactNode; tone: string; segments: KpiSegment[];
 }) {
   const t = TONES[tone];
   return (
@@ -384,33 +411,28 @@ function KpiSplit({ label, icon, tone, valorSedes, valorClinics, onSedes, onClin
         <p className={`text-[10px] uppercase tracking-wider ${t.text} font-bold`}>{label}</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={onSedes}
-          className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl px-2 py-1.5 text-left transition-all"
-        >
-          <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Sedes</p>
-          <p className={`text-lg font-black ${t.text}`}>{valorSedes}</p>
-        </button>
-        <button
-          type="button"
-          onClick={onClinics}
-          title="Clinics no entra en los adeudos"
-          className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl px-2 py-1.5 text-left transition-all"
-        >
-          <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Clinics</p>
-          <p className="text-lg font-black text-slate-300">{valorClinics}</p>
-        </button>
+        {segments.map((s) => (
+          <button
+            key={s.label}
+            type="button"
+            onClick={s.onClick}
+            title={s.title}
+            className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl px-2 py-1.5 text-left transition-all"
+          >
+            <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">{s.label}</p>
+            <p className={`text-lg font-black ${s.muted ? 'text-slate-300' : t.text}`}>{s.value}</p>
+          </button>
+        ))}
       </div>
     </div>
   );
 }
 
-/** KPI con dos cifras clicables: con adeudo y al corriente. */
-function KpiDual({ label, caption, icon, tone, debe, alCorriente, becadosSinInsc, onDebe, onAlCorriente, onBecados, disabled, desglose, posiblesBajas, onPosiblesBajas }: {
+/** KPI con cifras clicables: con adeudo, al corriente, porteros y becados. */
+function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, becadosSinInsc, onDebe, onAlCorriente, onKeepers, onBecados, disabled, desglose, posiblesBajas, onPosiblesBajas }: {
   label: string; caption: string; icon: React.ReactNode; tone: string;
-  debe: number; alCorriente: number; becadosSinInsc: number;
-  onDebe: () => void; onAlCorriente: () => void; onBecados: () => void;
+  debe: number; alCorriente: number; keepers: number; becadosSinInsc: number;
+  onDebe: () => void; onAlCorriente: () => void; onKeepers: () => void; onBecados: () => void;
   disabled?: boolean; desglose?: React.ReactNode;
   /** Solo se muestra si se provee (temporadas ya transcurridas). */
   posiblesBajas?: number; onPosiblesBajas?: () => void;
@@ -445,10 +467,21 @@ function KpiDual({ label, caption, icon, tone, debe, alCorriente, becadosSinInsc
             type="button"
             onClick={onAlCorriente}
             disabled={disabled}
+            title="Al corriente, sin contar keepers/porteros"
             className="w-full bg-teal-500/10 hover:bg-teal-500/25 border border-teal-500/20 rounded-xl px-2 py-1.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <p className="text-[8px] uppercase font-black text-teal-400/80 tracking-wider">Al corriente</p>
             <p className="text-lg font-black text-teal-400">{alCorriente}</p>
+          </button>
+          <button
+            type="button"
+            onClick={onKeepers}
+            disabled={disabled}
+            title="Keepers y porteros al corriente: cuentan como inscritos con la regla de portero (una inscripción vale para todas las temporadas)"
+            className="w-full bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/20 rounded-xl px-2 py-1.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <p className="text-[8px] uppercase font-black text-cyan-300/80 tracking-wider">Porteros al corriente</p>
+            <p className="text-lg font-black text-cyan-300">{keepers}</p>
           </button>
           <button
             type="button"
@@ -579,6 +612,16 @@ function SedeCard({ sede, temporadaId, actual, anterior, onOpenPlayers }: {
             <button
               type="button"
               disabled={!anterior}
+              title="Keepers/porteros al corriente (regla de portero)"
+              onClick={() => open({ ...base, ...scopeAnterior, title: 'Porteros al Corriente · Temporada Anterior', filtro: 'keepers', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
+            >
+              <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>
+              <p className="text-sm font-black text-cyan-300">{sede.AnteriorKeepers}</p>
+            </button>
+            <button
+              type="button"
+              disabled={!anterior}
               title="Beca 100% sin pago de inscripción"
               onClick={() => open({ ...base, ...scopeAnterior, title: 'Becados 100% sin Inscripción · Temporada Anterior', filtro: 'becado-sin-inscripcion', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
               className={`w-full ${miniBtn} bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/15`}
@@ -632,6 +675,15 @@ function SedeCard({ sede, temporadaId, actual, anterior, onOpenPlayers }: {
             >
               <p className="text-[8px] uppercase font-black text-teal-400/70 tracking-wider">Al corriente</p>
               <p className="text-sm font-black text-teal-400">{sede.ActualAlCorriente}</p>
+            </button>
+            <button
+              type="button"
+              title="Keepers/porteros al corriente (regla de portero)"
+              onClick={() => open({ ...base, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
+            >
+              <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>
+              <p className="text-sm font-black text-cyan-300">{sede.ActualKeepers}</p>
             </button>
             <button
               type="button"

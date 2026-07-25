@@ -7,6 +7,14 @@ import {
     TIPO_PRODUCTO_INSCRIPCION,
     TIPO_PRODUCTO_MENSUALIDAD,
 } from '@/lib/temporada';
+import { ES_VENTA_PUBLICO, esKeeperOPortero } from '@/lib/jugador-filtros';
+
+/** Jugadores con al menos un pago de inscripción de CUALQUIER temporada (regla keeper). */
+const CUALQUIER_INSCRIPCION_SQL = `
+    SELECT A.IdJugador FROM tblPagos A
+    INNER JOIN tblProductos B ON A.IdProducto = B.IdProducto
+    WHERE B.IdTipoProducto = ${TIPO_PRODUCTO_INSCRIPCION} AND A.Status = 0
+`;
 
 export const dynamic = 'force-dynamic';
 
@@ -87,30 +95,60 @@ export async function GET(request: Request) {
             params.push(Number(clinicsParam));
         }
 
+        /* Regla keeper (igual que en adeudos): un keeper/portero cuenta como inscrito si
+           tiene un pago de inscripción de CUALQUIER temporada, no solo de la seleccionada.
+           "Inscrito" = tiene inscripción de esta temporada, o es keeper con alguna. */
+        const ES_KEEPER = esKeeperOPortero('S');
+        const inscritoSql = temporadaId
+            ? `(J.IdJugador IN (${JUGADORES_DE_TEMPORADA_SQL}) OR (${ES_KEEPER} AND J.IdJugador IN (${CUALQUIER_INSCRIPCION_SQL})))`
+            : `(${ES_KEEPER} AND J.IdJugador IN (${CUALQUIER_INSCRIPCION_SQL}))`;
+        // Segmento de plantilla / inscritos.
+        const grupo = searchParams.get('grupo');
+
         if (esSinInscripcion) {
-            /* Pagó mensualidad de los meses-año de la temporada pero nunca la inscripción.
-               No se aplica la pertenencia normal a la temporada: precisamente estos
-               jugadores no la cumplen. */
+            /* Pagó mensualidad de los meses-año de la temporada pero NO está inscrito
+               (ni de esta temporada ni por la regla keeper). */
             where.push(`J.IdJugador IN (${MENSUALIDADES_EN_TEMPORADA_SQL})`);
             params.push(temporadaId);
-            where.push(`J.IdJugador NOT IN (${JUGADORES_DE_TEMPORADA_SQL})`);
-            params.push(temporadaId);
+            where.push(`NOT ${inscritoSql}`);
+            if (temporadaId) params.push(temporadaId);
             where.push('J.Status = 0');
+            where.push(`NOT ${ES_VENTA_PUBLICO}`);
         } else if (esActivos) {
             where.push('J.Status = 0');
-        } else {
+        } else if (filtro === 'inscritos' || filtro === 'becados') {
+            // Inscritos con regla keeper; se excluye venta al público.
+            where.push('J.Status = 0');
+            where.push(inscritoSql);
+            if (temporadaId) params.push(temporadaId);
+            where.push(`NOT ${ES_VENTA_PUBLICO}`);
+            if (filtro === 'becados') {
+                where.push("J.Beca IS NOT NULL AND J.Beca <> '0' AND J.Beca <> ''");
+            }
+        } else if (filtro === 'bajas') {
+            where.push('J.Status = 2');
             if (temporadaId) {
                 where.push(`J.IdJugador IN (${JUGADORES_DE_TEMPORADA_SQL})`);
                 params.push(temporadaId);
             }
-
-            if (filtro === 'inscritos') {
-                where.push('J.Status = 0');
-            } else if (filtro === 'bajas') {
-                where.push('J.Status = 2');
-            } else if (filtro === 'becados') {
-                where.push("J.Status = 0 AND J.Beca IS NOT NULL AND J.Beca <> '0' AND J.Beca <> ''");
+            where.push(`NOT ${ES_VENTA_PUBLICO}`);
+        } else {
+            // 'todos'
+            if (temporadaId) {
+                where.push(`J.IdJugador IN (${JUGADORES_DE_TEMPORADA_SQL})`);
+                params.push(temporadaId);
             }
+        }
+
+        /* Segmento: separa keepers/porteros y venta al público del resto. Compone con el
+           filtro base (para 'inscritos' normal = no-keeper de esta temporada; keepers =
+           keeper con cualquier inscripción). */
+        if (grupo === 'keepers') {
+            where.push(`${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO}`);
+        } else if (grupo === 'ventapublico') {
+            where.push(ES_VENTA_PUBLICO);
+        } else if (grupo === 'normal') {
+            where.push(`NOT ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO}`);
         }
 
         /* Fecha de inscripción = primer pago de INSCRIPCIÓN (IdTipoProducto = 2)
@@ -153,7 +191,11 @@ export async function GET(request: Request) {
 
             mesesSelect = `
                 COALESCE(MP.MesesPagados, '') as MesesPagados,
-                CASE WHEN INS.IdJugador IS NOT NULL THEN 1 ELSE 0 END as InscripcionPagada,
+                -- Keeper-aware: un keeper/portero con inscripción de cualquier temporada
+                -- (KINS) cuenta como inscrito aunque no la tenga de esta.
+                CASE WHEN INS.IdJugador IS NOT NULL
+                       OR (${esKeeperOPortero('S')} AND KINS.IdJugador IS NOT NULL)
+                     THEN 1 ELSE 0 END as InscripcionPagada,
                 COALESCE(MP.PagosAnticipados, 0) as PagosAnticipados
             `;
             mesesJoin = `
@@ -180,6 +222,9 @@ export async function GET(request: Request) {
                 LEFT JOIN (
                     SELECT DISTINCT IdJugador FROM (${JUGADORES_DE_TEMPORADA_SQL}) I
                 ) INS ON INS.IdJugador = J.IdJugador
+                LEFT JOIN (
+                    SELECT DISTINCT IdJugador FROM (${CUALQUIER_INSCRIPCION_SQL}) K
+                ) KINS ON KINS.IdJugador = J.IdJugador
             `;
             selectParams.push(temporadaId, temporadaId);
         }

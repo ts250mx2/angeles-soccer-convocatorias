@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { loadSeasonAndPrevious } from '@/lib/adeudos-db';
+import { loadSeasonAndPrevious, ES_FUTSAL_CATEGORIA } from '@/lib/adeudos-db';
+import { ES_VENTA_PUBLICO, esKeeperOPortero } from '@/lib/jugador-filtros';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,18 +63,41 @@ export async function GET(request: Request) {
         const whereParams: any[] = [];
         if (sedeId) { where.push('J.IdSede = ?'); whereParams.push(sedeId); }
 
-        /* Las sedes de clinics no manejan inscripción/mensualidad como el resto, así
-           que quedan fuera de todo corte de adeudo. En los cortes de plantilla
-           (activos/bajas/todos) se respeta el parámetro para poder verlas aparte. */
+        /* Las sedes de clinics, las categorías de futsal y los registros de venta al
+           público no manejan inscripción/mensualidad como el resto, así que quedan fuera
+           de todo corte de adeudo. En los cortes de plantilla (activos/bajas/todos) se
+           respeta el parámetro para poder verlas aparte: clinics=0 las oculta,
+           clinics=1 muestra solo esas. */
+        const EXCLUIDO_ADEUDOS =
+            `(COALESCE(S.EsClinics, 0) = 1 OR ${ES_FUTSAL_CATEGORIA} OR ${ES_VENTA_PUBLICO})`;
         const CORTES_DE_ADEUDO = [
-            'debe', 'al-corriente', 'pendiente-inscripcion', 'pendiente-mensualidad', 'debe-mes',
-            'becado-sin-inscripcion', 'posible-baja',
+            'debe', 'al-corriente', 'keepers', 'pendiente-inscripcion', 'pendiente-mensualidad',
+            'debe-mes', 'becado-sin-inscripcion', 'posible-baja',
         ];
         if (CORTES_DE_ADEUDO.includes(filtro)) {
-            where.push('COALESCE(S.EsClinics, 0) = 0');
-        } else if (clinicsParam === '0' || clinicsParam === '1') {
-            where.push('COALESCE(S.EsClinics, 0) = ?');
-            whereParams.push(Number(clinicsParam));
+            where.push(`NOT ${EXCLUIDO_ADEUDOS}`);
+        } else if (clinicsParam === '0') {
+            where.push(`NOT ${EXCLUIDO_ADEUDOS}`);
+        } else if (clinicsParam === '1') {
+            where.push(EXCLUIDO_ADEUDOS);
+        }
+
+        /* Segmento de plantilla (activos/bajas/todos): parte a los activos/bajas en
+           grupos mutuamente excluyentes que el resumen calcula igual, para que las
+           tarjetas y el modal cuadren. Prioridad: venta pública > excluido
+           (clinics/futsal) > keepers > normal. Con grupo NO se pasa el parámetro
+           clinics (el grupo ya delimita el conjunto). */
+        const grupo = searchParams.get('grupo');
+        const ES_KEEPER = esKeeperOPortero('S');
+        const ES_EXCLUIDO = `(COALESCE(S.EsClinics, 0) = 1 OR ${ES_FUTSAL_CATEGORIA})`;
+        if (grupo === 'ventapublico') {
+            where.push(ES_VENTA_PUBLICO);
+        } else if (grupo === 'excluido') {
+            where.push(`${ES_EXCLUIDO} AND NOT ${ES_VENTA_PUBLICO}`);
+        } else if (grupo === 'keepers') {
+            where.push(`${ES_KEEPER} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_VENTA_PUBLICO}`);
+        } else if (grupo === 'normal') {
+            where.push(`NOT ${ES_KEEPER} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_VENTA_PUBLICO}`);
         }
         if (categorias.length) {
             where.push(`J.Categoria IN (${categorias.map(() => '?').join(',')})`);
@@ -124,10 +148,12 @@ export async function GET(request: Request) {
                 J.Beca,
                 J.IdSede,
                 COALESCE(S.Sede, J.Sede) as SedeNombre,
-                -- Portero (sede keeper o categoría PORTERO): cualquier inscripción (KINS) cuenta.
+                -- Portero (sede keeper o categoría PORT/KEEP): cualquier inscripción (KINS) cuenta.
                 CASE WHEN INSCRIPCION.IdJugador IS NOT NULL
-                       OR ((COALESCE(S.EsKeeper, 0) = 1 OR UPPER(J.Categoria) LIKE '%PORTERO%') AND KINS.IdJugador IS NOT NULL)
+                       OR (${esKeeperOPortero('S')} AND KINS.IdJugador IS NOT NULL)
                      THEN 1 ELSE 0 END as InscripcionPagada,
+                CASE WHEN ${esKeeperOPortero('S')}
+                     THEN 1 ELSE 0 END as EsKeeperOPortero,
                 INSCRIPCION.MesInscripcion,
                 COALESCE(MENSUALIDADES.MesesPagados, '') as MesesPagados,
                 COALESCE(PAGOS.Pagado, 0) as Pagado
@@ -281,9 +307,14 @@ export async function GET(request: Request) {
                 case 'pendiente-inscripcion': return p.Status === 0 && !becado && !p.InscripcionPagada;
                 case 'pendiente-mensualidad': return p.Status === 0 && !becado && p.MissingCount > 0;
                 // Al corriente exige estar inscrito; el becado al 100% sin inscripción
-                // no debe nada pero se reporta aparte.
+                // no debe nada pero se reporta aparte. Los keepers/porteros al corriente
+                // se separan en su propio corte.
                 case 'al-corriente':
-                    return p.Status === 0 && !!p.InscripcionPagada && (becado || p.MissingCount === 0);
+                    return p.Status === 0 && !!p.InscripcionPagada && !p.EsKeeperOPortero
+                        && (becado || p.MissingCount === 0);
+                case 'keepers':
+                    return p.Status === 0 && !!p.InscripcionPagada && !!p.EsKeeperOPortero
+                        && (becado || p.MissingCount === 0);
                 case 'becado-sin-inscripcion':
                     return p.Status === 0 && becado && !p.InscripcionPagada;
                 // Posible baja: no pagó inscripción ni un solo mes ya vencido.

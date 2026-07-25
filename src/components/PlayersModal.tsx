@@ -24,6 +24,8 @@ export interface PlayersModalConfig {
   categoria?: string;
   /** 0 = solo sedes normales, 1 = solo clinics. Sin valor, ambas. */
   clinics?: 0 | 1;
+  /** Segmento de plantilla/inscritos: 'normal', 'keepers' o 'ventapublico'. */
+  grupo?: 'normal' | 'keepers' | 'ventapublico';
   /** Ruta al drill-down por categorías; si viene, se muestra la liga "Por Categoría" */
   categoriaHref?: string;
 }
@@ -74,6 +76,7 @@ export default function PlayersModal({
     if (config.sedeId !== undefined) params.set("sedeId", String(config.sedeId));
     if (config.categoria) params.set("categoria", config.categoria);
     if (config.clinics !== undefined) params.set("clinics", String(config.clinics));
+    if (config.grupo) params.set("grupo", config.grupo);
     if (temporadaId) params.set("temporadaId", String(temporadaId));
 
     (async () => {

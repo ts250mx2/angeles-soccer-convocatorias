@@ -15,8 +15,12 @@ interface SedeSummary {
   EsClinics: number;
   /** Plantilla completa (Status 0), sin acotar a la temporada. */
   Activos: number;
+  ActivosKeepers: number;
+  ActivosVentaPublico: number;
   Inscritos: number;
+  InscritosKeepers: number;
   Bajas: number;
+  BajasKeepers: number;
   /** Pagaron mensualidad de los meses de la temporada pero no la inscripción */
   SinInscripcion: number;
   BecasDetail: string | null;
@@ -127,12 +131,27 @@ export default function InscripcionesSedesPage() {
   /* Plantilla activa separada por tipo de sede (clinics aparte). El avance de
      inscripción se mide solo sobre sedes normales: clinics no maneja inscripción,
      así que incluirlo hundiría el porcentaje sin significar nada. */
-  const sumaPorTipo = (esClinics: number, campo: 'Activos' | 'Inscritos') =>
+  const sumaPorTipo = (esClinics: number, pick: (s: SedeSummary) => number) =>
     sedes.filter(s => (s.EsClinics || 0) === esClinics)
-         .reduce((acc, s) => acc + (Number(s[campo]) || 0), 0);
-  const activosSedes = sumaPorTipo(0, 'Activos');
-  const activosClinics = sumaPorTipo(1, 'Activos');
-  const inscritosSedes = sumaPorTipo(0, 'Inscritos');
+         .reduce((acc, s) => acc + (pick(s) || 0), 0);
+  const sumTodos = (pick: (s: SedeSummary) => number) =>
+    sedes.reduce((acc, s) => acc + (pick(s) || 0), 0);
+
+  // Plantilla no-clinics partida en normal / keepers / venta público.
+  const activosKeepers = sumaPorTipo(0, s => s.ActivosKeepers);
+  const activosVentaPublico = sumTodos(s => s.ActivosVentaPublico);
+  const activosSedes = sumaPorTipo(0, s => s.Activos) - activosKeepers - activosVentaPublico;
+  const activosClinics = sumaPorTipo(1, s => s.Activos);
+  // Inscritos (keeper-aware, sin venta pública) separando keepers.
+  const inscritosSedes = sumaPorTipo(0, s => s.Inscritos);
+  const inscritosKeepers = sumaPorTipo(0, s => s.InscritosKeepers);
+  const inscritosNormal = inscritosSedes - inscritosKeepers;
+  // Base del avance: plantilla elegible (no-clinics, sin venta pública) = normal + keepers.
+  const activosElegibles = activosSedes + activosKeepers;
+  // Bajas separando keepers.
+  const bajasKeepers = sumTodos(s => s.BajasKeepers);
+  const bajasTotal = sumTodos(s => s.Bajas);
+  const bajasNormal = bajasTotal - bajasKeepers;
 
   return (
     <DashboardLayout>
@@ -180,7 +199,7 @@ export default function InscripcionesSedesPage() {
             </div>
 
             <div className="flex gap-4 w-full md:w-auto flex-wrap">
-              {/* Plantilla activa separada por tipo de sede, igual que en adeudos. */}
+              {/* Plantilla activa partida en normal / keepers / venta público / clinics. */}
               <div className="flex-1 md:flex-none bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl">
                 <div className="flex items-center gap-2 mb-1.5">
                   <div className="bg-sky-500/20 p-1.5 rounded-lg">
@@ -189,61 +208,88 @@ export default function InscripcionesSedesPage() {
                   <p className="text-[10px] uppercase tracking-wider text-sky-400 font-bold">Jugadores Activos</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Sedes', value: activosSedes, tone: 'text-sky-400', title: undefined as string | undefined, cfg: { title: 'Jugadores Activos · Sedes', filtro: 'activos' as const, clinics: 0 as const, grupo: 'normal' as const } },
+                    { label: 'Keepers', value: activosKeepers, tone: 'text-cyan-300', title: 'Keepers y porteros', cfg: { title: 'Jugadores Activos · Keepers/Porteros', filtro: 'activos' as const, clinics: 0 as const, grupo: 'keepers' as const } },
+                    { label: 'Venta púb.', value: activosVentaPublico, tone: 'text-slate-300', title: 'Registros de venta al público (no cuentan en el total de sedes)', cfg: { title: 'Jugadores Activos · Venta al Público', filtro: 'activos' as const, grupo: 'ventapublico' as const } },
+                    { label: 'Clinics', value: activosClinics, tone: 'text-slate-300', title: undefined, cfg: { title: 'Jugadores Activos · Clinics', filtro: 'activos' as const, clinics: 1 as const } },
+                  ].map((seg) => (
+                    <button
+                      key={seg.label}
+                      type="button"
+                      title={seg.title}
+                      onClick={() => setModal({ subtitle: temporadaNombre, ...seg.cfg })}
+                      className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
+                    >
+                      <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">{seg.label}</p>
+                      <p className={`text-lg font-black ${seg.tone}`}>{seg.value}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1 md:flex-none bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl min-w-[210px]">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="bg-emerald-500/20 p-1.5 rounded-lg">
+                    <UserCheck size={16} className="text-emerald-400" />
+                  </div>
+                  <p className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Total Inscritos</p>
+                  <span className="text-[9px] text-slate-500 italic">incluye becados</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setModal({ title: 'Jugadores Activos · Sedes', subtitle: temporadaNombre, filtro: 'activos', clinics: 0 })}
+                    onClick={() => setModal({ title: 'Inscritos · Sedes', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'normal' })}
                     className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
                   >
                     <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Sedes</p>
-                    <p className="text-lg font-black text-sky-400">{activosSedes}</p>
+                    <p className="text-lg font-black text-emerald-400">{inscritosNormal}</p>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setModal({ title: 'Jugadores Activos · Clinics', subtitle: temporadaNombre, filtro: 'activos', clinics: 1 })}
+                    title="Keepers/porteros inscritos con la regla de portero (una inscripción de cualquier temporada)"
+                    onClick={() => setModal({ title: 'Inscritos · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'keepers' })}
                     className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
                   >
-                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Clinics</p>
-                    <p className="text-lg font-black text-slate-300">{activosClinics}</p>
+                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Keepers</p>
+                    <p className="text-lg font-black text-cyan-300">{inscritosKeepers}</p>
                   </button>
                 </div>
-              </div>
-              <div className="flex-1 md:flex-none bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl min-w-[190px]">
-                <button
-                  type="button"
-                  onClick={() => setModal({ title: 'Total Inscritos', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0 })}
-                  className="w-full flex items-center gap-3 text-left cursor-pointer"
-                >
-                  <div className="bg-emerald-500/20 p-2 rounded-lg">
-                    <UserCheck size={18} className="text-emerald-400" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Total Inscritos</p>
-                    <p className="text-xl font-bold leading-tight">{inscritosSedes}</p>
-                    <p className="text-[9px] text-slate-500 italic leading-tight">incluye becados</p>
-                  </div>
-                </button>
-                {/* Avance de inscripción sobre la plantilla activa de sedes normales. */}
+                {/* Avance de inscripción sobre la plantilla elegible (normal + keepers). */}
                 <div className="mt-2">
                   <Meter
                     valor={inscritosSedes}
-                    total={activosSedes}
-                    etiqueta={`${inscritosSedes} de ${activosSedes} activos`}
+                    total={activosElegibles}
+                    etiqueta={`${inscritosSedes} de ${activosElegibles} activos`}
                   />
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setModal({ title: 'Total Bajas', subtitle: temporadaNombre, filtro: 'bajas' })}
-                className="flex-1 md:flex-none bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/40 px-4 py-2 rounded-xl flex items-center gap-3 text-left transition-all cursor-pointer"
-              >
-                <div className="bg-rose-500/20 p-2 rounded-lg">
-                  <Users size={18} className="text-rose-400" />
-                </div>
-                <div>
+              <div className="flex-1 md:flex-none bg-rose-500/10 border border-rose-500/20 px-4 py-2 rounded-xl">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="bg-rose-500/20 p-1.5 rounded-lg">
+                    <Users size={16} className="text-rose-400" />
+                  </div>
                   <p className="text-[10px] uppercase tracking-wider text-rose-400 font-bold">Total Bajas</p>
-                  <p className="text-xl font-bold">{sedes.reduce((acc, curr) => acc + (curr.Bajas || 0), 0)}</p>
                 </div>
-              </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModal({ title: 'Bajas · Sedes', subtitle: temporadaNombre, filtro: 'bajas', grupo: 'normal' })}
+                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
+                  >
+                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Sedes</p>
+                    <p className="text-lg font-black text-rose-400">{bajasNormal}</p>
+                  </button>
+                  <button
+                    type="button"
+                    title="Keepers/porteros dados de baja"
+                    onClick={() => setModal({ title: 'Bajas · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'bajas', grupo: 'keepers' })}
+                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
+                  >
+                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Keepers</p>
+                    <p className="text-lg font-black text-cyan-300">{bajasKeepers}</p>
+                  </button>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setModal({ title: 'Con Pagos sin Inscripción', subtitle: temporadaNombre, filtro: 'sin-inscripcion' })}
