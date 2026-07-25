@@ -78,10 +78,14 @@ export default function PlayerPagosModal({
   // Inscripción de otra temporada que parece corresponder a la seleccionada
   const [sugerida, setSugerida] = useState<InscripcionSugerida | null>(null);
   const [moviendo, setMoviendo] = useState(false);
+  // Una vez movida la inscripción sospechosa, el aviso desaparece.
+  const [movidaSosp, setMovidaSosp] = useState(false);
 
   useEffect(() => {
     if (target) setSoloTemporada(true);
-  }, [target]);
+    // Al cambiar de jugador (o de aviso), el banner de sospecha vuelve a mostrarse.
+    setMovidaSosp(false);
+  }, [target, inscripcionSospechosa]);
 
   useEffect(() => {
     if (!target) return;
@@ -213,6 +217,7 @@ export default function PlayerPagosModal({
       setAvisoCorreccion(
         `Inscripción ${inscripcionSospechosa.idPago} movida a ${inscripcionSospechosa.temporadaDestinoNombre}. El jugador ya cuenta como inscrito.`
       );
+      setMovidaSosp(true);
       setRecarga((r) => r + 1);
       onDataChanged?.();
     } catch {
@@ -311,9 +316,10 @@ export default function PlayerPagosModal({
           </div>
         </div>
 
-        {/* Inscripción de la temporada anterior pagada cerca del inicio de esta
-            temporada (detectada en adeudos): probable inscripción de esta temporada. */}
-        {inscripcionSospechosa && (
+        {/* Inscripción de otra temporada pagada cerca del inicio de esta (detectada en
+            adeudos): probable inscripción de esta temporada. Al moverla, el aviso se
+            oculta. */}
+        {inscripcionSospechosa && !movidaSosp && (
           <div className="mx-5 mt-4 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3.5 py-3">
             <div className="flex items-start gap-2.5">
               <AlertTriangle size={16} className="text-amber-300 flex-shrink-0 mt-0.5" />

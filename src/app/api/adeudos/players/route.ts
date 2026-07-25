@@ -80,13 +80,14 @@ export async function GET(request: Request) {
             whereParams.push(...categorias);
         }
 
-        /* Inscripción sospechosa: pago de inscripción registrado en OTRA temporada
-           (no la seleccionada) pero cobrado a menos de 2 meses del inicio de esta;
-           probablemente es la inscripción de esta temporada capturada con la temporada
-           equivocada. Toma la más reciente que cumpla y guarda bajo qué temporada está.
-           No se restringe a la temporada inmediata anterior: hay pagos archivados dos o
-           más temporadas atrás (p.ej. inscripción de ENE-JUL 2026 archivada en ENE-JUL
-           2025 por elegir el año equivocado). */
+        /* Inscripción sospechosa: de todos los pagos de inscripción del jugador, se
+           toma el de fecha MÁS CERCANA al inicio de la temporada seleccionada (el que
+           lógicamente sería la inscripción de esta temporada). Si ese pago está
+           archivado bajo OTRA temporada, se avisa: probablemente es la inscripción de
+           esta temporada capturada con la temporada equivocada.
+           Se acota a una ventana alrededor del inicio (2 meses antes / 1 mes después)
+           para no tomar inscripciones de años lejanos como candidatas. El flag final se
+           calcula en JS comparando SospIdTemporada con la temporada seleccionada. */
         const sospJoin = `LEFT JOIN (
                    SELECT s.IdJugador, s.IdPago, s.Fecha, s.IdTemporada, s.TempNombre
                    FROM (
@@ -94,23 +95,24 @@ export async function GET(request: Request) {
                               DATE_FORMAT(P.FechaPago, '%d/%m/%Y') as Fecha,
                               P.IdTemporada,
                               COALESCE(T.Temporada, 'otra temporada') as TempNombre,
-                              ROW_NUMBER() OVER (PARTITION BY P.IdJugador ORDER BY P.FechaPago DESC, P.IdPago DESC) as rn
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY P.IdJugador
+                                  ORDER BY ABS(DATEDIFF(P.FechaPago, ?)) ASC, P.FechaPago DESC, P.IdPago DESC
+                              ) as rn
                        FROM tblPagos P
                        INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
                        LEFT JOIN tblTemporadas T ON T.IdTemporada = P.IdTemporada
                        WHERE PR.IdTipoProducto = 2 AND P.Status = 0
-                         AND P.IdTemporada IS NOT NULL AND P.IdTemporada <> ?
+                         AND P.IdTemporada IS NOT NULL
                          AND P.FechaPago >= DATE_SUB(?, INTERVAL 2 MONTH)
+                         AND P.FechaPago <= DATE_ADD(?, INTERVAL 1 MONTH)
                    ) s
                    WHERE s.rn = 1
                ) SOSP ON SOSP.IdJugador = J.IdJugador`;
         const sospSelect = `,
-                CASE WHEN SOSP.IdJugador IS NOT NULL
-                       AND INSCRIPCION.IdJugador IS NULL
-                       AND NOT ((COALESCE(S.EsKeeper, 0) = 1 OR UPPER(J.Categoria) LIKE '%PORTERO%') AND KINS.IdJugador IS NOT NULL)
-                     THEN 1 ELSE 0 END as PosibleInscTempAnterior,
                 SOSP.IdPago as SospIdPago,
                 SOSP.Fecha as SospFecha,
+                SOSP.IdTemporada as SospIdTemporada,
                 SOSP.TempNombre as SospTempNombre`;
 
         const query = `
@@ -179,8 +181,9 @@ export async function GET(request: Request) {
             finCodigo,                          // hasta el fin de temporada (los cuadritos
                                                 // muestran también los meses por vencer)
             seasonId,                           // PAGOS
-            seasonId,                           // SOSP: distinta de la seleccionada
-            m.fechaInicioISO,                   // SOSP: 2 meses antes del inicio
+            m.fechaInicioISO,                   // SOSP: cercanía al inicio (ABS DATEDIFF)
+            m.fechaInicioISO,                   // SOSP: piso de la ventana (2 meses antes)
+            m.fechaInicioISO,                   // SOSP: techo de la ventana (1 mes después)
             ...whereParams,
         ];
 
@@ -241,6 +244,17 @@ export async function GET(request: Request) {
                 adeudo = missing * monthly * (1 - becaPct / 100) + inscDebt;
             }
 
+            /* Posible inscripción mal capturada: la inscripción de fecha más cercana al
+               inicio de la temporada (SOSP) está archivada bajo OTRA temporada, no la
+               seleccionada. Se excluye a quien ya cuenta como inscrito en esta temporada
+               (inscripción propia o regla portero), porque para ellos no hay nada que
+               corregir. */
+            const sospTemp = p.SospIdTemporada != null ? Number(p.SospIdTemporada) : null;
+            const posibleInsc =
+                p.SospIdPago && sospTemp !== null && sospTemp !== seasonId && !p.InscripcionPagada
+                    ? 1
+                    : 0;
+
             return {
                 ...p,
                 Adeudo: Math.round(adeudo * 100) / 100,
@@ -248,6 +262,7 @@ export async function GET(request: Request) {
                 MissingCount: missing,
                 MesInicio: mesInicio,
                 PagosCount: pagosCount,
+                PosibleInscTempAnterior: posibleInsc,
                 // Beca total: no paga nada, así que nunca tiene adeudo aunque no
                 // existan registros de mensualidad (suelen capturarse en $0 o no
                 // capturarse). Se marca para que el modal lo muestre como becado.
