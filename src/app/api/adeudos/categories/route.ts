@@ -19,7 +19,7 @@ export async function GET(request: Request) {
         if (!seasons) {
             return NextResponse.json({ success: false, message: 'No se encontró temporada' }, { status: 404 });
         }
-        const { actual, anterior } = seasons;
+        const { actual, anterior, siguiente } = seasons;
 
         const baseParams: any[] = [];
         let sedeClause = '';
@@ -40,8 +40,8 @@ export async function GET(request: Request) {
             baseParams
         ) as any[];
 
-        const actualCounts = await countsByGroup(actual, 'categoria', sedeId);
-        const anteriorCounts = anterior ? await countsByGroup(anterior, 'categoria', sedeId) : null;
+        const actualCounts = await countsByGroup(actual, 'categoria', sedeId, siguiente);
+        const anteriorCounts = anterior ? await countsByGroup(anterior, 'categoria', sedeId, actual) : null;
 
         const data = (baseRows as any[]).map((r: any) => {
             const a = actualCounts.get(r.Categoria) ?? SIN_ADEUDOS;

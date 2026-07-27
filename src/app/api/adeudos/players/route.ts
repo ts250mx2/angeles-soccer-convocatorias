@@ -139,6 +139,26 @@ export async function GET(request: Request) {
                 SOSP.IdTemporada as SospIdTemporada,
                 SOSP.TempNombre as SospTempNombre`;
 
+        /* Promoción de inscripción: sin inscripción de esta temporada, pero con la
+           inscripción de la temporada SIGUIENTE pagada durante el último mes de esta
+           (PROMO), y con la primera mensualidad de la temporada en ese último mes.
+           Cuenta como inscrito y su adeudo arranca en el último mes (que ya pagó). */
+        const siguiente = seasons.siguiente;
+        const endCode = m.anioInicio * 100 + m.endMonth;
+        const esYaInscrito = `(INSCRIPCION.IdJugador IS NOT NULL OR (${esKeeperOPortero('S')} AND KINS.IdJugador IS NOT NULL))`;
+        const esPromo = siguiente
+            ? `(NOT ${esYaInscrito} AND PROMO.IdJugador IS NOT NULL AND COALESCE(MENSUALIDADES.MinMes, 0) = ${endCode})`
+            : '(1 = 0)';
+        const promoJoin = siguiente
+            ? `LEFT JOIN (
+                   SELECT DISTINCT P.IdJugador FROM tblPagos P
+                   INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+                   WHERE PR.IdTipoProducto = 2 AND P.Status = 0
+                     AND P.IdTemporada = ${siguiente.seasonId}
+                     AND (YEAR(P.FechaPago) * 100 + MONTH(P.FechaPago)) = ${endCode}
+               ) PROMO ON PROMO.IdJugador = J.IdJugador`
+            : '';
+
         const query = `
             SELECT
                 J.IdJugador,
@@ -148,10 +168,10 @@ export async function GET(request: Request) {
                 J.Beca,
                 J.IdSede,
                 COALESCE(S.Sede, J.Sede) as SedeNombre,
-                -- Portero (sede keeper o categoría PORT/KEEP): cualquier inscripción (KINS) cuenta.
-                CASE WHEN INSCRIPCION.IdJugador IS NOT NULL
-                       OR (${esKeeperOPortero('S')} AND KINS.IdJugador IS NOT NULL)
+                -- Inscrito: inscripción de la temporada, regla keeper (KINS) o promoción.
+                CASE WHEN ${esYaInscrito} OR ${esPromo}
                      THEN 1 ELSE 0 END as InscripcionPagada,
+                CASE WHEN ${esPromo} THEN 1 ELSE 0 END as EsPromoInscripcion,
                 CASE WHEN ${esKeeperOPortero('S')}
                      THEN 1 ELSE 0 END as EsKeeperOPortero,
                 INSCRIPCION.MesInscripcion,
@@ -177,7 +197,8 @@ export async function GET(request: Request) {
                 WHERE PR.IdTipoProducto = 2 AND P.Status = 0
             ) KINS ON KINS.IdJugador = J.IdJugador
             LEFT JOIN (
-                SELECT P.IdJugador, GROUP_CONCAT(DISTINCT P.Mes) as MesesPagados
+                SELECT P.IdJugador, GROUP_CONCAT(DISTINCT P.Mes) as MesesPagados,
+                       MIN(P.Anio * 100 + P.Mes) as MinMes
                 FROM tblPagos P
                 INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
                 WHERE PR.IdTipoProducto = 1 AND P.Status = 0
@@ -192,6 +213,7 @@ export async function GET(request: Request) {
                 WHERE P.IdTemporada = ? AND PR.IdTipoProducto IN (1, 2) AND P.Status = 0
                 GROUP BY P.IdJugador
             ) PAGOS ON J.IdJugador = PAGOS.IdJugador
+            ${promoJoin}
             ${sospJoin}
             WHERE ${where.join(' AND ')}
             ORDER BY J.Categoria ASC, J.Jugador ASC
@@ -247,11 +269,15 @@ export async function GET(request: Request) {
                 .split(',').map((x: string) => parseInt(x.trim())).filter((x: number) => !isNaN(x));
 
             // Mes de inicio del adeudo del jugador: su inscripción, o el inicio de la
-            // temporada si no la ha pagado (o si el dato viniera fuera de rango).
+            // temporada si no la ha pagado (o si el dato viniera fuera de rango). En la
+            // promoción arranca en el último mes (que ya pagó), así que no arrastra los
+            // meses previos.
             const mesIns = Number(p.MesInscripcion);
-            const mesInicio = Number.isInteger(mesIns) && mesIns >= m.startMonth && mesIns <= m.endMonth
-                ? mesIns
-                : m.startMonth;
+            const mesInicio = p.EsPromoInscripcion
+                ? m.endMonth
+                : (Number.isInteger(mesIns) && mesIns >= m.startMonth && mesIns <= m.endMonth
+                    ? mesIns
+                    : m.startMonth);
 
             let missing = 0;
             for (let mes = mesInicio; mes <= m.hastaMonth; mes++) {

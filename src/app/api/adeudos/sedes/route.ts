@@ -21,7 +21,7 @@ export async function GET(request: Request) {
         if (!seasons) {
             return NextResponse.json({ success: false, message: 'No se encontró temporada' }, { status: 404 });
         }
-        const { actual, anterior } = seasons;
+        const { actual, anterior, siguiente } = seasons;
 
         // Activos / bajas no dependen de la temporada. Se parten en grupos mutuamente
         // excluyentes (venta pública > excluido[clinics/futsal] > keepers > normal),
@@ -48,8 +48,10 @@ export async function GET(request: Request) {
              ORDER BY S.Sede`
         ) as any[];
 
-        const actualCounts = await countsByGroup(actual, 'sede');
-        const anteriorCounts = anterior ? await countsByGroup(anterior, 'sede') : null;
+        // La promo mira la temporada siguiente: para 'actual' es 'siguiente'; para
+        // 'anterior' la siguiente es justamente 'actual'.
+        const actualCounts = await countsByGroup(actual, 'sede', null, siguiente);
+        const anteriorCounts = anterior ? await countsByGroup(anterior, 'sede', null, actual) : null;
 
         const data = (baseRows as any[]).map((r: any) => {
             const a = actualCounts.get(r.IdSede) ?? SIN_ADEUDOS;

@@ -348,6 +348,14 @@ export default function AdeudosModal({
                       {p.Status !== 0 && (
                         <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-rose-500/15 text-rose-400 border border-rose-500/25">BAJA</span>
                       )}
+                      {p.EsPromoInscripcion === 1 && (
+                        <span
+                          title="Pagó la inscripción de la temporada siguiente en el último mes de esta: la inscripción de esta temporada queda cubierta por la promoción"
+                          className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                        >
+                          PROMOCIÓN INSCRIPCIÓN
+                        </span>
+                      )}
                       {p.PosibleInscTempAnterior === 1 && (
                         <span
                           title="Tiene una inscripción de la temporada anterior pagada cerca del inicio de esta; podría ser la de esta temporada"

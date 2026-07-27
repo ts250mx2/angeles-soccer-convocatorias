@@ -58,7 +58,7 @@ export const ESTA_INSCRITO =
  */
 export async function loadSeasonAndPrevious(
     temporadaId: string | null
-): Promise<{ actual: SeasonMonths; anterior: SeasonMonths | null } | null> {
+): Promise<{ actual: SeasonMonths; anterior: SeasonMonths | null; siguiente: SeasonMonths | null } | null> {
     let seleccionada: SeasonRow | null = null;
 
     if (temporadaId) {
@@ -85,9 +85,21 @@ export async function loadSeasonAndPrevious(
         [seleccionada.FechaInicio, seleccionada.FechaInicio, seleccionada.IdTemporada]
     ) as any[];
 
+    // La temporada inmediata SIGUIENTE (por FechaInicio) — se usa para la promoción de
+    // inscripción: quien pagó la inscripción de la siguiente en el último mes de esta.
+    const [next] = await pool.query(
+        `SELECT ${SEASON_COLS}
+         FROM tblTemporadas
+         WHERE (FechaInicio > ?) OR (FechaInicio = ? AND IdTemporada > ?)
+         ORDER BY FechaInicio ASC, IdTemporada ASC
+         LIMIT 1`,
+        [seleccionada.FechaInicio, seleccionada.FechaInicio, seleccionada.IdTemporada]
+    ) as any[];
+
     return {
         actual: resolveSeasonMonths(seleccionada),
         anterior: prev.length ? resolveSeasonMonths(prev[0]) : null,
+        siguiente: next.length ? resolveSeasonMonths(next[0]) : null,
     };
 }
 
@@ -118,7 +130,8 @@ export interface AdeudoCounts {
 export async function countsByGroup(
     m: SeasonMonths,
     groupBy: 'sede' | 'categoria',
-    sedeId?: number | null
+    sedeId?: number | null,
+    siguiente?: SeasonMonths | null,
 ): Promise<Map<string | number, AdeudoCounts>> {
     const groupCol = groupBy === 'sede' ? 'J.IdSede' : 'J.Categoria';
     const sedeClause = sedeId ? 'AND J.IdSede = ?' : '';
@@ -128,12 +141,34 @@ export async function countsByGroup(
     const meses: number[] = [];
     for (let mes = m.startMonth; mes <= m.hastaMonth; mes++) meses.push(mes);
 
+    // Código Anio*100+Mes del último mes de la temporada.
+    const endCode = m.anioInicio * 100 + m.endMonth;
+
+    /* Promoción de inscripción: el jugador NO tiene inscripción de esta temporada, pero
+       pagó la inscripción de la temporada SIGUIENTE durante el último mes de esta
+       (PROMO), y su primera mensualidad de la temporada es justo ese último mes. Se
+       considera inscrito (promo) y su adeudo arranca en el último mes, que ya pagó. */
+    const promoExpr = siguiente
+        ? `(NOT ${ESTA_INSCRITO} AND PROMO.IdJugador IS NOT NULL AND COALESCE(MEN.MinMesCode, 0) = ${endCode})`
+        : '(1 = 0)';
+    const esInscritoExpr = `(${ESTA_INSCRITO} OR ${promoExpr})`;
+    const promoJoin = siguiente
+        ? `LEFT JOIN (
+             SELECT DISTINCT P.IdJugador
+             FROM tblPagos P
+             INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+             WHERE PR.IdTipoProducto = 2 AND P.Status = 0
+               AND P.IdTemporada = ${siguiente.seasonId}
+               AND (YEAR(P.FechaPago) * 100 + MONTH(P.FechaPago)) = ${endCode}
+           ) PROMO ON PROMO.IdJugador = J.IdJugador`
+        : '';
+
     /* Mes de inicio del adeudo POR JUGADOR: el mes en que pagó su inscripción
        (MONTH de la FechaPago del pago de inscripción), acotado al rango de la
-       temporada. Sin inscripción se toma el inicio de la temporada. Así un jugador
-       que se inscribió a mitad de temporada no arrastra los meses previos.
-       INS.IniCode ya viene acotado; %100 recupera el mes (la temporada no cruza año). */
-    const mesIniExpr = `COALESCE(INS.IniCode % 100, ${m.startMonth})`;
+       temporada. Sin inscripción se toma el inicio de la temporada. En la promo se
+       arranca en el último mes. Así un jugador que se inscribió a mitad de temporada
+       no arrastra los meses previos. INS.IniCode ya viene acotado; %100 recupera el mes. */
+    const mesIniExpr = `CASE WHEN ${promoExpr} THEN ${m.endMonth} ELSE COALESCE(INS.IniCode % 100, ${m.startMonth}) END`;
 
     /* Columnas por mes generadas a partir de enteros derivados del servidor
        (nunca de la petición), así que no hay riesgo de inyección. */
@@ -167,29 +202,29 @@ export async function countsByGroup(
             ${groupCol} as Grupo,
             SUM(CASE WHEN J.Status = 0
                       AND NOT ${ES_BECA_TOTAL}
-                      AND (NOT ${ESTA_INSCRITO} OR (${faltantesExpr}) > 0)
+                      AND (NOT ${esInscritoExpr} OR (${faltantesExpr}) > 0)
                  THEN 1 ELSE 0 END) as Debe,
             -- Al corriente exige estar inscrito; el becado sin inscripción va aparte.
             -- Los keepers/porteros al corriente se cuentan por separado (Keepers).
             SUM(CASE WHEN J.Status = 0
-                      AND ${ESTA_INSCRITO}
+                      AND ${esInscritoExpr}
                       AND NOT ${ES_KEEPER_O_PORTERO}
                       AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
                  THEN 1 ELSE 0 END) as AlCorriente,
             -- Keepers/porteros al corriente (misma condición, pero tipo portero).
             SUM(CASE WHEN J.Status = 0
-                      AND ${ESTA_INSCRITO}
+                      AND ${esInscritoExpr}
                       AND ${ES_KEEPER_O_PORTERO}
                       AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
                  THEN 1 ELSE 0 END) as Keepers,
-            SUM(CASE WHEN J.Status = 0 AND ${ES_BECA_TOTAL} AND NOT ${ESTA_INSCRITO}
+            SUM(CASE WHEN J.Status = 0 AND ${ES_BECA_TOTAL} AND NOT ${esInscritoExpr}
                  THEN 1 ELSE 0 END) as BecadosSinInscripcion,
             -- Posible baja: no pagó la inscripción ni un solo mes ya vencido.
             SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
-                      AND NOT ${ESTA_INSCRITO}
+                      AND NOT ${esInscritoExpr}
                       AND COALESCE(MEN.PagosCount, 0) = 0
                  THEN 1 ELSE 0 END) as PosiblesBajas,
-            SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL} AND NOT ${ESTA_INSCRITO}
+            SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL} AND NOT ${esInscritoExpr}
                  THEN 1 ELSE 0 END) as DebeInscripcion
             ${conteosPorMes ? ', ' + conteosPorMes : ''}
          FROM tblJugadores J
@@ -213,7 +248,8 @@ export async function countsByGroup(
              WHERE PR.IdTipoProducto = 2 AND P.Status = 0
          ) KINS ON KINS.IdJugador = J.IdJugador
          LEFT JOIN (
-             SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as PagosCount
+             SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as PagosCount,
+                    MIN(P.Anio * 100 + P.Mes) as MinMesCode
                     ${flagsPorMes ? ', ' + flagsPorMes : ''}
              FROM tblPagos P
              INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
@@ -222,6 +258,7 @@ export async function countsByGroup(
                AND (P.Anio * 100 + P.Mes) BETWEEN ? AND ?
              GROUP BY P.IdJugador
          ) MEN ON MEN.IdJugador = J.IdJugador
+         ${promoJoin}
          WHERE ${SIN_CLINICS} ${sedeClause}
          GROUP BY ${groupCol}`,
         params

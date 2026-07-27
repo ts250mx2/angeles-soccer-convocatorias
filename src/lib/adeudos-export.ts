@@ -13,6 +13,9 @@ export interface AdeudoRow {
     IdSede: number;
     SedeNombre: string;
     InscripcionPagada: number;
+    /** 1 si la inscripción quedó cubierta por la promoción (pago de la inscripción de
+     *  la temporada siguiente en el último mes de esta). */
+    EsPromoInscripcion?: number;
     /** Meses pagados como números 1-12, separados por coma. */
     MesesPagados: string;
     Pagado: number;
