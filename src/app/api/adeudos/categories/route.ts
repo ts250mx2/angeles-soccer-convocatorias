@@ -13,6 +13,7 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const temporadaId = searchParams.get('temporadaId');
         const sedeIdParam = searchParams.get('sedeId');
+        const descartarPBAnterior = searchParams.get('descartarPBAnterior') === '1';
         const sedeId = sedeIdParam ? parseInt(sedeIdParam) : null;
 
         const seasons = await loadSeasonAndPrevious(temporadaId);
@@ -41,7 +42,9 @@ export async function GET(request: Request) {
         ) as any[];
 
         const actualCounts = await countsByGroup(actual, 'categoria', sedeId, siguiente);
-        const anteriorCounts = anterior ? await countsByGroup(anterior, 'categoria', sedeId, actual) : null;
+        const anteriorCounts = anterior
+            ? await countsByGroup(anterior, 'categoria', sedeId, actual, descartarPBAnterior)
+            : null;
 
         const data = (baseRows as any[]).map((r: any) => {
             const a = actualCounts.get(r.Categoria) ?? SIN_ADEUDOS;
@@ -56,6 +59,10 @@ export async function GET(request: Request) {
                 ActualBecadosSinInscripcion: a.becadosSinInscripcion,
                 ActualDebeInscripcion: a.debeInscripcion,
                 ActualDebeMeses: a.debeMeses,
+                ActualFutsalSinPagos: a.futsalSinPagos,
+                ActualFutsal1Mes: a.futsal1Mes,
+                ActualFutsal2Meses: a.futsal2Meses,
+                ActualFutsal3Mas: a.futsal3Mas,
                 AnteriorDebe: p.debe,
                 AnteriorAlCorriente: p.alCorriente,
                 AnteriorKeepers: p.keepers,
@@ -63,6 +70,10 @@ export async function GET(request: Request) {
                 AnteriorPosiblesBajas: p.posiblesBajas,
                 AnteriorDebeInscripcion: p.debeInscripcion,
                 AnteriorDebeMeses: p.debeMeses,
+                AnteriorFutsalSinPagos: p.futsalSinPagos,
+                AnteriorFutsal1Mes: p.futsal1Mes,
+                AnteriorFutsal2Meses: p.futsal2Meses,
+                AnteriorFutsal3Mas: p.futsal3Mas,
             };
         });
 

@@ -16,11 +16,17 @@ interface SedeSummary {
   /** Plantilla completa (Status 0), sin acotar a la temporada. */
   Activos: number;
   ActivosKeepers: number;
+  ActivosFutsal: number;
+  ActivosClinicsFutsal: number;
   ActivosVentaPublico: number;
   Inscritos: number;
   InscritosKeepers: number;
+  InscritosFutsal: number;
+  InscritosClinicsFutsal: number;
   Bajas: number;
   BajasKeepers: number;
+  BajasFutsal: number;
+  BajasClinicsFutsal: number;
   /** Pagaron mensualidad de los meses de la temporada pero no la inscripción */
   SinInscripcion: number;
   BecasDetail: string | null;
@@ -137,21 +143,27 @@ export default function InscripcionesSedesPage() {
   const sumTodos = (pick: (s: SedeSummary) => number) =>
     sedes.reduce((acc, s) => acc + (pick(s) || 0), 0);
 
-  // Plantilla no-clinics partida en normal / keepers / venta público.
+  // Plantilla no-clinics partida en normal / keepers / futsal / venta público / clinics futsal.
   const activosKeepers = sumaPorTipo(0, s => s.ActivosKeepers);
+  const activosFutsal = sumaPorTipo(0, s => s.ActivosFutsal);
+  const activosClinicsFutsal = sumTodos(s => s.ActivosClinicsFutsal);
   const activosVentaPublico = sumTodos(s => s.ActivosVentaPublico);
-  const activosSedes = sumaPorTipo(0, s => s.Activos) - activosKeepers - activosVentaPublico;
+  const activosSedes = sumaPorTipo(0, s => s.Activos) - activosKeepers - activosFutsal - activosVentaPublico - activosClinicsFutsal;
   const activosClinics = sumaPorTipo(1, s => s.Activos);
-  // Inscritos (keeper-aware, sin venta pública) separando keepers.
+  // Inscritos (keeper-aware, sin venta pública) separando keepers, futsal y clinics futsal.
   const inscritosSedes = sumaPorTipo(0, s => s.Inscritos);
   const inscritosKeepers = sumaPorTipo(0, s => s.InscritosKeepers);
-  const inscritosNormal = inscritosSedes - inscritosKeepers;
-  // Base del avance: plantilla elegible (no-clinics, sin venta pública) = normal + keepers.
-  const activosElegibles = activosSedes + activosKeepers;
-  // Bajas separando keepers.
+  const inscritosFutsal = sumaPorTipo(0, s => s.InscritosFutsal);
+  const inscritosClinicsFutsal = sumTodos(s => s.InscritosClinicsFutsal);
+  const inscritosNormal = inscritosSedes - inscritosKeepers - inscritosFutsal - inscritosClinicsFutsal;
+  // Base del avance: plantilla elegible (no-clinics, sin venta pública) = normal + keepers + futsal.
+  const activosElegibles = activosSedes + activosKeepers + activosFutsal;
+  // Bajas separando keepers, futsal y clinics futsal.
   const bajasKeepers = sumTodos(s => s.BajasKeepers);
+  const bajasFutsal = sumTodos(s => s.BajasFutsal);
+  const bajasClinicsFutsal = sumTodos(s => s.BajasClinicsFutsal);
   const bajasTotal = sumTodos(s => s.Bajas);
-  const bajasNormal = bajasTotal - bajasKeepers;
+  const bajasNormal = bajasTotal - bajasKeepers - bajasFutsal - bajasClinicsFutsal;
 
   return (
     <DashboardLayout>
@@ -211,6 +223,8 @@ export default function InscripcionesSedesPage() {
                   {[
                     { label: 'Sedes', value: activosSedes, tone: 'text-sky-400', title: undefined as string | undefined, cfg: { title: 'Jugadores Activos · Sedes', filtro: 'activos' as const, clinics: 0 as const, grupo: 'normal' as const } },
                     { label: 'Keepers', value: activosKeepers, tone: 'text-cyan-300', title: 'Keepers y porteros', cfg: { title: 'Jugadores Activos · Keepers/Porteros', filtro: 'activos' as const, clinics: 0 as const, grupo: 'keepers' as const } },
+                    { label: 'Futsal', value: activosFutsal, tone: 'text-fuchsia-300', title: 'Sedes de futsal / categorías futsal (cuentan como sede normal)', cfg: { title: 'Jugadores Activos · Futsal', filtro: 'activos' as const, clinics: 0 as const, grupo: 'futsal' as const } },
+                    { label: 'Clinics F.', value: activosClinicsFutsal, tone: 'text-slate-300', title: 'Clinics Futsal (sede futsal + categoría clinics)', cfg: { title: 'Jugadores Activos · Clinics Futsal', filtro: 'activos' as const, grupo: 'clinicsfutsal' as const } },
                     { label: 'Venta púb.', value: activosVentaPublico, tone: 'text-slate-300', title: 'Registros de venta al público (no cuentan en el total de sedes)', cfg: { title: 'Jugadores Activos · Venta al Público', filtro: 'activos' as const, grupo: 'ventapublico' as const } },
                     { label: 'Clinics', value: activosClinics, tone: 'text-slate-300', title: undefined, cfg: { title: 'Jugadores Activos · Clinics', filtro: 'activos' as const, clinics: 1 as const } },
                   ].map((seg) => (
@@ -253,8 +267,17 @@ export default function InscripcionesSedesPage() {
                     <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Keepers</p>
                     <p className="text-lg font-black text-cyan-300">{inscritosKeepers}</p>
                   </button>
+                  <button
+                    type="button"
+                    title="Inscritos de futsal (sede EsFutsal o categoría futsal)"
+                    onClick={() => setModal({ title: 'Inscritos · Futsal', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'futsal' })}
+                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
+                  >
+                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Futsal</p>
+                    <p className="text-lg font-black text-fuchsia-300">{inscritosFutsal}</p>
+                  </button>
                 </div>
-                {/* Avance de inscripción sobre la plantilla elegible (normal + keepers). */}
+                {/* Avance de inscripción sobre la plantilla elegible (normal + keepers + futsal). */}
                 <div className="mt-2">
                   <Meter
                     valor={inscritosSedes}
@@ -288,6 +311,24 @@ export default function InscripcionesSedesPage() {
                     <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Keepers</p>
                     <p className="text-lg font-black text-cyan-300">{bajasKeepers}</p>
                   </button>
+                    <button
+                      type="button"
+                      title="Futsal dados de baja"
+                      onClick={() => setModal({ title: 'Bajas · Futsal', subtitle: temporadaNombre, filtro: 'bajas', grupo: 'futsal' })}
+                      className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
+                    >
+                      <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Futsal</p>
+                      <p className="text-lg font-black text-fuchsia-300">{bajasFutsal}</p>
+                    </button>
+                    <button
+                      type="button"
+                      title="Clinics Futsal dados de baja"
+                      onClick={() => setModal({ title: 'Bajas · Clinics Futsal', subtitle: temporadaNombre, filtro: 'bajas', grupo: 'clinicsfutsal' })}
+                      className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
+                    >
+                      <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Clinics F.</p>
+                      <p className="text-lg font-black text-rose-300">{bajasClinicsFutsal}</p>
+                    </button>
                 </div>
               </div>
               <button

@@ -22,6 +22,7 @@ export interface AdeudoRow {
     Adeudo: number;
     MissingCount: number;
     PagosCount: number;
+    EsFutsal?: number;
     /** Beca 100%: no paga nada, nunca tiene adeudo. */
     BecaTotal?: number;
     /** 1 si la inscripción con fecha más cercana al inicio de la temporada está

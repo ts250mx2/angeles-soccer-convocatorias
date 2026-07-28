@@ -3,11 +3,12 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Search, MapPin, UserCheck, UserMinus, ChevronRight, ChevronDown, CalendarRange, History, CalendarClock,
+  Search, MapPin, UserCheck, UserMinus, ChevronRight, ChevronDown, CalendarRange, History, CalendarClock, Brain,
 } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
 import AdeudosModal, { type AdeudosModalConfig } from '@/components/AdeudosModal';
+import AnalisisProfundoModal from '@/components/AnalisisProfundoModal';
 
 interface DebeMes {
   mes: number;
@@ -22,18 +23,26 @@ interface SedeSummary {
   Activos: number;
   ActivosNormal: number;
   ActivosKeepers: number;
+  ActivosFutsal: number;
   ActivosVentaPublico: number;
   ActivosExcluido: number;
+  ActivosClinicsFutsal: number;
   Bajas: number;
   BajasNormal: number;
   BajasKeepers: number;
+  BajasFutsal: number;
   BajasExcluido: number;
+  BajasClinicsFutsal: number;
   ActualDebe: number;
   ActualAlCorriente: number;
   ActualKeepers: number;
   ActualBecadosSinInscripcion: number;
   ActualDebeInscripcion: number;
   ActualDebeMeses: DebeMes[];
+  ActualFutsalSinPagos: number;
+  ActualFutsal1Mes: number;
+  ActualFutsal2Meses: number;
+  ActualFutsal3Mas: number;
   AnteriorDebe: number;
   AnteriorAlCorriente: number;
   AnteriorKeepers: number;
@@ -41,6 +50,10 @@ interface SedeSummary {
   AnteriorPosiblesBajas: number;
   AnteriorDebeInscripcion: number;
   AnteriorDebeMeses: DebeMes[];
+  AnteriorFutsalSinPagos: number;
+  AnteriorFutsal1Mes: number;
+  AnteriorFutsal2Meses: number;
+  AnteriorFutsal3Mas: number;
 }
 
 const MESES_CORTOS = [
@@ -116,15 +129,22 @@ export default function AdeudosSedePage() {
   const [actual, setActual] = useState<TemporadaInfo | null>(null);
   const [anterior, setAnterior] = useState<TemporadaInfo | null>(null);
   const [modal, setModal] = useState<AdeudosModalConfig | null>(null);
+  const [analisisOpen, setAnalisisOpen] = useState(false);
+  // Descartar (temporal, solo este navegador) los posibles bajas de la temporada
+  // anterior. Se guarda por temporada seleccionada en localStorage.
+  const [descartarPB, setDescartarPB] = useState(false);
 
   useEffect(() => {
     if (isInitialized && !user) router.push('/login');
   }, [user, isInitialized, router]);
 
-  const fetchSedes = async (temporada: number | null, silent = false) => {
+  const fetchSedes = async (temporada: number | null, silent = false, descartar = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const qs = temporada ? `?temporadaId=${temporada}` : '';
+      const params = new URLSearchParams();
+      if (temporada) params.set('temporadaId', String(temporada));
+      if (descartar) params.set('descartarPBAnterior', '1');
+      const qs = params.toString() ? `?${params}` : '';
       // no-store: sin esto el navegador puede servir una respuesta vieja y los
       // campos nuevos llegan como undefined (se veían en cero).
       const response = await fetch(`/api/adeudos/sedes${qs}`, { cache: 'no-store' });
@@ -162,8 +182,23 @@ export default function AdeudosSedePage() {
   }, [isInitialized, user]);
 
   useEffect(() => {
-    if (isInitialized && user && temporadaId !== null) fetchSedes(temporadaId);
+    if (isInitialized && user && temporadaId !== null) {
+      // El descarte se recuerda por temporada seleccionada (su "anterior").
+      const saved = typeof window !== 'undefined'
+        && localStorage.getItem(`descartarPBsel_${temporadaId}`) === '1';
+      setDescartarPB(saved);
+      fetchSedes(temporadaId, false, saved);
+    }
   }, [isInitialized, user, temporadaId]);
+
+  const toggleDescartarPB = () => {
+    const nuevo = !descartarPB;
+    setDescartarPB(nuevo);
+    if (temporadaId !== null) {
+      localStorage.setItem(`descartarPBsel_${temporadaId}`, nuevo ? '1' : '0');
+      fetchSedes(temporadaId, true, nuevo);
+    }
+  };
 
   const filteredSedes = sedes.filter(sede =>
     sede.Sede.toLowerCase().includes(searchQuery.toLowerCase())
@@ -176,17 +211,30 @@ export default function AdeudosSedePage() {
   // pública / excluido[clinics+futsal]). Los conteos vienen ya calculados del backend.
   const activosSedes = sum(s => s.ActivosNormal);
   const activosKeepers = sum(s => s.ActivosKeepers);
+  const activosFutsal = sum(s => s.ActivosFutsal);
   const activosVentaPublico = sum(s => s.ActivosVentaPublico);
   const activosClinics = sum(s => s.ActivosExcluido);
+  const activosClinicsFutsal = sum(s => s.ActivosClinicsFutsal);
   const bajasSedes = sum(s => s.BajasNormal);
   const bajasKeepers = sum(s => s.BajasKeepers);
+  const bajasFutsal = sum(s => s.BajasFutsal);
   const bajasClinics = sum(s => s.BajasExcluido);
+  const bajasClinicsFutsal = sum(s => s.BajasClinicsFutsal);
   const totalActualDebe = sum(s => s.ActualDebe);
   const totalActualAlCorriente = sum(s => s.ActualAlCorriente);
   const totalActualKeepers = sum(s => s.ActualKeepers);
+  const totalActualFutsalSinPagos = sum(s => s.ActualFutsalSinPagos);
+  const totalActualFutsal1Mes = sum(s => s.ActualFutsal1Mes);
+  const totalActualFutsal2Meses = sum(s => s.ActualFutsal2Meses);
+  const totalActualFutsal3Mas = sum(s => s.ActualFutsal3Mas);
+
   const totalAnteriorDebe = sum(s => s.AnteriorDebe);
   const totalAnteriorAlCorriente = sum(s => s.AnteriorAlCorriente);
   const totalAnteriorKeepers = sum(s => s.AnteriorKeepers);
+  const totalAnteriorFutsalSinPagos = sum(s => s.AnteriorFutsalSinPagos);
+  const totalAnteriorFutsal1Mes = sum(s => s.AnteriorFutsal1Mes);
+  const totalAnteriorFutsal2Meses = sum(s => s.AnteriorFutsal2Meses);
+  const totalAnteriorFutsal3Mas = sum(s => s.AnteriorFutsal3Mas);
 
   // Desglose global: se suman los conteos por mes de todas las sedes.
   const sumaMeses = (pick: (s: SedeSummary) => DebeMes[]): DebeMes[] => {
@@ -208,7 +256,7 @@ export default function AdeudosSedePage() {
 
   // Cortes de la temporada anterior: el modal debe consultar ESA temporada.
   const scopeAnterior = anterior
-    ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre }
+    ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre, descartarPB }
     : {};
 
   return (
@@ -221,22 +269,34 @@ export default function AdeudosSedePage() {
               <h1 className="text-3xl font-black text-white mb-2">Adeudos por Sede</h1>
               <p className="text-slate-400">Monitoreo financiero segmentado por campus</p>
             </div>
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Temporada</label>
-              <div className="relative">
-                <CalendarRange size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
-                <select
-                  value={temporadaId ?? ''}
-                  onChange={(e) => setTemporadaId(e.target.value ? Number(e.target.value) : null)}
-                  className="appearance-none w-full min-w-[270px] bg-slate-900/80 border border-white/15 rounded-xl pl-9 pr-10 py-2.5 text-white text-sm font-semibold outline-none cursor-pointer hover:bg-slate-800 hover:border-white/25 focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 transition-all [color-scheme:dark]"
-                >
-                  {temporadas.map((t) => (
-                    <option key={t.IdTemporada} value={t.IdTemporada} className="bg-slate-900 text-white">
-                      {t.Temporada}{t.EsActiva ? ' · activa' : ''}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+              <button
+                type="button"
+                onClick={() => setAnalisisOpen(true)}
+                disabled={isLoading || sedes.length === 0}
+                title="Analiza los adeudos de la temporada anterior y de esta temporada con IA (Opus 5)"
+                className="inline-flex items-center justify-center gap-2 h-[46px] px-4 rounded-xl text-sm font-black text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border border-violet-400/30 shadow-lg shadow-violet-900/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Brain size={16} />
+                Análisis Profundo
+              </button>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Temporada</label>
+                <div className="relative">
+                  <CalendarRange size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
+                  <select
+                    value={temporadaId ?? ''}
+                    onChange={(e) => setTemporadaId(e.target.value ? Number(e.target.value) : null)}
+                    className="appearance-none w-full min-w-[270px] bg-slate-900/80 border border-white/15 rounded-xl pl-9 pr-10 py-2.5 text-white text-sm font-semibold outline-none cursor-pointer hover:bg-slate-800 hover:border-white/25 focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 transition-all [color-scheme:dark]"
+                  >
+                    {temporadas.map((t) => (
+                      <option key={t.IdTemporada} value={t.IdTemporada} className="bg-slate-900 text-white">
+                        {t.Temporada}{t.EsActiva ? ' · activa' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                </div>
               </div>
             </div>
           </div>
@@ -250,8 +310,10 @@ export default function AdeudosSedePage() {
               segments={[
                 { label: 'Sedes', value: activosSedes, onClick: () => setModal({ title: 'Jugadores Activos · Sedes', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'normal' }) },
                 { label: 'Keepers', value: activosKeepers, onClick: () => setModal({ title: 'Jugadores Activos · Keepers/Porteros', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'keepers' }) },
+                { label: 'Futsal', value: activosFutsal, title: 'Futsal: cuenta en los adeudos como sede normal', onClick: () => setModal({ title: 'Jugadores Activos · Futsal', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'futsal' }) },
                 { label: 'Venta público', value: activosVentaPublico, muted: true, title: 'Venta al público: no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Activos · Venta al Público', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'ventapublico' }) },
-                { label: 'Clinics', value: activosClinics, muted: true, title: 'Clinics/futsal no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Activos · Clinics', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'excluido' }) },
+                { label: 'Clinics', value: activosClinics, muted: true, title: 'Clinics no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Activos · Clinics', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'excluido' }) },
+                { label: 'Clinics F.', value: activosClinicsFutsal, muted: true, title: 'Clinics Futsal no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Activos · Clinics Futsal', subtitle: actual?.temporadaNombre, filtro: 'activos', grupo: 'clinicsfutsal' }) },
               ]}
             />
             <KpiSplit
@@ -261,7 +323,9 @@ export default function AdeudosSedePage() {
               segments={[
                 { label: 'Sedes', value: bajasSedes, onClick: () => setModal({ title: 'Jugadores Baja · Sedes', subtitle: actual?.temporadaNombre, filtro: 'bajas', grupo: 'normal' }) },
                 { label: 'Keepers', value: bajasKeepers, onClick: () => setModal({ title: 'Jugadores Baja · Keepers/Porteros', subtitle: actual?.temporadaNombre, filtro: 'bajas', grupo: 'keepers' }) },
-                { label: 'Clinics', value: bajasClinics, muted: true, title: 'Clinics/futsal no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Baja · Clinics', subtitle: actual?.temporadaNombre, filtro: 'bajas', grupo: 'excluido' }) },
+                { label: 'Futsal', value: bajasFutsal, title: 'Futsal: cuenta en los adeudos como sede normal', onClick: () => setModal({ title: 'Jugadores Baja · Futsal', subtitle: actual?.temporadaNombre, filtro: 'bajas', grupo: 'futsal' }) },
+                { label: 'Clinics', value: bajasClinics, muted: true, title: 'Clinics no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Baja · Clinics', subtitle: actual?.temporadaNombre, filtro: 'bajas', grupo: 'excluido' }) },
+                { label: 'Clinics F.', value: bajasClinicsFutsal, muted: true, title: 'Clinics Futsal no entra en los adeudos', onClick: () => setModal({ title: 'Jugadores Baja · Clinics Futsal', subtitle: actual?.temporadaNombre, filtro: 'bajas', grupo: 'clinicsfutsal' }) },
               ]}
             />
             <KpiDual
@@ -273,13 +337,23 @@ export default function AdeudosSedePage() {
               alCorriente={totalAnteriorAlCorriente}
               keepers={totalAnteriorKeepers}
               becadosSinInsc={totalAnteriorBecadosSinInsc}
+              futsalSinPagos={totalAnteriorFutsalSinPagos}
+              futsal1Mes={totalAnteriorFutsal1Mes}
+              futsal2Meses={totalAnteriorFutsal2Meses}
+              futsal3Mas={totalAnteriorFutsal3Mas}
               disabled={!anterior}
               onDebe={() => setModal({ title: 'Con Adeudo · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'debe', ...scopeAnterior })}
               onAlCorriente={() => setModal({ title: 'Al Corriente · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'al-corriente', ...scopeAnterior })}
               onKeepers={() => setModal({ title: 'Porteros al Corriente · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'keepers', ...scopeAnterior })}
               onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'becado-sin-inscripcion', ...scopeAnterior })}
+              onFutsalSinPagos={() => setModal({ title: 'Futsal Sin Pagos · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'futsal-sin-pagos', ...scopeAnterior })}
+              onFutsal1Mes={() => setModal({ title: 'Futsal 1 Mes · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'futsal-1-mes', ...scopeAnterior })}
+              onFutsal2Meses={() => setModal({ title: 'Futsal 2 Meses · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'futsal-2-meses', ...scopeAnterior })}
+              onFutsal3Mas={() => setModal({ title: 'Futsal 3+ Meses · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'futsal-3-mas', ...scopeAnterior })}
               posiblesBajas={totalAnteriorPosiblesBajas}
               onPosiblesBajas={() => setModal({ title: 'Posibles Bajas · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'posible-baja', ...scopeAnterior })}
+              descartarPB={descartarPB}
+              onToggleDescartar={anterior ? toggleDescartarPB : undefined}
               desglose={
                 <DesgloseAdeudo
                   inscripcion={totalAnteriorInsc}
@@ -298,10 +372,18 @@ export default function AdeudosSedePage() {
               alCorriente={totalActualAlCorriente}
               keepers={totalActualKeepers}
               becadosSinInsc={totalActualBecadosSinInsc}
+              futsalSinPagos={totalActualFutsalSinPagos}
+              futsal1Mes={totalActualFutsal1Mes}
+              futsal2Meses={totalActualFutsal2Meses}
+              futsal3Mas={totalActualFutsal3Mas}
               onDebe={() => setModal({ title: 'Con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'debe' })}
               onAlCorriente={() => setModal({ title: 'Al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'al-corriente' })}
               onKeepers={() => setModal({ title: 'Porteros al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers' })}
               onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'becado-sin-inscripcion' })}
+              onFutsalSinPagos={() => setModal({ title: 'Futsal Sin Pagos · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-sin-pagos' })}
+              onFutsal1Mes={() => setModal({ title: 'Futsal 1 Mes · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-1-mes' })}
+              onFutsal2Meses={() => setModal({ title: 'Futsal 2 Meses · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-2-meses' })}
+              onFutsal3Mas={() => setModal({ title: 'Futsal 3+ Meses · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-3-mas' })}
               desglose={
                 <DesgloseAdeudo
                   inscripcion={totalActualInsc}
@@ -342,7 +424,7 @@ export default function AdeudosSedePage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {sedesWithActivos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} actual={actual} anterior={anterior} onOpenPlayers={setModal} />
+                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} actual={actual} anterior={anterior} descartarPB={descartarPB} onOpenPlayers={setModal} />
                     ))}
                   </div>
                 </div>
@@ -356,7 +438,7 @@ export default function AdeudosSedePage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-50 hover:opacity-100 transition-all duration-500">
                     {sedesWithoutActivos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} actual={actual} anterior={anterior} onOpenPlayers={setModal} />
+                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} actual={actual} anterior={anterior} descartarPB={descartarPB} onOpenPlayers={setModal} />
                     ))}
                   </div>
                 </div>
@@ -376,7 +458,15 @@ export default function AdeudosSedePage() {
           temporadaId={temporadaId}
           temporadaNombre={actual?.temporadaNombre}
           onClose={() => setModal(null)}
-          onDataChanged={() => fetchSedes(temporadaId, true)}
+          onDataChanged={() => fetchSedes(temporadaId, true, descartarPB)}
+        />
+
+        <AnalisisProfundoModal
+          open={analisisOpen}
+          onClose={() => setAnalisisOpen(false)}
+          sedes={sedes}
+          actual={actual}
+          anterior={anterior}
         />
       </main>
     </DashboardLayout>
@@ -428,14 +518,18 @@ function KpiSplit({ label, icon, tone, segments }: {
   );
 }
 
-/** KPI con cifras clicables: con adeudo, al corriente, porteros y becados. */
-function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, becadosSinInsc, onDebe, onAlCorriente, onKeepers, onBecados, disabled, desglose, posiblesBajas, onPosiblesBajas }: {
+/** KPI con cifras clicables: con adeudo, al corriente, porteros, becados y desglose futsal. */
+function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, becadosSinInsc, futsalSinPagos, futsal1Mes, futsal2Meses, futsal3Mas, onDebe, onAlCorriente, onKeepers, onBecados, onFutsalSinPagos, onFutsal1Mes, onFutsal2Meses, onFutsal3Mas, disabled, desglose, posiblesBajas, onPosiblesBajas, descartarPB, onToggleDescartar }: {
   label: string; caption: string; icon: React.ReactNode; tone: string;
   debe: number; alCorriente: number; keepers: number; becadosSinInsc: number;
+  futsalSinPagos: number; futsal1Mes: number; futsal2Meses: number; futsal3Mas: number;
   onDebe: () => void; onAlCorriente: () => void; onKeepers: () => void; onBecados: () => void;
+  onFutsalSinPagos: () => void; onFutsal1Mes: () => void; onFutsal2Meses: () => void; onFutsal3Mas: () => void;
   disabled?: boolean; desglose?: React.ReactNode;
   /** Solo se muestra si se provee (temporadas ya transcurridas). */
   posiblesBajas?: number; onPosiblesBajas?: () => void;
+  /** Check "descartar" de posibles bajas (solo la tarjeta de temporada anterior). */
+  descartarPB?: boolean; onToggleDescartar?: () => void;
 }) {
   const t = TONES[tone];
   return (
@@ -448,19 +542,20 @@ function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, becad
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 items-start">
-        {/* El desglose por concepto vive DENTRO del cuadro de adeudo, para que se
-            lea como parte de esa cifra y no como algo suelto de la tarjeta. */}
-        <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl overflow-hidden">
-          <button
-            type="button"
-            onClick={onDebe}
-            disabled={disabled}
-            className="w-full px-2 py-1.5 text-left hover:bg-rose-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <p className="text-[8px] uppercase font-black text-rose-400/80 tracking-wider">Con adeudo</p>
-            <p className="text-lg font-black text-rose-400">{debe}</p>
-          </button>
-          {!disabled && desglose && <div className="px-2 pb-2">{desglose}</div>}
+        {/* Columna de deudas: "Con adeudo" (normal, con su desglose). */}
+        <div className="space-y-2">
+          <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={onDebe}
+              disabled={disabled}
+              className="w-full px-2 py-1.5 text-left hover:bg-rose-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <p className="text-[8px] uppercase font-black text-rose-400/80 tracking-wider">Con adeudo</p>
+              <p className="text-lg font-black text-rose-400">{debe}</p>
+            </button>
+            {!disabled && desglose && <div className="px-2 pb-2">{desglose}</div>}
+          </div>
         </div>
         <div className="space-y-2">
           <button
@@ -498,37 +593,105 @@ function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, becad
         </div>
       </div>
 
-      {/* Posibles bajas: deben la inscripción y todos los meses vencidos. */}
+      {/* Bloque Futsal */}
+      <div className="mt-2 bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-xl p-1.5">
+        <p className="text-[8px] uppercase font-black text-fuchsia-300/90 tracking-wider mb-1">
+          Futsal (Meses pagados)
+        </p>
+        <div className="grid grid-cols-4 gap-1">
+          <button
+            type="button"
+            onClick={onFutsalSinPagos}
+            disabled={disabled}
+            title="Futsal sin pagos realizados"
+            className="bg-white/5 hover:bg-fuchsia-500/25 border border-white/10 rounded-lg p-1 text-left transition-all disabled:opacity-40"
+          >
+            <p className="text-[7px] uppercase font-black text-slate-400">Sin pagos</p>
+            <p className="text-sm font-black text-fuchsia-300">{futsalSinPagos}</p>
+          </button>
+          <button
+            type="button"
+            onClick={onFutsal1Mes}
+            disabled={disabled}
+            title="Futsal con 1 mes pagado"
+            className="bg-white/5 hover:bg-fuchsia-500/25 border border-white/10 rounded-lg p-1 text-left transition-all disabled:opacity-40"
+          >
+            <p className="text-[7px] uppercase font-black text-slate-400">1 mes</p>
+            <p className="text-sm font-black text-fuchsia-300">{futsal1Mes}</p>
+          </button>
+          <button
+            type="button"
+            onClick={onFutsal2Meses}
+            disabled={disabled}
+            title="Futsal con 2 meses pagados"
+            className="bg-white/5 hover:bg-fuchsia-500/25 border border-white/10 rounded-lg p-1 text-left transition-all disabled:opacity-40"
+          >
+            <p className="text-[7px] uppercase font-black text-slate-400">2 meses</p>
+            <p className="text-sm font-black text-fuchsia-300">{futsal2Meses}</p>
+          </button>
+          <button
+            type="button"
+            onClick={onFutsal3Mas}
+            disabled={disabled}
+            title="Futsal con 3 o más meses pagados"
+            className="bg-white/5 hover:bg-fuchsia-500/25 border border-white/10 rounded-lg p-1 text-left transition-all disabled:opacity-40"
+          >
+            <p className="text-[7px] uppercase font-black text-slate-400">3+</p>
+            <p className="text-sm font-black text-fuchsia-300">{futsal3Mas}</p>
+          </button>
+        </div>
+      </div>
+
+      {/* Posibles bajas: deben la inscripción y todos los meses vencidos. El check
+          "descartar" vive dentro del propio cuadro. */}
       {posiblesBajas !== undefined && onPosiblesBajas && (
-        <button
-          type="button"
-          onClick={onPosiblesBajas}
-          disabled={disabled}
-          title="No pagaron la inscripción ni un solo mes vencido de esa temporada"
-          className="mt-2 w-full bg-red-600/15 hover:bg-red-600/30 border border-red-600/30 rounded-xl px-2 py-1.5 flex items-center justify-between gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <span className="flex items-center gap-1.5">
+        <div className="mt-2 bg-red-600/15 border border-red-600/30 rounded-xl px-2 py-1.5 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onPosiblesBajas}
+            disabled={disabled}
+            title="No pagaron la inscripción ni un solo mes vencido de esa temporada"
+            className="flex items-center gap-1.5 text-left transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             <UserMinus size={13} className="text-red-300" />
             <span className="text-[9px] uppercase font-black text-red-300 tracking-wider">Posibles bajas</span>
-          </span>
-          <span className="text-lg font-black text-red-300">{posiblesBajas}</span>
-        </button>
+            <span className="text-lg font-black text-red-300 ml-1">{posiblesBajas}</span>
+          </button>
+          {onToggleDescartar && (
+            <label
+              title="Descartar los posibles bajas: los quita del 'Con adeudo' y sus modales (temporal, solo en este navegador). El conteo de posibles bajas no cambia."
+              className={`flex items-center gap-1 px-1.5 py-1 rounded-lg cursor-pointer select-none transition-all ${
+                descartarPB ? 'bg-red-500/30 text-red-100' : 'text-red-300/70 hover:bg-red-500/15'
+              } ${disabled ? 'opacity-40 pointer-events-none' : ''}`}
+            >
+              <input
+                type="checkbox"
+                checked={!!descartarPB}
+                onChange={onToggleDescartar}
+                disabled={disabled}
+                className="accent-red-500"
+              />
+              <span className="text-[8px] uppercase font-black tracking-wider">Descartar</span>
+            </label>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function SedeCard({ sede, temporadaId, actual, anterior, onOpenPlayers }: {
+function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlayers }: {
   sede: SedeSummary;
   temporadaId: number | null;
   actual: TemporadaInfo | null;
   anterior: TemporadaInfo | null;
+  descartarPB: boolean;
   onOpenPlayers: (config: AdeudosModalConfig) => void;
 }) {
   const categoriaHref = `/adeudos/sede/${sede.IdSede}${temporadaId ? `?temporada=${temporadaId}` : ''}`;
   const base = { sedeId: sede.IdSede };
   const scopeAnterior = anterior
-    ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre }
+    ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre, descartarPB }
     : {};
 
   const open = (cfg: Omit<AdeudosModalConfig, 'subtitle'> & { subtitle?: string }) =>
@@ -577,27 +740,29 @@ function SedeCard({ sede, temporadaId, actual, anterior, onOpenPlayers }: {
           <History size={9} /> Temporada anterior
         </p>
         <div className="grid grid-cols-2 gap-2 items-start">
-          <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
-            <button
-              type="button"
-              disabled={!anterior}
-              onClick={() => open({ ...base, ...scopeAnterior, title: 'Con Adeudo · Temporada Anterior', filtro: 'debe', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
-              className="w-full p-2 text-left hover:bg-rose-500/15 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider">Con adeudo</p>
-              <p className="text-sm font-black text-rose-400">{sede.AnteriorDebe}</p>
-            </button>
-            {anterior && (
-              <div className="px-2 pb-2">
-                <DesgloseAdeudo
-                  size="xs"
-                  inscripcion={sede.AnteriorDebeInscripcion}
-                  meses={sede.AnteriorDebeMeses ?? []}
-                  onInscripcion={() => open({ ...base, ...scopeAnterior, title: 'Deben Inscripción · Temporada Anterior', filtro: 'pendiente-inscripcion', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
-                  onMes={(mes) => open({ ...base, ...scopeAnterior, title: `Deben ${MESES_CORTOS[mes - 1]} · Temporada Anterior`, filtro: 'debe-mes', mes, subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
-                />
-              </div>
-            )}
+          <div className="space-y-2">
+            <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
+              <button
+                type="button"
+                disabled={!anterior}
+                onClick={() => open({ ...base, ...scopeAnterior, title: 'Con Adeudo · Temporada Anterior', filtro: 'debe', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+                className="w-full p-2 text-left hover:bg-rose-500/15 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider">Con adeudo</p>
+                <p className="text-sm font-black text-rose-400">{sede.AnteriorDebe}</p>
+              </button>
+              {anterior && (
+                <div className="px-2 pb-2">
+                  <DesgloseAdeudo
+                    size="xs"
+                    inscripcion={sede.AnteriorDebeInscripcion}
+                    meses={sede.AnteriorDebeMeses ?? []}
+                    onInscripcion={() => open({ ...base, ...scopeAnterior, title: 'Deben Inscripción · Temporada Anterior', filtro: 'pendiente-inscripcion', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+                    onMes={(mes) => open({ ...base, ...scopeAnterior, title: `Deben ${MESES_CORTOS[mes - 1]} · Temporada Anterior`, filtro: 'debe-mes', mes, subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+                  />
+                </div>
+              )}
+            </div>
           </div>
           <div className="space-y-2">
             <button
@@ -631,6 +796,50 @@ function SedeCard({ sede, temporadaId, actual, anterior, onOpenPlayers }: {
             </button>
           </div>
         </div>
+
+        {/* Futsal Temporada Anterior */}
+        <div className="mt-2 bg-fuchsia-500/5 border border-fuchsia-500/15 rounded-lg p-1.5">
+          <p className="text-[8px] uppercase font-black text-fuchsia-300/80 tracking-wider mb-1">Futsal (Meses pagados)</p>
+          <div className="grid grid-cols-4 gap-1 text-left">
+            <button
+              type="button"
+              disabled={!anterior}
+              onClick={() => open({ ...base, ...scopeAnterior, title: 'Futsal Sin Pagos · Temporada Anterior', filtro: 'futsal-sin-pagos', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left disabled:opacity-40"
+            >
+              <p className="text-[7px] font-bold text-slate-400">Sin pagos</p>
+              <p className="text-xs font-black text-fuchsia-300">{sede.AnteriorFutsalSinPagos}</p>
+            </button>
+            <button
+              type="button"
+              disabled={!anterior}
+              onClick={() => open({ ...base, ...scopeAnterior, title: 'Futsal 1 Mes · Temporada Anterior', filtro: 'futsal-1-mes', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left disabled:opacity-40"
+            >
+              <p className="text-[7px] font-bold text-slate-400">1 mes</p>
+              <p className="text-xs font-black text-fuchsia-300">{sede.AnteriorFutsal1Mes}</p>
+            </button>
+            <button
+              type="button"
+              disabled={!anterior}
+              onClick={() => open({ ...base, ...scopeAnterior, title: 'Futsal 2 Meses · Temporada Anterior', filtro: 'futsal-2-meses', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left disabled:opacity-40"
+            >
+              <p className="text-[7px] font-bold text-slate-400">2 meses</p>
+              <p className="text-xs font-black text-fuchsia-300">{sede.AnteriorFutsal2Meses}</p>
+            </button>
+            <button
+              type="button"
+              disabled={!anterior}
+              onClick={() => open({ ...base, ...scopeAnterior, title: 'Futsal 3+ Meses · Temporada Anterior', filtro: 'futsal-3-mas', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left disabled:opacity-40"
+            >
+              <p className="text-[7px] font-bold text-slate-400">3+</p>
+              <p className="text-xs font-black text-fuchsia-300">{sede.AnteriorFutsal3Mas}</p>
+            </button>
+          </div>
+        </div>
+
         {anterior && (
           <button
             type="button"
@@ -648,23 +857,25 @@ function SedeCard({ sede, temporadaId, actual, anterior, onOpenPlayers }: {
           <CalendarClock size={9} /> Esta temporada
         </p>
         <div className="grid grid-cols-2 gap-2 items-start">
-          <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
-            <button
-              type="button"
-              onClick={() => open({ ...base, title: 'Con Adeudo · Esta Temporada', filtro: 'debe', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
-              className="w-full p-2 text-left hover:bg-rose-500/15 transition-all"
-            >
-              <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider">Con adeudo</p>
-              <p className="text-sm font-black text-rose-400">{sede.ActualDebe}</p>
-            </button>
-            <div className="px-2 pb-2">
-              <DesgloseAdeudo
-                size="xs"
-                inscripcion={sede.ActualDebeInscripcion}
-                meses={sede.ActualDebeMeses ?? []}
-                onInscripcion={() => open({ ...base, title: 'Deben Inscripción · Esta Temporada', filtro: 'pendiente-inscripcion', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
-                onMes={(mes) => open({ ...base, title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, filtro: 'debe-mes', mes, subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
-              />
+          <div className="space-y-2">
+            <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => open({ ...base, title: 'Con Adeudo · Esta Temporada', filtro: 'debe', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                className="w-full p-2 text-left hover:bg-rose-500/15 transition-all"
+              >
+                <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider">Con adeudo</p>
+                <p className="text-sm font-black text-rose-400">{sede.ActualDebe}</p>
+              </button>
+              <div className="px-2 pb-2">
+                <DesgloseAdeudo
+                  size="xs"
+                  inscripcion={sede.ActualDebeInscripcion}
+                  meses={sede.ActualDebeMeses ?? []}
+                  onInscripcion={() => open({ ...base, title: 'Deben Inscripción · Esta Temporada', filtro: 'pendiente-inscripcion', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                  onMes={(mes) => open({ ...base, title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, filtro: 'debe-mes', mes, subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                />
+              </div>
             </div>
           </div>
           <div className="space-y-2">
@@ -693,6 +904,45 @@ function SedeCard({ sede, temporadaId, actual, anterior, onOpenPlayers }: {
             >
               <p className="text-[8px] uppercase font-black text-purple-300/70 tracking-wider leading-tight">Becados 100% s/insc</p>
               <p className="text-sm font-black text-purple-300">{sede.ActualBecadosSinInscripcion}</p>
+            </button>
+          </div>
+        </div>
+
+        {/* Futsal Esta Temporada */}
+        <div className="mt-2 bg-fuchsia-500/5 border border-fuchsia-500/15 rounded-lg p-1.5">
+          <p className="text-[8px] uppercase font-black text-fuchsia-300/80 tracking-wider mb-1">Futsal (Meses pagados)</p>
+          <div className="grid grid-cols-4 gap-1 text-left">
+            <button
+              type="button"
+              onClick={() => open({ ...base, title: 'Futsal Sin Pagos · Esta Temporada', filtro: 'futsal-sin-pagos', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
+            >
+              <p className="text-[7px] font-bold text-slate-400">Sin pagos</p>
+              <p className="text-xs font-black text-fuchsia-300">{sede.ActualFutsalSinPagos}</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => open({ ...base, title: 'Futsal 1 Mes · Esta Temporada', filtro: 'futsal-1-mes', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
+            >
+              <p className="text-[7px] font-bold text-slate-400">1 mes</p>
+              <p className="text-xs font-black text-fuchsia-300">{sede.ActualFutsal1Mes}</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => open({ ...base, title: 'Futsal 2 Meses · Esta Temporada', filtro: 'futsal-2-meses', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
+            >
+              <p className="text-[7px] font-bold text-slate-400">2 meses</p>
+              <p className="text-xs font-black text-fuchsia-300">{sede.ActualFutsal2Meses}</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => open({ ...base, title: 'Futsal 3+ Meses · Esta Temporada', filtro: 'futsal-3-mas', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
+            >
+              <p className="text-[7px] font-bold text-slate-400">3+</p>
+              <p className="text-xs font-black text-fuchsia-300">{sede.ActualFutsal3Mas}</p>
             </button>
           </div>
         </div>

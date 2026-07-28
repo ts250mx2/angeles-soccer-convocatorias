@@ -7,7 +7,7 @@ import {
     TIPO_PRODUCTO_INSCRIPCION,
     TIPO_PRODUCTO_MENSUALIDAD,
 } from '@/lib/temporada';
-import { ES_VENTA_PUBLICO, esKeeperOPortero } from '@/lib/jugador-filtros';
+import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal } from '@/lib/jugador-filtros';
 
 /** Jugadores con al menos un pago de inscripción de CUALQUIER temporada (regla keeper). */
 const CUALQUIER_INSCRIPCION_SQL = `
@@ -140,15 +140,21 @@ export async function GET(request: Request) {
             }
         }
 
-        /* Segmento: separa keepers/porteros y venta al público del resto. Compone con el
-           filtro base (para 'inscritos' normal = no-keeper de esta temporada; keepers =
-           keeper con cualquier inscripción). */
+        /* Segmento: separa keepers/porteros, futsal y venta al público del resto.
+           Compone con el filtro base. Prioridad: venta pública > keepers > futsal >
+           normal. El futsal cuenta como sede normal, solo se separa en el KPI. */
+        const ES_FUTSAL = esFutsal('S');
+        const ES_CLINICS_FUTSAL = esClinicsFutsal('S');
         if (grupo === 'keepers') {
-            where.push(`${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO}`);
+            where.push(`${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL}`);
+        } else if (grupo === 'futsal') {
+            where.push(`${ES_FUTSAL} AND NOT ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO}`);
+        } else if (grupo === 'clinicsfutsal') {
+            where.push(`${ES_CLINICS_FUTSAL} AND NOT ${ES_VENTA_PUBLICO}`);
         } else if (grupo === 'ventapublico') {
             where.push(ES_VENTA_PUBLICO);
         } else if (grupo === 'normal') {
-            where.push(`NOT ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO}`);
+            where.push(`NOT ${ES_FUTSAL} AND NOT ${ES_KEEPER} AND NOT ${ES_CLINICS_FUTSAL} AND NOT ${ES_VENTA_PUBLICO}`);
         }
 
         /* Fecha de inscripción = primer pago de INSCRIPCIÓN (IdTipoProducto = 2)

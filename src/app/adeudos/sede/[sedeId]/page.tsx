@@ -22,6 +22,10 @@ interface CategoriaSummary {
   ActualBecadosSinInscripcion: number;
   ActualDebeInscripcion: number;
   ActualDebeMeses: DebeMes[];
+  ActualFutsalSinPagos: number;
+  ActualFutsal1Mes: number;
+  ActualFutsal2Meses: number;
+  ActualFutsal3Mas: number;
   AnteriorDebe: number;
   AnteriorAlCorriente: number;
   AnteriorKeepers: number;
@@ -29,6 +33,10 @@ interface CategoriaSummary {
   AnteriorPosiblesBajas: number;
   AnteriorDebeInscripcion: number;
   AnteriorDebeMeses: DebeMes[];
+  AnteriorFutsalSinPagos: number;
+  AnteriorFutsal1Mes: number;
+  AnteriorFutsal2Meses: number;
+  AnteriorFutsal3Mas: number;
 }
 
 const MESES_CORTOS = [
@@ -94,6 +102,10 @@ export default function AdeudosSedeCategoriasPage({ params }: { params: Promise<
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [modal, setModal] = useState<AdeudosModalConfig | null>(null);
+  // Descarte de posibles bajas: se controla desde la vista principal por sede y se
+  // recuerda por temporada seleccionada (localStorage). Aquí solo se lee para que los
+  // conteos y modales sean consistentes.
+  const [descartarPB, setDescartarPB] = useState(false);
 
   useEffect(() => {
     if (isInitialized && !user) router.push('/login');
@@ -101,9 +113,13 @@ export default function AdeudosSedeCategoriasPage({ params }: { params: Promise<
 
   const fetchCategorias = async () => {
     setIsLoading(true);
+    const descartar = typeof window !== 'undefined' && temporada
+      ? localStorage.getItem(`descartarPBsel_${temporada}`) === '1'
+      : false;
+    setDescartarPB(descartar);
     try {
       const response = await fetch(
-        `/api/adeudos/categories?sedeId=${sedeId}${temporada ? `&temporadaId=${temporada}` : ''}`,
+        `/api/adeudos/categories?sedeId=${sedeId}${temporada ? `&temporadaId=${temporada}` : ''}${descartar ? '&descartarPBAnterior=1' : ''}`,
         { cache: 'no-store' }
       );
       const data = await response.json();
@@ -165,6 +181,9 @@ export default function AdeudosSedeCategoriasPage({ params }: { params: Promise<
             <span className="bg-cyan-500/20 px-3 py-1.5 rounded-xl border border-cyan-500/30 text-sm font-bold text-cyan-300">
               {sum(c => c.ActualKeepers)} porteros
             </span>
+            <span className="bg-fuchsia-500/20 px-3 py-1.5 rounded-xl border border-fuchsia-500/30 text-sm font-bold text-fuchsia-300">
+              {sum(c => c.ActualFutsalSinPagos + c.ActualFutsal1Mes + c.ActualFutsal2Meses + c.ActualFutsal3Mas)} futsal
+            </span>
           </div>
         </div>
 
@@ -198,7 +217,7 @@ export default function AdeudosSedeCategoriasPage({ params }: { params: Promise<
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {withActivos.map((cat) => (
-                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} sedeName={sedeName} actual={actual} anterior={anterior} onOpenPlayers={setModal} />
+                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} sedeName={sedeName} actual={actual} anterior={anterior} descartarPB={descartarPB} onOpenPlayers={setModal} />
                     ))}
                   </div>
                 </div>
@@ -212,7 +231,7 @@ export default function AdeudosSedeCategoriasPage({ params }: { params: Promise<
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-50 hover:opacity-100 transition-all duration-500">
                     {withoutActivos.map((cat) => (
-                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} sedeName={sedeName} actual={actual} anterior={anterior} onOpenPlayers={setModal} />
+                      <CategoriaCard key={cat.Categoria} categoria={cat} sedeId={sedeId} sedeName={sedeName} actual={actual} anterior={anterior} descartarPB={descartarPB} onOpenPlayers={setModal} />
                     ))}
                   </div>
                 </div>
@@ -239,17 +258,18 @@ export default function AdeudosSedeCategoriasPage({ params }: { params: Promise<
   );
 }
 
-function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, onOpenPlayers }: {
+function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descartarPB, onOpenPlayers }: {
   categoria: CategoriaSummary;
   sedeId: string;
   sedeName: string;
   actual: TemporadaInfo | null;
   anterior: TemporadaInfo | null;
+  descartarPB: boolean;
   onOpenPlayers: (config: AdeudosModalConfig) => void;
 }) {
   const base = { sedeId: Number(sedeId), categoria: categoria.Categoria };
   const scopeAnterior = anterior
-    ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre }
+    ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre, descartarPB }
     : {};
   const label = (extra?: string) => [sedeName, categoria.Categoria, extra].filter(Boolean).join(' · ');
 
@@ -294,6 +314,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, onOpenPl
           <History size={9} /> Temporada anterior
         </p>
         <div className="grid grid-cols-2 gap-2 items-start">
+          <div className="space-y-2">
           <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
             <button
               type="button"
@@ -314,6 +335,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, onOpenPl
                 />
               </div>
             )}
+          </div>
           </div>
           <div className="space-y-2">
             <button
@@ -347,6 +369,50 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, onOpenPl
             </button>
           </div>
         </div>
+
+        {/* Futsal Temporada Anterior */}
+        <div className="mt-2 bg-fuchsia-500/5 border border-fuchsia-500/15 rounded-lg p-1.5">
+          <p className="text-[8px] uppercase font-black text-fuchsia-300/80 tracking-wider mb-1">Futsal (Meses pagados)</p>
+          <div className="grid grid-cols-4 gap-1 text-left">
+            <button
+              type="button"
+              disabled={!anterior}
+              onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Futsal Sin Pagos · Temporada Anterior', filtro: 'futsal-sin-pagos', subtitle: label(anterior?.temporadaNombre) })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left disabled:opacity-40"
+            >
+              <p className="text-[7px] font-bold text-slate-400">Sin pagos</p>
+              <p className="text-xs font-black text-fuchsia-300">{categoria.AnteriorFutsalSinPagos}</p>
+            </button>
+            <button
+              type="button"
+              disabled={!anterior}
+              onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Futsal 1 Mes · Temporada Anterior', filtro: 'futsal-1-mes', subtitle: label(anterior?.temporadaNombre) })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left disabled:opacity-40"
+            >
+              <p className="text-[7px] font-bold text-slate-400">1 mes</p>
+              <p className="text-xs font-black text-fuchsia-300">{categoria.AnteriorFutsal1Mes}</p>
+            </button>
+            <button
+              type="button"
+              disabled={!anterior}
+              onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Futsal 2 Meses · Temporada Anterior', filtro: 'futsal-2-meses', subtitle: label(anterior?.temporadaNombre) })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left disabled:opacity-40"
+            >
+              <p className="text-[7px] font-bold text-slate-400">2 meses</p>
+              <p className="text-xs font-black text-fuchsia-300">{categoria.AnteriorFutsal2Meses}</p>
+            </button>
+            <button
+              type="button"
+              disabled={!anterior}
+              onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Futsal 3+ Meses · Temporada Anterior', filtro: 'futsal-3-mas', subtitle: label(anterior?.temporadaNombre) })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left disabled:opacity-40"
+            >
+              <p className="text-[7px] font-bold text-slate-400">3+</p>
+              <p className="text-xs font-black text-fuchsia-300">{categoria.AnteriorFutsal3Mas}</p>
+            </button>
+          </div>
+        </div>
+
         {anterior && (
           <button
             type="button"
@@ -363,6 +429,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, onOpenPl
           <CalendarClock size={9} /> Esta temporada
         </p>
         <div className="grid grid-cols-2 gap-2 items-start">
+          <div className="space-y-2">
           <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
             <button
               type="button"
@@ -380,6 +447,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, onOpenPl
                 onMes={(mes) => onOpenPlayers({ ...base, title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, filtro: 'debe-mes', mes, subtitle: label(actual?.temporadaNombre) })}
               />
             </div>
+          </div>
           </div>
           <div className="space-y-2">
             <button
@@ -410,6 +478,46 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, onOpenPl
             </button>
           </div>
         </div>
+
+        {/* Futsal Esta Temporada */}
+        <div className="mt-2 bg-fuchsia-500/5 border border-fuchsia-500/15 rounded-lg p-1.5">
+          <p className="text-[8px] uppercase font-black text-fuchsia-300/80 tracking-wider mb-1">Futsal (Meses pagados)</p>
+          <div className="grid grid-cols-4 gap-1 text-left">
+            <button
+              type="button"
+              onClick={() => onOpenPlayers({ ...base, title: 'Futsal Sin Pagos · Esta Temporada', filtro: 'futsal-sin-pagos', subtitle: label(actual?.temporadaNombre) })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
+            >
+              <p className="text-[7px] font-bold text-slate-400">Sin pagos</p>
+              <p className="text-xs font-black text-fuchsia-300">{categoria.ActualFutsalSinPagos}</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenPlayers({ ...base, title: 'Futsal 1 Mes · Esta Temporada', filtro: 'futsal-1-mes', subtitle: label(actual?.temporadaNombre) })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
+            >
+              <p className="text-[7px] font-bold text-slate-400">1 mes</p>
+              <p className="text-xs font-black text-fuchsia-300">{categoria.ActualFutsal1Mes}</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenPlayers({ ...base, title: 'Futsal 2 Meses · Esta Temporada', filtro: 'futsal-2-meses', subtitle: label(actual?.temporadaNombre) })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
+            >
+              <p className="text-[7px] font-bold text-slate-400">2 meses</p>
+              <p className="text-xs font-black text-fuchsia-300">{categoria.ActualFutsal2Meses}</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenPlayers({ ...base, title: 'Futsal 3+ Meses · Esta Temporada', filtro: 'futsal-3-mas', subtitle: label(actual?.temporadaNombre) })}
+              className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
+            >
+              <p className="text-[7px] font-bold text-slate-400">3+</p>
+              <p className="text-xs font-black text-fuchsia-300">{categoria.ActualFutsal3Mas}</p>
+            </button>
+          </div>
+        </div>
+
       </div>
 
       <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />

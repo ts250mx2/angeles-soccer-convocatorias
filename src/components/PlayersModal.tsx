@@ -24,8 +24,8 @@ export interface PlayersModalConfig {
   categoria?: string;
   /** 0 = solo sedes normales, 1 = solo clinics. Sin valor, ambas. */
   clinics?: 0 | 1;
-  /** Segmento de plantilla/inscritos: 'normal', 'keepers' o 'ventapublico'. */
-  grupo?: 'normal' | 'keepers' | 'ventapublico';
+  /** Segmento de plantilla/inscritos: 'normal', 'keepers', 'futsal', 'clinicsfutsal' o 'ventapublico'. */
+  grupo?: 'normal' | 'keepers' | 'futsal' | 'clinicsfutsal' | 'ventapublico';
   /** Ruta al drill-down por categorías; si viene, se muestra la liga "Por Categoría" */
   categoriaHref?: string;
 }

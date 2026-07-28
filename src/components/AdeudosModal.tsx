@@ -13,7 +13,8 @@ import {
 
 export type AdeudosFilter =
   | "activos" | "bajas" | "pendiente-inscripcion" | "pendiente-mensualidad"
-  | "al-corriente" | "keepers" | "becado-sin-inscripcion" | "posible-baja" | "debe" | "debe-mes" | "todos";
+  | "al-corriente" | "keepers" | "futsal-corriente" | "becado-sin-inscripcion" | "posible-baja" | "debe" | "futsal-debe"
+  | "futsal-sin-pagos" | "futsal-1-mes" | "futsal-2-meses" | "futsal-3-mas" | "debe-mes" | "todos";
 
 export interface AdeudosModalConfig {
   title: string;
@@ -25,14 +26,16 @@ export interface AdeudosModalConfig {
   mes?: number;
   /** 0 = solo sedes normales, 1 = solo clinics. Sin valor, ambas. */
   clinics?: 0 | 1;
-  /** Segmento de plantilla: 'normal' (sin keepers/excluidos/venta pública),
-   *  'keepers', 'ventapublico' o 'excluido' (clinics/futsal). Solo aplica a los
+  /** Segmento de plantilla: 'normal' (sin keepers/futsal/excluidos/venta pública),
+   *  'keepers', 'futsal', 'clinicsfutsal', 'ventapublico' o 'excluido' (clinics). Solo aplica a los
    *  cortes de plantilla (activos/bajas). */
-  grupo?: 'normal' | 'keepers' | 'ventapublico' | 'excluido';
+  grupo?: 'normal' | 'keepers' | 'futsal' | 'clinicsfutsal' | 'ventapublico' | 'excluido';
   /** Temporada a consultar; si se omite se usa la seleccionada en la página.
    *  Permite que los cortes de "temporada anterior" apunten a esa otra temporada. */
   temporadaId?: number;
   temporadaNombre?: string;
+  /** Descartar posibles bajas: los excluye de todos los cortes de esta temporada. */
+  descartarPB?: boolean;
 }
 
 const ACCENT: Record<AdeudosFilter, string> = {
@@ -42,9 +45,15 @@ const ACCENT: Record<AdeudosFilter, string> = {
   "pendiente-mensualidad": "bg-orange-500",
   "al-corriente": "bg-teal-500",
   keepers: "bg-cyan-500",
+  "futsal-corriente": "bg-fuchsia-500",
   "becado-sin-inscripcion": "bg-purple-500",
   "posible-baja": "bg-red-600",
   debe: "bg-rose-500",
+  "futsal-debe": "bg-fuchsia-500",
+  "futsal-sin-pagos": "bg-fuchsia-700",
+  "futsal-1-mes": "bg-fuchsia-600",
+  "futsal-2-meses": "bg-fuchsia-500",
+  "futsal-3-mas": "bg-fuchsia-400",
   "debe-mes": "bg-orange-500",
   todos: "bg-blue-500",
 };
@@ -107,6 +116,7 @@ export default function AdeudosModal({
     if (config.mes !== undefined) params.set("mes", String(config.mes));
     if (config.clinics !== undefined) params.set("clinics", String(config.clinics));
     if (config.grupo) params.set("grupo", config.grupo);
+    if (config.descartarPB) params.set("descartarPB", "1");
     if (temporadaEfectiva) params.set("temporadaId", String(temporadaEfectiva));
 
     (async () => {
@@ -371,7 +381,9 @@ export default function AdeudosModal({
                     {/* Inscripción */}
                     <div className="flex flex-col items-center gap-0.5">
                       <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider">Inscrip.</span>
-                      {p.InscripcionPagada || beca100 ? (
+                      {p.EsFutsal ? (
+                        <span className="text-[9px] font-black text-slate-500">N/A</span>
+                      ) : p.InscripcionPagada || beca100 ? (
                         <CheckCircle2 size={16} className="text-emerald-500" />
                       ) : (
                         <XCircle size={16} className="text-rose-500" />
@@ -395,7 +407,9 @@ export default function AdeudosModal({
                                     ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
                                     : futuro
                                       ? "bg-slate-500/5 text-slate-500 border-transparent"
-                                      : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                      : p.EsFutsal
+                                        ? "bg-slate-500/10 text-slate-400 border-white/5"
+                                        : "bg-rose-500/10 text-rose-400 border-rose-500/20"
                                 }`}
                               >
                                 {MESES_CORTOS[mm - 1].charAt(0)}
@@ -406,10 +420,16 @@ export default function AdeudosModal({
                       </div>
                     )}
 
-                    {/* Adeudo — el becado total no paga, así que no se muestra monto */}
+                    {/* Adeudo / Meses pagados para futsal */}
                     <div className="flex flex-col items-end gap-0.5 min-w-[74px]">
-                      <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider">Adeudo</span>
-                      {beca100 ? (
+                      <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider">
+                        {p.EsFutsal ? "Pagos" : "Adeudo"}
+                      </span>
+                      {p.EsFutsal ? (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/30">
+                          {p.PagosCount === 0 ? "Sin pagos" : `${p.PagosCount} ${p.PagosCount === 1 ? "mes" : "meses"}`}
+                        </span>
+                      ) : beca100 ? (
                         <span
                           title="Beca 100%: no genera adeudo"
                           className="text-[9px] font-black px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30"

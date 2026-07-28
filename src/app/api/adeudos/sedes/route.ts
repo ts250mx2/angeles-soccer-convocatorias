@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { loadSeasonAndPrevious, countsByGroup, SIN_ADEUDOS, ES_FUTSAL_CATEGORIA } from '@/lib/adeudos-db';
-import { ES_VENTA_PUBLICO, esKeeperOPortero } from '@/lib/jugador-filtros';
+import { loadSeasonAndPrevious, countsByGroup, SIN_ADEUDOS } from '@/lib/adeudos-db';
+import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal } from '@/lib/jugador-filtros';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +16,8 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const temporadaId = searchParams.get('temporadaId');
+        // Descartar (temporal) los posibles bajas de la temporada anterior de los conteos.
+        const descartarPBAnterior = searchParams.get('descartarPBAnterior') === '1';
 
         const seasons = await loadSeasonAndPrevious(temporadaId);
         if (!seasons) {
@@ -24,24 +26,32 @@ export async function GET(request: Request) {
         const { actual, anterior, siguiente } = seasons;
 
         // Activos / bajas no dependen de la temporada. Se parten en grupos mutuamente
-        // excluyentes (venta pública > excluido[clinics/futsal] > keepers > normal),
+        // excluyentes (venta pública > excluido[clinics] > keepers > futsal > normal),
         // idénticos a los del endpoint de jugadores, para que tarjetas y modal cuadren.
+        // El futsal cuenta en los adeudos como sede normal, solo se muestra aparte.
         const ES_KEEPER = esKeeperOPortero('S');
-        const ES_EXCLUIDO = `(COALESCE(S.EsClinics, 0) = 1 OR ${ES_FUTSAL_CATEGORIA})`;
+        const ES_FUTSAL = esFutsal('S');
+        const ES_EXCLUIDO = `(COALESCE(S.EsClinics, 0) = 1)`;
+        const ES_CLINICS_FUTSAL = esClinicsFutsal('S');
+        const noEspeciales = `NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_KEEPER} AND NOT ${ES_CLINICS_FUTSAL}`;
         const [baseRows] = await pool.query(
             `SELECT
                 S.IdSede,
                 S.Sede,
                 COALESCE(S.EsClinics, 0) as EsClinics,
                 COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
-                COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_KEEPER} THEN 1 END) as ActivosNormal,
-                COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND ${ES_KEEPER} THEN 1 END) as ActivosKeepers,
+                COUNT(CASE WHEN J.Status = 0 AND ${noEspeciales} AND NOT ${ES_FUTSAL} THEN 1 END) as ActivosNormal,
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_CLINICS_FUTSAL} AND ${ES_KEEPER} THEN 1 END) as ActivosKeepers,
+                COUNT(CASE WHEN J.Status = 0 AND ${noEspeciales} AND ${ES_FUTSAL} THEN 1 END) as ActivosFutsal,
                 COUNT(CASE WHEN J.Status = 0 AND ${ES_VENTA_PUBLICO} THEN 1 END) as ActivosVentaPublico,
                 COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND ${ES_EXCLUIDO} THEN 1 END) as ActivosExcluido,
+                COUNT(CASE WHEN J.Status = 0 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as ActivosClinicsFutsal,
                 COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas,
-                COUNT(CASE WHEN J.Status = 2 AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_KEEPER} THEN 1 END) as BajasNormal,
-                COUNT(CASE WHEN J.Status = 2 AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND ${ES_KEEPER} THEN 1 END) as BajasKeepers,
-                COUNT(CASE WHEN J.Status = 2 AND NOT ${ES_VENTA_PUBLICO} AND ${ES_EXCLUIDO} THEN 1 END) as BajasExcluido
+                COUNT(CASE WHEN J.Status = 2 AND ${noEspeciales} AND NOT ${ES_FUTSAL} THEN 1 END) as BajasNormal,
+                COUNT(CASE WHEN J.Status = 2 AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_CLINICS_FUTSAL} AND ${ES_KEEPER} THEN 1 END) as BajasKeepers,
+                COUNT(CASE WHEN J.Status = 2 AND ${noEspeciales} AND ${ES_FUTSAL} THEN 1 END) as BajasFutsal,
+                COUNT(CASE WHEN J.Status = 2 AND NOT ${ES_VENTA_PUBLICO} AND ${ES_EXCLUIDO} THEN 1 END) as BajasExcluido,
+                COUNT(CASE WHEN J.Status = 2 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as BajasClinicsFutsal
              FROM tblSedes S
              LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
              GROUP BY S.IdSede, S.Sede, S.EsClinics
@@ -51,7 +61,9 @@ export async function GET(request: Request) {
         // La promo mira la temporada siguiente: para 'actual' es 'siguiente'; para
         // 'anterior' la siguiente es justamente 'actual'.
         const actualCounts = await countsByGroup(actual, 'sede', null, siguiente);
-        const anteriorCounts = anterior ? await countsByGroup(anterior, 'sede', null, actual) : null;
+        const anteriorCounts = anterior
+            ? await countsByGroup(anterior, 'sede', null, actual, descartarPBAnterior)
+            : null;
 
         const data = (baseRows as any[]).map((r: any) => {
             const a = actualCounts.get(r.IdSede) ?? SIN_ADEUDOS;
@@ -63,18 +75,26 @@ export async function GET(request: Request) {
                 Activos: Number(r.Activos) || 0,
                 ActivosNormal: Number(r.ActivosNormal) || 0,
                 ActivosKeepers: Number(r.ActivosKeepers) || 0,
+                ActivosFutsal: Number(r.ActivosFutsal) || 0,
                 ActivosVentaPublico: Number(r.ActivosVentaPublico) || 0,
                 ActivosExcluido: Number(r.ActivosExcluido) || 0,
+                ActivosClinicsFutsal: Number(r.ActivosClinicsFutsal) || 0,
                 Bajas: Number(r.Bajas) || 0,
                 BajasNormal: Number(r.BajasNormal) || 0,
                 BajasKeepers: Number(r.BajasKeepers) || 0,
+                BajasFutsal: Number(r.BajasFutsal) || 0,
                 BajasExcluido: Number(r.BajasExcluido) || 0,
+                BajasClinicsFutsal: Number(r.BajasClinicsFutsal) || 0,
                 ActualDebe: a.debe,
                 ActualAlCorriente: a.alCorriente,
                 ActualKeepers: a.keepers,
                 ActualBecadosSinInscripcion: a.becadosSinInscripcion,
                 ActualDebeInscripcion: a.debeInscripcion,
                 ActualDebeMeses: a.debeMeses,
+                ActualFutsalSinPagos: a.futsalSinPagos,
+                ActualFutsal1Mes: a.futsal1Mes,
+                ActualFutsal2Meses: a.futsal2Meses,
+                ActualFutsal3Mas: a.futsal3Mas,
                 AnteriorDebe: p.debe,
                 AnteriorAlCorriente: p.alCorriente,
                 AnteriorKeepers: p.keepers,
@@ -82,6 +102,10 @@ export async function GET(request: Request) {
                 AnteriorPosiblesBajas: p.posiblesBajas,
                 AnteriorDebeInscripcion: p.debeInscripcion,
                 AnteriorDebeMeses: p.debeMeses,
+                AnteriorFutsalSinPagos: p.futsalSinPagos,
+                AnteriorFutsal1Mes: p.futsal1Mes,
+                AnteriorFutsal2Meses: p.futsal2Meses,
+                AnteriorFutsal3Mas: p.futsal3Mas,
             };
         });
 

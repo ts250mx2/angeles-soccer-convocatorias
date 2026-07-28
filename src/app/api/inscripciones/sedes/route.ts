@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { JUGADORES_DE_TEMPORADA_SQL, MENSUALIDADES_EN_TEMPORADA_SQL, TIPO_PRODUCTO_INSCRIPCION } from '@/lib/temporada';
-import { ES_VENTA_PUBLICO, esKeeperOPortero } from '@/lib/jugador-filtros';
+import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal } from '@/lib/jugador-filtros';
 
 /** Jugadores con inscripción de CUALQUIER temporada (regla keeper). */
 const CUALQUIER_INSCRIPCION_SQL = `
@@ -30,18 +30,27 @@ export async function GET(request: Request) {
         if (!temporadaId) {
             // Sin temporada: resumen global, sin el corte de "sin inscripción".
             const ES_KEEPER = esKeeperOPortero('S');
+            const ES_FUTSAL = esFutsal('S');
+            const ES_CLINICS_FUTSAL = esClinicsFutsal('S');
+            const FUTSAL_NETO = `${ES_FUTSAL} AND NOT ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO}`;
             const [allRows] = await pool.query(`
                 SELECT
                     S.IdSede,
                     S.Sede,
                     COALESCE(S.EsClinics, 0) as EsClinics,
                     COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
-                    COUNT(CASE WHEN J.Status = 0 AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as ActivosKeepers,
+                    COUNT(CASE WHEN J.Status = 0 AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL} THEN 1 END) as ActivosKeepers,
+                    COUNT(CASE WHEN J.Status = 0 AND ${FUTSAL_NETO} THEN 1 END) as ActivosFutsal,
+                    COUNT(CASE WHEN J.Status = 0 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as ActivosClinicsFutsal,
                     COUNT(CASE WHEN J.Status = 0 AND ${ES_VENTA_PUBLICO} THEN 1 END) as ActivosVentaPublico,
                     COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as Inscritos,
-                    COUNT(CASE WHEN J.Status = 0 AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as InscritosKeepers,
+                    COUNT(CASE WHEN J.Status = 0 AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL} THEN 1 END) as InscritosKeepers,
+                    COUNT(CASE WHEN J.Status = 0 AND ${FUTSAL_NETO} THEN 1 END) as InscritosFutsal,
+                    COUNT(CASE WHEN J.Status = 0 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as InscritosClinicsFutsal,
                     COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas,
-                    COUNT(CASE WHEN J.Status = 2 AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as BajasKeepers,
+                    COUNT(CASE WHEN J.Status = 2 AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL} THEN 1 END) as BajasKeepers,
+                    COUNT(CASE WHEN J.Status = 2 AND ${FUTSAL_NETO} THEN 1 END) as BajasFutsal,
+                    COUNT(CASE WHEN J.Status = 2 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as BajasClinicsFutsal,
                     0 as SinInscripcion,
                     GROUP_CONCAT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != '' THEN J.Beca END) as BecasDetail
                 FROM tblSedes S
@@ -56,7 +65,11 @@ export async function GET(request: Request) {
            temporada (INS), o keeper/portero con inscripción de cualquier temporada
            (KINS). Los registros de venta al público se separan de todo conteo real. */
         const ES_KEEPER = esKeeperOPortero('S');
+        const ES_FUTSAL = esFutsal('S');
+        const ES_CLINICS_FUTSAL = esClinicsFutsal('S');
         const INSCRITO = `(INS.IdJugador IS NOT NULL OR (${ES_KEEPER} AND KINS.IdJugador IS NOT NULL))`;
+        // Futsal, excluyendo keeper, clinics futsal y venta pública (grupos disjuntos).
+        const FUTSAL_NETO = `${ES_FUTSAL} AND NOT ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO}`;
         const query = `
             SELECT
                 S.IdSede,
@@ -64,13 +77,19 @@ export async function GET(request: Request) {
                 COALESCE(S.EsClinics, 0) as EsClinics,
                 -- Plantilla completa de la sede, sin acotar a la temporada.
                 COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
-                COUNT(CASE WHEN J.Status = 0 AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as ActivosKeepers,
+                COUNT(CASE WHEN J.Status = 0 AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL} THEN 1 END) as ActivosKeepers,
+                COUNT(CASE WHEN J.Status = 0 AND ${FUTSAL_NETO} THEN 1 END) as ActivosFutsal,
+                COUNT(CASE WHEN J.Status = 0 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as ActivosClinicsFutsal,
                 COUNT(CASE WHEN J.Status = 0 AND ${ES_VENTA_PUBLICO} THEN 1 END) as ActivosVentaPublico,
                 -- Inscritos con regla keeper (excluye venta al público).
                 COUNT(CASE WHEN J.Status = 0 AND ${INSCRITO} AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as Inscritos,
-                COUNT(CASE WHEN J.Status = 0 AND ${ES_KEEPER} AND KINS.IdJugador IS NOT NULL AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as InscritosKeepers,
+                COUNT(CASE WHEN J.Status = 0 AND ${ES_KEEPER} AND KINS.IdJugador IS NOT NULL AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL} THEN 1 END) as InscritosKeepers,
+                COUNT(CASE WHEN J.Status = 0 AND ${INSCRITO} AND ${FUTSAL_NETO} THEN 1 END) as InscritosFutsal,
+                COUNT(CASE WHEN J.Status = 0 AND ${INSCRITO} AND ${ES_CLINICS_FUTSAL} THEN 1 END) as InscritosClinicsFutsal,
                 COUNT(CASE WHEN J.Status = 2 AND INS.IdJugador IS NOT NULL AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as Bajas,
-                COUNT(CASE WHEN J.Status = 2 AND INS.IdJugador IS NOT NULL AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as BajasKeepers,
+                COUNT(CASE WHEN J.Status = 2 AND INS.IdJugador IS NOT NULL AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL} THEN 1 END) as BajasKeepers,
+                COUNT(CASE WHEN J.Status = 2 AND INS.IdJugador IS NOT NULL AND ${FUTSAL_NETO} THEN 1 END) as BajasFutsal,
+                COUNT(CASE WHEN J.Status = 2 AND INS.IdJugador IS NOT NULL AND ${ES_CLINICS_FUTSAL} THEN 1 END) as BajasClinicsFutsal,
                 COUNT(CASE WHEN J.Status = 0 AND MEN.IdJugador IS NOT NULL AND NOT ${INSCRITO} AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as SinInscripcion,
                 GROUP_CONCAT(
                     CASE WHEN J.Status = 0 AND ${INSCRITO} AND NOT ${ES_VENTA_PUBLICO}

@@ -1,92 +1,34 @@
-// node --env-file=.env scratch/check_alcorriente.js
-// SOLO LECTURA. Verifica que AlCorriente del resumen (SQL) empate con el filtro
-// al-corriente del modal (JS), y su relación con activos y los pendientes.
 const mysql = require('mysql2/promise');
+const pool = mysql.createPool({host:process.env.DB_HOST,user:process.env.DB_USER,password:process.env.DB_PASSWORD,database:process.env.DB_NAME,connectionLimit:4});
+const T=10;
+(async()=>{
+  // 1) Inscritos activos (definicion del modulo inscripciones): pago inscripcion tipo 2 en ESTA temporada
+  const [[a]]=await pool.query(`
+    SELECT COUNT(*) n FROM tblJugadores J
+    WHERE J.Status=0 AND J.IdJugador IN (
+      SELECT A.IdJugador FROM tblPagos A INNER JOIN tblProductos B ON A.IdProducto=B.IdProducto
+      WHERE A.IdTemporada=? AND B.IdTipoProducto=2 AND A.Status=0)`,[T]);
+  console.log('1) INSCRITOS activos (modulo inscripciones, incluye clinics/futsal):', a.n);
 
-const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    connectionLimit: 4,
-});
+  // 2) De esos inscritos, cuantos estan en sede clinics o categoria futsal (adeudos los excluye)
+  const [[b]]=await pool.query(`
+    SELECT COUNT(*) n FROM tblJugadores J LEFT JOIN tblSedes S ON S.IdSede=J.IdSede
+    WHERE J.Status=0 AND (COALESCE(S.EsClinics,0)=1 OR UPPER(J.Categoria) LIKE '%FUTSAL%')
+      AND J.IdJugador IN (SELECT A.IdJugador FROM tblPagos A INNER JOIN tblProductos B ON A.IdProducto=B.IdProducto WHERE A.IdTemporada=? AND B.IdTipoProducto=2 AND A.Status=0)`,[T]);
+  console.log('2)   ...de ellos en clinics/futsal (adeudos NO cuenta):', b.n);
+  console.log('   => inscritos que SÍ entran a adeudos:', a.n - b.n);
 
-function resolveMonths(season, now = new Date()) {
-    const inicio = new Date(season.FechaInicio);
-    const fin = new Date(season.FechaFin);
-    const startMonth = inicio.getUTCMonth() + 1;
-    const endMonth = fin.getUTCMonth() + 1;
-    const currentMonth = now.getUTCMonth() + 1;
-    const finCierre = new Date(fin); finCierre.setUTCHours(23, 59, 59, 999);
-    const esPasada = now.getTime() > finCierre.getTime();
-    return { seasonId: season.IdTemporada, startMonth, endMonth,
-        hastaMonth: esPasada ? endMonth : currentMonth,
-        numMonthsExpected: Math.max(0, endMonth - startMonth + 1) };
-}
+  // 3) Rango de meses vencidos de la temporada 10
+  const [[t]]=await pool.query(`SELECT DATE_FORMAT(FechaInicio,'%Y-%m-%d') ini, DATE_FORMAT(FechaFin,'%Y-%m-%d') fin, MONTH(FechaInicio) m1, MONTH(FechaFin) m2 FROM tblTemporadas WHERE IdTemporada=?`,[T]);
+  console.log('3) Temporada 10:', t.ini, '->', t.fin, '(hoy 2026-07-25, inicia agosto: aun sin meses vencidos)');
 
-async function summary(m, sedeId) {
-    const [[r]] = await pool.query(`
-        SELECT
-            COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
-            SUM(CASE WHEN INS.IdJugador IS NULL AND J.Status = 0 THEN 1 ELSE 0 END) as PendInsc,
-            SUM(CASE WHEN COALESCE(MEN.PagosCount,0) < ? AND J.Status = 0 THEN 1 ELSE 0 END) as PendMens,
-            SUM(CASE WHEN J.Status = 0 AND INS.IdJugador IS NOT NULL AND COALESCE(MEN.PagosCount,0) >= ? THEN 1 ELSE 0 END) as AlCorriente
-        FROM tblJugadores J
-        LEFT JOIN (SELECT P.IdJugador FROM tblPagos P INNER JOIN tblProductos PR ON P.IdProducto=PR.IdProducto
-                   WHERE P.IdTemporada=? AND PR.IdTipoProducto=2 AND P.Status=0 GROUP BY P.IdJugador) INS ON INS.IdJugador=J.IdJugador
-        LEFT JOIN (SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as PagosCount FROM tblPagos P INNER JOIN tblProductos PR ON P.IdProducto=PR.IdProducto
-                   WHERE P.IdTemporada=? AND PR.IdTipoProducto=1 AND P.Status=0 AND P.Mes>=? AND P.Mes<=? GROUP BY P.IdJugador) MEN ON MEN.IdJugador=J.IdJugador
-        WHERE J.IdSede = ?
-    `, [m.numMonthsExpected, m.numMonthsExpected, m.seasonId, m.seasonId, m.startMonth, m.endMonth, sedeId]);
-    return r;
-}
-
-async function modalCounts(m, sedeId) {
-    const [rows] = await pool.query(`
-        SELECT J.Status,
-            CASE WHEN INS.IdJugador IS NOT NULL THEN 1 ELSE 0 END as InscripcionPagada,
-            COALESCE(MEN.MesesPagados,'') as MesesPagados
-        FROM tblJugadores J
-        LEFT JOIN (SELECT P.IdJugador FROM tblPagos P INNER JOIN tblProductos PR ON P.IdProducto=PR.IdProducto
-                   WHERE P.IdTemporada=? AND PR.IdTipoProducto=2 AND P.Status=0 GROUP BY P.IdJugador) INS ON INS.IdJugador=J.IdJugador
-        LEFT JOIN (SELECT P.IdJugador, GROUP_CONCAT(DISTINCT P.Mes) as MesesPagados FROM tblPagos P INNER JOIN tblProductos PR ON P.IdProducto=PR.IdProducto
-                   WHERE P.IdTemporada=? AND PR.IdTipoProducto=1 AND P.Status=0 AND P.Mes>=? AND P.Mes<=? GROUP BY P.IdJugador) MEN ON MEN.IdJugador=J.IdJugador
-        WHERE J.IdSede = ?
-    `, [m.seasonId, m.seasonId, m.startMonth, m.endMonth, sedeId]);
-    let alCorriente = 0;
-    for (const p of rows) {
-        const paid = String(p.MesesPagados||'').split(',').map(x=>parseInt(x.trim())).filter(x=>!isNaN(x));
-        const pagosCount = paid.filter(x=>x>=m.startMonth && x<=m.endMonth).length;
-        if (p.Status===0 && p.InscripcionPagada && pagosCount >= m.numMonthsExpected) alCorriente++;
-    }
-    return alCorriente;
-}
-
-async function main() {
-    const [[season]] = await pool.query('SELECT IdTemporada, Temporada, FechaInicio, FechaFin FROM tblTemporadas WHERE EsActiva=1');
-    const m = resolveMonths(season);
-    console.log(`${season.Temporada} | meses ${m.startMonth}-${m.endMonth} | esperados ${m.numMonthsExpected}\n`);
-
-    // Prueba tambien con una temporada pasada bien formada (7: ENERO-JULIO 2025)
-    const [[pasada]] = await pool.query('SELECT IdTemporada, Temporada, FechaInicio, FechaFin FROM tblTemporadas WHERE IdTemporada=7');
-    const mp = resolveMonths(pasada);
-    console.log(`Comparativa temporada pasada: ${pasada.Temporada} | meses ${mp.startMonth}-${mp.endMonth} | esperados ${mp.numMonthsExpected}\n`);
-
-    const [sedes] = await pool.query('SELECT IdSede, Sede FROM tblSedes ORDER BY Sede LIMIT 6');
-    for (const label of [{ m, tag: 'ACTIVA' }, { m: mp, tag: 'PASADA-7' }]) {
-      console.log(`=== ${label.tag} ===`);
-      let ok = true;
-      for (const s of sedes) {
-        const sum = await summary(label.m, s.IdSede);
-        const modal = await modalCounts(label.m, s.IdSede);
-        const match = Number(sum.AlCorriente) === modal;
-        if (!match) ok = false;
-        console.log(`${s.Sede.padEnd(12)} A${sum.Activos} AlCorr(sql)=${sum.AlCorriente} AlCorr(modal)=${modal} ${match?'OK':'*** DIFIERE ***'}  [PendInsc ${sum.PendInsc} PendMens ${sum.PendMens}]`);
-      }
-      console.log(ok ? 'cuadran\n' : 'DIFIEREN\n');
-    }
-    console.log('FIN');
-    await pool.end();
-}
-
-main().catch(e => { console.error(e); process.exit(1); });
+  // 4) keepers/porteros que cuentan como inscritos SIN inscripcion en temp 10 (adeudos SÍ, inscripciones NO)
+  const [[k]]=await pool.query(`
+    SELECT COUNT(*) n FROM tblJugadores J LEFT JOIN tblSedes S ON S.IdSede=J.IdSede
+    WHERE J.Status=0 AND COALESCE(S.EsClinics,0)=0 AND UPPER(J.Categoria) NOT LIKE '%FUTSAL%'
+      AND (COALESCE(S.EsKeeper,0)=1 OR UPPER(J.Categoria) LIKE '%PORTERO%')
+      AND J.IdJugador NOT IN (SELECT A.IdJugador FROM tblPagos A INNER JOIN tblProductos B ON A.IdProducto=B.IdProducto WHERE A.IdTemporada=? AND B.IdTipoProducto=2 AND A.Status=0)
+      AND J.IdJugador IN (SELECT A.IdJugador FROM tblPagos A INNER JOIN tblProductos B ON A.IdProducto=B.IdProducto WHERE B.IdTipoProducto=2 AND A.Status=0)`,[T]);
+  console.log('4) keeper/portero SIN inscripcion en temp 10 pero con inscripcion previa (adeudos SÍ cuenta, inscripciones NO):', k.n);
+  await pool.end();
+})().catch(e=>{console.error(e);process.exit(1)});
