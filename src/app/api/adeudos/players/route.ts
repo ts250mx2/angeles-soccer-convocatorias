@@ -270,6 +270,21 @@ export async function GET(request: Request) {
         ) as any[];
         const inscriptionFee = inscRows.length ? (Number(inscRows[0].Precio) || 0) : 0;
 
+        /* Tope de meses con cobro por categoría (categorías que terminaron antes de
+           fin de temporada). Con la tabla vacía/ausente no se aplica ningún tope. */
+        const catFin = new Map<string, number>();
+        try {
+            const [catFinRows] = await pool.query(
+                `SELECT UPPER(TRIM(Categoria)) AS Cat, MesFin FROM tblAdeudosCategoriaFin WHERE IdTemporada = ?`,
+                [seasonId],
+            ) as any[];
+            for (const r of catFinRows as any[]) catFin.set(String(r.Cat), Number(r.MesFin));
+        } catch { /* tabla ausente: sin topes */ }
+        const capEndFor = (categoria: any): number => {
+            const f = catFin.get(String(categoria ?? '').trim().toUpperCase());
+            return Number.isInteger(f) ? Math.min(m.hastaMonth, f as number) : m.hastaMonth;
+        };
+
         /* Adeudo = meses faltantes x mensualidad (menos beca) + inscripción pendiente.
            Los meses faltantes se cuentan desde el mes en que el jugador pagó su
            inscripción (no desde el inicio de la temporada): quien se inscribió a
@@ -289,8 +304,10 @@ export async function GET(request: Request) {
                     ? mesIns
                     : m.startMonth);
 
+            // Meses faltantes hasta el tope de cobro de su categoría (capEnd).
+            const capEnd = capEndFor(p.Categoria);
             let missing = 0;
-            for (let mes = mesInicio; mes <= m.hastaMonth; mes++) {
+            for (let mes = mesInicio; mes <= capEnd; mes++) {
                 if (!paid.includes(mes)) missing++;
             }
             // Meses pagados dentro del rango de la temporada (para el corte "pendiente mensualidad")
@@ -323,6 +340,7 @@ export async function GET(request: Request) {
                 Pagado: Number(p.Pagado) || 0,
                 MissingCount: missing,
                 MesInicio: mesInicio,
+                CapEnd: capEnd,
                 PagosCount: pagosCount,
                 PosibleInscTempAnterior: posibleInsc,
                 // Beca total: no paga nada, así que nunca tiene adeudo aunque no
@@ -369,10 +387,11 @@ export async function GET(request: Request) {
                     return p.Status === 0 && becado && !p.InscripcionPagada;
                 // Posible baja: no pagó inscripción ni un solo mes ya vencido (sin futsal).
                 case 'posible-baja':
+                    // No pagó inscripción ni un solo mes (robusto al tope por categoría).
                     return m.mesesExigibles > 0
                         && p.Status === 0 && !becado && !p.EsFutsal
                         && !p.InscripcionPagada
-                        && p.MissingCount === m.mesesExigibles;
+                        && p.PagosCount === 0;
                 // Con adeudo normal: excluye futsal (que va en su propio corte).
                 case 'debe':
                     return p.Status === 0 && !becado && !p.EsFutsal
@@ -386,7 +405,7 @@ export async function GET(request: Request) {
                     // entonces (el mes es igual o posterior a su mes de inscripción).
                     if (mesFiltro === null || isNaN(mesFiltro)) return false;
                     if (p.Status !== 0 || becado || p.EsFutsal) return false;
-                    if (mesFiltro < p.MesInicio) return false;
+                    if (mesFiltro < p.MesInicio || mesFiltro > p.CapEnd) return false;
                     const pagados = String(p.MesesPagados || '')
                         .split(',').map((x: string) => parseInt(x.trim())).filter((x: number) => !isNaN(x));
                     return !pagados.includes(mesFiltro);
@@ -402,7 +421,7 @@ export async function GET(request: Request) {
            que el conteo de posibles bajas no cambie). */
         const esPosibleBaja = (p: any): boolean =>
             m.mesesExigibles > 0 && p.Status === 0 && !p.BecaTotal && !p.EsFutsal
-            && !p.InscripcionPagada && p.MissingCount === m.mesesExigibles;
+            && !p.InscripcionPagada && p.PagosCount === 0;
         const CORTES_QUITAN_PB = ['debe', 'pendiente-inscripcion', 'pendiente-mensualidad', 'debe-mes'];
         const base = (descartarPB && CORTES_QUITAN_PB.includes(filtro))
             ? computed.filter((p) => !esPosibleBaja(p))

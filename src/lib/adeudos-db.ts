@@ -183,10 +183,29 @@ export async function countsByGroup(
         .map((mes) => `MAX(CASE WHEN (P.Anio * 100 + P.Mes) = ${m.anioInicio * 100 + mes} THEN 1 ELSE 0 END) as M${mes}`)
         .join(', ');
 
-    // Meses vencidos no pagados por jugador, contados desde su mes de inscripción.
+    /* Tope de meses con cobro por categoría: categorías que terminaron antes del fin
+       de la temporada. Con la tabla vacía (o ausente) el tope queda en hastaMonth, así
+       que no cambia ningún número. Las categorías vienen de la BD (no del request);
+       aun así se escapan con pool.escape. */
+    let catFinRows: Array<{ Categoria: string; MesFin: number }> = [];
+    try {
+        const [cf] = await pool.query(
+            `SELECT Categoria, MesFin FROM tblAdeudosCategoriaFin WHERE IdTemporada = ?`,
+            [m.seasonId],
+        ) as any[];
+        catFinRows = cf as any[];
+    } catch { /* tabla ausente: sin topes */ }
+    const mesFinExpr = catFinRows.length
+        ? `LEAST(${m.hastaMonth}, CASE ${catFinRows
+              .map((r) => `WHEN UPPER(TRIM(J.Categoria)) = UPPER(TRIM(${pool.escape(r.Categoria)})) THEN ${Number(r.MesFin)}`)
+              .join(' ')} ELSE ${m.hastaMonth} END)`
+        : String(m.hastaMonth);
+
+    // Meses vencidos no pagados por jugador, contados desde su mes de inscripción y
+    // hasta su mes de fin de cobro (mesFinExpr, por categoría).
     const faltantesExpr = meses.length
         ? meses
-              .map((mes) => `(CASE WHEN ${mes} >= ${mesIniExpr} AND COALESCE(MEN.M${mes}, 0) = 0 THEN 1 ELSE 0 END)`)
+              .map((mes) => `(CASE WHEN ${mes} >= ${mesIniExpr} AND ${mes} <= ${mesFinExpr} AND COALESCE(MEN.M${mes}, 0) = 0 THEN 1 ELSE 0 END)`)
               .join(' + ')
         : '0';
 
@@ -204,6 +223,7 @@ export async function countsByGroup(
         .map((mes) => `SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
                                  AND NOT ${ES_FUTSAL}
                                  AND ${mes} >= ${mesIniExpr}
+                                 AND ${mes} <= ${mesFinExpr}
                                  AND COALESCE(MEN.M${mes}, 0) = 0
                                  ${excluirPBClause}
                             THEN 1 ELSE 0 END) as Debe${mes}`)
