@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
-  ShoppingCart, Search, Plus, RefreshCw, Calendar, X,
-  AlertCircle, Wallet, CreditCard, Receipt, MapPin,
-  ChevronRight, Sparkles, TrendingUp, DollarSign,
-  UserCheck, ArrowRight
+  ShoppingCart, Search, RefreshCw, Calendar, X,
+  Wallet, CreditCard, Receipt, MapPin, TrendingUp,
 } from "lucide-react";
 
 type Period = "today" | "yesterday" | "week" | "month" | "all";
@@ -36,19 +34,6 @@ interface Sede {
   Sede: string;
 }
 
-interface Product {
-  IdProducto: number;
-  Producto: string;
-  Precio: number;
-}
-
-interface Player {
-  IdJugador: number;
-  Jugador: string;
-  Categoria: string;
-  IdSede: number;
-}
-
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n);
 
@@ -59,7 +44,6 @@ export default function VentasPage() {
   // Sales List State
   const [sales, setSales] = useState<Sale[]>([]);
   const [sedes, setSedes] = useState<Sede[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -73,31 +57,6 @@ export default function VentasPage() {
   const [pendingFrom, setPendingFrom] = useState("");
   const [pendingTo, setPendingTo] = useState("");
 
-  // Modal Registration State
-  const [modalOpen, setModalOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [regError, setRegError] = useState<string | null>(null);
-
-  // Registration Form Fields
-  const [regSede, setRegSede] = useState("");
-  const [buyerType, setBuyerType] = useState<"player" | "general">("player");
-  const [regPlayerSearch, setRegPlayerSearch] = useState("");
-  const [playersList, setPlayersList] = useState<Player[]>([]);
-  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
-  const [regGeneralName, setRegGeneralName] = useState("");
-  const [conceptType, setConceptType] = useState<"product" | "custom">("product");
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [regCustomConcept, setRegCustomConcept] = useState("");
-  const [regTotal, setRegTotal] = useState<number | "">("");
-  const [regFormaPago, setRegFormaPago] = useState("EFECTIVO");
-  const [regReferencia, setRegReferencia] = useState("");
-  const [regRecibo, setRegRecibo] = useState("");
-  const [regFecha, setRegFecha] = useState("");
-
-  // UI state for search dropdowns
-  const [showPlayersDropdown, setShowPlayersDropdown] = useState(false);
-  const playersDropdownRef = useRef<HTMLDivElement>(null);
-
   // Redirect non-admins
   useEffect(() => {
     if (isInitialized && !user) {
@@ -107,20 +66,14 @@ export default function VentasPage() {
     }
   }, [user, isInitialized, router]);
 
-  // Fetch Master Data (Sedes & Products)
-  const fetchMasterData = useCallback(async () => {
+  // Fetch Sedes (para el filtro)
+  const fetchSedes = useCallback(async () => {
     try {
-      const [sedesRes, productsRes] = await Promise.all([
-        fetch("/api/ventas/sedes"),
-        fetch("/api/ventas/products")
-      ]);
-      const sedesJson = await sedesRes.json();
-      const productsJson = await productsRes.json();
-
-      if (sedesJson.success) setSedes(sedesJson.data);
-      if (productsJson.success) setProducts(productsJson.data);
+      const res = await fetch("/api/ventas/sedes");
+      const json = await res.json();
+      if (json.success) setSedes(json.data);
     } catch (e) {
-      console.error("Error loading master data:", e);
+      console.error("Error loading sedes:", e);
     }
   }, []);
 
@@ -151,51 +104,10 @@ export default function VentasPage() {
 
   useEffect(() => {
     if (user && (user.AdminConvocatorias ?? 0) >= 2) {
-      fetchMasterData();
+      fetchSedes();
       fetchSales();
     }
-  }, [user, fetchSales, fetchMasterData]);
-
-  // Player search autocomplete
-  useEffect(() => {
-    if (buyerType !== "player" || !regPlayerSearch.trim()) {
-      setPlayersList([]);
-      return;
-    }
-
-    const delayDebounce = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/ventas/players?q=${encodeURIComponent(regPlayerSearch)}`);
-        const json = await res.json();
-        if (json.success) {
-          setPlayersList(json.data);
-          setShowPlayersDropdown(true);
-        }
-      } catch (e) {
-        console.error("Error fetching autocomplete players:", e);
-      }
-    }, 300);
-
-    return () => clearTimeout(delayDebounce);
-  }, [regPlayerSearch, buyerType]);
-
-  // Handle outside click to close players dropdown
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (playersDropdownRef.current && !playersDropdownRef.current.contains(event.target as Node)) {
-        setShowPlayersDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Sync pricing when product selected
-  useEffect(() => {
-    if (conceptType === "product" && selectedProduct) {
-      setRegTotal(selectedProduct.Precio);
-    }
-  }, [selectedProduct, conceptType]);
+  }, [user, fetchSales, fetchSedes]);
 
   const handlePeriodChange = (p: Period) => {
     if (p === "all") {
@@ -215,78 +127,6 @@ export default function VentasPage() {
     fetchSales();
   };
 
-  const handleRegisterSale = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setRegError(null);
-    setIsSubmitting(true);
-
-    try {
-      const totalAmount = Number(regTotal);
-      if (isNaN(totalAmount) || totalAmount <= 0) {
-        throw new Error("El monto total debe ser un número mayor a cero.");
-      }
-
-      const comprador = buyerType === "player"
-        ? selectedPlayer?.Jugador
-        : regGeneralName;
-
-      if (!comprador) {
-        throw new Error("Debe seleccionar un alumno o ingresar un comprador genérico.");
-      }
-
-      const concepto = conceptType === "product"
-        ? selectedProduct?.Producto
-        : regCustomConcept;
-
-      if (!concepto) {
-        throw new Error("Debe seleccionar un producto o ingresar un concepto personalizado.");
-      }
-
-      const payload = {
-        idSede: parseInt(regSede),
-        idJugador: buyerType === "player" ? selectedPlayer?.IdJugador : null,
-        jugador: comprador,
-        conceptoVenta: concepto,
-        idFormaPago: regFormaPago === "EFECTIVO" ? 1 : regFormaPago === "TARJETA" ? 2 : 4, // 1: Efvo, 2: Tarjeta, 4: Transferencia
-        formaPago: regFormaPago,
-        referencia: regReferencia,
-        recibo: regRecibo,
-        total: totalAmount,
-        fechaVenta: regFecha || null
-      };
-
-      const res = await fetch("/api/ventas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      const json = await res.json();
-      if (json.success) {
-        setModalOpen(false);
-        // Clear form
-        setRegSede("");
-        setSelectedPlayer(null);
-        setRegPlayerSearch("");
-        setRegGeneralName("");
-        setSelectedProduct(null);
-        setRegCustomConcept("");
-        setRegTotal("");
-        setRegReferencia("");
-        setRegRecibo("");
-        setRegFecha("");
-        // Reload list
-        fetchSales();
-      } else {
-        setRegError(json.message || "Error al registrar la venta");
-      }
-    } catch (err: any) {
-      setRegError(err.message || "Error de validación");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   // KPIs Calculations
   const totalRecaudado = sales.reduce((acc, s) => acc + s.Total, 0);
   const totalEfectivo = sales.filter(s => s.FormaPago === "EFECTIVO").reduce((acc, s) => acc + s.Total, 0);
@@ -296,7 +136,7 @@ export default function VentasPage() {
   return (
     <DashboardLayout>
       <main className="overflow-y-auto flex-1 text-white">
-        
+
         {/* HEADER */}
         <div className="bg-white/5 backdrop-blur-xl border-b border-white/10 px-6 py-4 flex justify-between items-center sticky top-0 z-20">
           <div className="flex items-center gap-4">
@@ -321,19 +161,12 @@ export default function VentasPage() {
             >
               <RefreshCw size={15} className={isLoading ? "animate-spin" : ""} />
             </button>
-            <button
-              onClick={() => setModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 rounded-xl text-xs font-black shadow-lg shadow-blue-500/25 transition-all transform hover:scale-[1.02]"
-            >
-              <Plus size={15} />
-              Registrar Venta
-            </button>
           </div>
         </div>
 
         {/* CONTAINER */}
         <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
-          
+
           {/* KPI CARDS */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
@@ -514,304 +347,6 @@ export default function VentasPage() {
             </div>
           )}
         </div>
-
-        {/* REGISTRATION MODAL */}
-        {modalOpen && (
-          <div className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-[110] p-4">
-            <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-              
-              {/* Modal Header */}
-              <div className="p-5 border-b border-white/5 flex items-center justify-between bg-white/5">
-                <div className="flex items-center gap-3">
-                  <div className="bg-blue-600/20 p-2.5 rounded-xl border border-blue-500/20">
-                    <Sparkles size={18} className="text-blue-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-white">Registrar Nueva Venta</h3>
-                    <p className="text-[10px] text-slate-400">Completa la información de la venta de productos</p>
-                  </div>
-                </div>
-                <button onClick={() => setModalOpen(false)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Modal Form */}
-              <form onSubmit={handleRegisterSale} className="p-6 space-y-5">
-                
-                {regError && (
-                  <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 flex items-start gap-2.5 text-xs text-rose-300">
-                    <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
-                    <p className="font-semibold">{regError}</p>
-                  </div>
-                )}
-
-                {/* Sede Selector */}
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Sede de la Venta *</label>
-                  <select
-                    required
-                    value={regSede}
-                    onChange={e => setRegSede(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all [color-scheme:dark]"
-                  >
-                    <option value="">Selecciona Sede...</option>
-                    {sedes.map(s => (
-                      <option key={s.IdSede} value={s.IdSede}>{s.Sede}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Comprador Toggle Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Comprador *</label>
-                    <div className="flex gap-2 bg-white/5 p-0.5 rounded-lg border border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => { setBuyerType("player"); setSelectedPlayer(null); }}
-                        className={`px-2.5 py-1 rounded text-[10px] font-black transition-all ${
-                          buyerType === "player" ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-300"
-                        }`}
-                      >
-                        Alumno
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setBuyerType("general"); setRegGeneralName(""); }}
-                        className={`px-2.5 py-1 rounded text-[10px] font-black transition-all ${
-                          buyerType === "general" ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-300"
-                        }`}
-                      >
-                        Público Gral.
-                      </button>
-                    </div>
-                  </div>
-
-                  {buyerType === "player" ? (
-                    <div className="relative" ref={playersDropdownRef}>
-                      <input
-                        type="text"
-                        placeholder={selectedPlayer ? selectedPlayer.Jugador : "Escribe nombre del alumno..."}
-                        value={regPlayerSearch}
-                        onChange={e => {
-                          setRegPlayerSearch(e.target.value);
-                          if (selectedPlayer) setSelectedPlayer(null);
-                        }}
-                        className={`w-full bg-white/5 border rounded-xl pl-4 pr-10 py-2.5 text-white text-sm outline-none focus:bg-white/10 transition-all ${
-                          selectedPlayer ? "border-emerald-500/40 focus:border-emerald-500" : "border-white/10 focus:border-blue-500/60"
-                        }`}
-                      />
-                      <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                      
-                      {/* Search Autocomplete dropdown */}
-                      {showPlayersDropdown && playersList.length > 0 && (
-                        <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-slate-900 border border-white/15 rounded-xl shadow-2xl z-30 divide-y divide-white/5">
-                          {playersList.map(p => (
-                            <button
-                              key={p.IdJugador}
-                              type="button"
-                              onClick={() => {
-                                setSelectedPlayer(p);
-                                setRegPlayerSearch(p.Jugador);
-                                setShowPlayersDropdown(false);
-                              }}
-                              className="w-full text-left px-4 py-2.5 hover:bg-white/5 text-xs font-bold text-slate-300 hover:text-white flex items-center justify-between"
-                            >
-                              <span>{p.Jugador}</span>
-                              <span className="text-[9px] font-black text-slate-500 uppercase bg-white/5 px-2 py-0.5 rounded border border-white/5">
-                                Cat: {p.Categoria}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {selectedPlayer && (
-                        <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold">
-                          <UserCheck size={12} />
-                          Alumno vinculado con éxito.
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <input
-                      type="text"
-                      required
-                      placeholder="Escribe el nombre del comprador..."
-                      value={regGeneralName}
-                      onChange={e => setRegGeneralName(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all"
-                    />
-                  )}
-                </div>
-
-                {/* Concept Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Concepto de Venta *</label>
-                    <div className="flex gap-2 bg-white/5 p-0.5 rounded-lg border border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => { setConceptType("product"); setSelectedProduct(null); }}
-                        className={`px-2.5 py-1 rounded text-[10px] font-black transition-all ${
-                          conceptType === "product" ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-300"
-                        }`}
-                      >
-                        Catálogo
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setConceptType("custom"); setRegCustomConcept(""); }}
-                        className={`px-2.5 py-1 rounded text-[10px] font-black transition-all ${
-                          conceptType === "custom" ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-300"
-                        }`}
-                      >
-                        Manual
-                      </button>
-                    </div>
-                  </div>
-
-                  {conceptType === "product" ? (
-                    <select
-                      required
-                      value={selectedProduct ? selectedProduct.IdProducto : ""}
-                      onChange={e => {
-                        const prod = products.find(p => p.IdProducto === parseInt(e.target.value));
-                        setSelectedProduct(prod || null);
-                      }}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all [color-scheme:dark]"
-                    >
-                      <option value="">Selecciona Artículo...</option>
-                      {products.map(p => (
-                        <option key={p.IdProducto} value={p.IdProducto}>{p.Producto} ({fmt(p.Precio)})</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      required
-                      placeholder="Escribe el concepto de la venta..."
-                      value={regCustomConcept}
-                      onChange={e => setRegCustomConcept(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all"
-                    />
-                  )}
-                </div>
-
-                {/* Pricing Block */}
-                <div className="grid grid-cols-3 gap-3 bg-white/[0.02] border border-white/5 rounded-2xl p-4">
-                  <div>
-                    <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Monto Total *</label>
-                    <div className="relative">
-                      <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
-                      <input
-                        type="number"
-                        required
-                        step="0.01"
-                        placeholder="0.00"
-                        value={regTotal}
-                        onChange={e => setRegTotal(e.target.value !== "" ? Number(e.target.value) : "")}
-                        disabled={conceptType === "product"}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-6 pr-3 py-2 text-white text-sm font-black outline-none focus:border-blue-500/60 transition-all disabled:opacity-75"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Subtotal (16% desc)</label>
-                    <p className="text-slate-300 text-sm font-bold py-2 tabular-nums">
-                      {regTotal !== "" ? fmt(Number(regTotal) / 1.16) : "$0.00"}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">IVA (Calculado)</label>
-                    <p className="text-slate-300 text-sm font-bold py-2 tabular-nums">
-                      {regTotal !== "" ? fmt(Number(regTotal) - (Number(regTotal) / 1.16)) : "$0.00"}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Formas de Pago, Referencia, Recibo, Fecha */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Forma de Pago *</label>
-                    <select
-                      value={regFormaPago}
-                      onChange={e => setRegFormaPago(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all [color-scheme:dark]"
-                    >
-                      <option value="EFECTIVO">Efectivo</option>
-                      <option value="TARJETA">Tarjeta</option>
-                      <option value="TRANSFERENCIA">Transferencia</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Recibo / Folio</label>
-                    <input
-                      type="text"
-                      placeholder="Número de recibo..."
-                      value={regRecibo}
-                      onChange={e => setRegRecibo(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Referencia</label>
-                    <input
-                      type="text"
-                      placeholder="Opcional..."
-                      value={regReferencia}
-                      onChange={e => setRegReferencia(e.target.value)}
-                      disabled={regFormaPago === "EFECTIVO"}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all disabled:opacity-50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Fecha de Venta</label>
-                    <input
-                      type="datetime-local"
-                      value={regFecha}
-                      onChange={e => setRegFecha(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-1.5 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all [color-scheme:dark]"
-                    />
-                  </div>
-                </div>
-
-                {/* Form Actions */}
-                <div className="flex gap-3 mt-6 pt-5 border-t border-white/5">
-                  <button
-                    type="button"
-                    onClick={() => setModalOpen(false)}
-                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-slate-400 text-xs font-black hover:bg-white/5 transition-all"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <RefreshCw className="animate-spin" size={13} />
-                        Registrando...
-                      </>
-                    ) : (
-                      <>
-                        <span>Registrar Venta</span>
-                        <ArrowRight size={13} />
-                      </>
-                    )}
-                  </button>
-                </div>
-
-              </form>
-
-            </div>
-          </div>
-        )}
 
       </main>
     </DashboardLayout>

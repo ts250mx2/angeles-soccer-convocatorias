@@ -16,31 +16,39 @@ function buildDateFilter(dateFrom: string | null, dateTo: string | null): { clau
     };
 }
 
-// Ventas individuales (por jugador) de un tipo de producto, opcionalmente acotadas a un mes o a un producto.
+// Ventas individuales (por jugador) de un producto, opcionalmente acotadas a un mes.
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const dateFrom = searchParams.get('dateFrom');
         const dateTo = searchParams.get('dateTo');
         const idSede = searchParams.get('idSede');
-        const idTipoProducto = searchParams.get('idTipoProducto');
-        const mes = searchParams.get('mes');
         const idProducto = searchParams.get('idProducto');
+        const idProductos = searchParams.get('idProductos'); // lista separada por comas (para "Total" con búsqueda)
+        const mes = searchParams.get('mes');
 
-        // idTipoProducto es opcional: sin él se devuelven todas las ventas del
-        // período/sede (el detalle del "Total" del grid).
+        // Todos los filtros de producto son opcionales: sin ellos se devuelven todas
+        // las ventas del período/sede (el detalle del "Total" del grid).
         const df = buildDateFilter(dateFrom, dateTo);
         const params: any[] = [];
         let where = `P.Status = 0`;
 
-        if (idTipoProducto) { where += ' AND PR.IdTipoProducto = ?'; params.push(Number(idTipoProducto)); }
+        if (idProducto) {
+            where += ' AND P.IdProducto = ?';
+            params.push(Number(idProducto));
+        } else if (idProductos) {
+            const ids = idProductos.split(',').map((x) => Number(x)).filter((n) => Number.isFinite(n));
+            if (ids.length) {
+                where += ` AND P.IdProducto IN (${ids.map(() => '?').join(',')})`;
+                params.push(...ids);
+            }
+        }
 
         where += ` AND ${df.clause}`;
         params.push(...df.params);
 
         if (idSede) { where += ' AND P.IdSedePago = ?'; params.push(idSede); }
         if (mes !== null && mes !== undefined && mes !== '') { where += ' AND P.Mes = ?'; params.push(Number(mes)); }
-        if (idProducto) { where += ' AND P.IdProducto = ?'; params.push(Number(idProducto)); }
 
         const [rows] = await pool.query(
             `SELECT
@@ -76,7 +84,7 @@ export async function GET(request: Request) {
 
         return NextResponse.json({ success: true, data });
     } catch (error) {
-        console.error('Error fetching jugadores por tipo:', error);
+        console.error('Error fetching jugadores por producto:', error);
         return NextResponse.json(
             { success: false, message: 'Error al obtener el detalle por jugador', error: error instanceof Error ? error.message : 'Unknown' },
             { status: 500 }

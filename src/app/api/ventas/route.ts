@@ -3,25 +3,33 @@ import { pool } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+// El historial de ventas se lee de tblPagos (tabla viva: los pagos/ventas reales).
+// La antigua tblVentas quedó sin datos nuevos desde finales de 2023, por eso el
+// historial se veía vacío. FechaPago se guarda en UTC y se convierte a -06:00.
 function buildVentasDateFilter(period: string, dateFrom: string | null, dateTo: string | null): { clause: string; params: any[] } {
-    if (dateFrom && dateTo) {
-        return { clause: `DATE(V.FechaVenta) BETWEEN ? AND ?`, params: [dateFrom, dateTo] };
-    }
+    const fecha = `DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00'))`;
     const localNow = `CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '-06:00')`;
+    if (dateFrom && dateTo) {
+        return { clause: `${fecha} BETWEEN ? AND ?`, params: [dateFrom, dateTo] };
+    }
     switch (period) {
         case 'today':
-            return { clause: `DATE(V.FechaVenta) = DATE(${localNow})`, params: [] };
+            return { clause: `${fecha} = DATE(${localNow})`, params: [] };
         case 'yesterday':
-            return { clause: `DATE(V.FechaVenta) = DATE(${localNow} - INTERVAL 1 DAY)`, params: [] };
+            return { clause: `${fecha} = DATE(${localNow} - INTERVAL 1 DAY)`, params: [] };
         case 'week':
-            return { clause: `YEARWEEK(V.FechaVenta, 1) = YEARWEEK(${localNow}, 1)`, params: [] };
+            return { clause: `YEARWEEK(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00'), 1) = YEARWEEK(${localNow}, 1)`, params: [] };
         case 'month':
-            return { clause: `YEAR(V.FechaVenta) = YEAR(${localNow}) AND MONTH(V.FechaVenta) = MONTH(${localNow})`, params: [] };
+            return {
+                clause: `YEAR(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = YEAR(${localNow})
+                         AND MONTH(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = MONTH(${localNow})`,
+                params: [],
+            };
         case 'all':
             return { clause: `1=1`, params: [] };
         default:
             // Default to last 30 days
-            return { clause: `V.FechaVenta >= DATE_SUB(${localNow}, INTERVAL 30 DAY)`, params: [] };
+            return { clause: `CONVERT_TZ(P.FechaPago, '+00:00', '-06:00') >= DATE_SUB(${localNow}, INTERVAL 30 DAY)`, params: [] };
     }
 }
 
@@ -35,35 +43,36 @@ export async function GET(request: Request) {
         const dateTo = searchParams.get('dateTo');
 
         let query = `
-            SELECT 
-                V.IdVenta,
-                V.FechaVenta,
-                V.IdJugador,
-                V.Jugador,
-                V.ConceptoVenta,
-                V.IdFormaPago,
-                V.Referencia,
-                V.Subtotal,
-                V.Iva,
-                V.Total,
-                V.Status,
-                V.IdSede,
+            SELECT
+                P.IdPago AS IdVenta,
+                CONVERT_TZ(P.FechaPago, '+00:00', '-06:00') AS FechaVenta,
+                P.IdJugador,
+                P.Jugador,
+                CASE WHEN P.Mes > 0 THEN CONCAT(PR.Producto, ' · mes ', P.Mes) ELSE PR.Producto END AS ConceptoVenta,
+                0 AS IdFormaPago,
+                '' AS Referencia,
+                P.Pago AS Subtotal,
+                0 AS Iva,
+                P.Pago AS Total,
+                P.Status,
+                P.IdSedePago AS IdSede,
                 S.Sede,
-                V.FormaPago,
-                V.Recibo
-            FROM tblVentas V
-            LEFT JOIN tblSedes S ON V.IdSede = S.IdSede
-            WHERE V.Status = 0
+                P.FormaPago,
+                P.Recibo
+            FROM tblPagos P
+            INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+            LEFT JOIN tblSedes S ON P.IdSedePago = S.IdSede
+            WHERE P.Status = 0
         `;
         const params: any[] = [];
 
         if (idSede) {
-            query += ' AND V.IdSede = ?';
+            query += ' AND P.IdSedePago = ?';
             params.push(idSede);
         }
 
         if (buyerName.trim()) {
-            query += ' AND V.Jugador LIKE ?';
+            query += ' AND P.Jugador LIKE ?';
             params.push(`%${buyerName.trim()}%`);
         }
 
@@ -71,7 +80,7 @@ export async function GET(request: Request) {
         query += ` AND ${dateFilter.clause}`;
         params.push(...dateFilter.params);
 
-        query += ' ORDER BY V.FechaVenta DESC, V.IdVenta DESC LIMIT 200';
+        query += ' ORDER BY P.FechaPago DESC, P.IdPago DESC LIMIT 200';
 
         const [rows] = await pool.query(query, params);
         return NextResponse.json({ success: true, data: rows });

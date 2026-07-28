@@ -23,6 +23,7 @@ import {
   Receipt,
   CalendarRange,
   LayoutGrid,
+  Boxes,
   QrCode,
   Bot,
 } from "lucide-react";
@@ -125,9 +126,14 @@ export default function Sidebar() {
       adminOnly: true,
       children: [
         {
-          label: "Ventas de Productos",
+          label: "Historial de ventas",
           href: "/ventas",
           icon: <ShoppingCart size={16} />,
+        },
+        {
+          label: "Ventas por Producto",
+          href: "/ventas/por-producto",
+          icon: <Boxes size={16} />,
         },
         {
           label: "Cortes de Caja",

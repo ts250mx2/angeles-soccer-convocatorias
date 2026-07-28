@@ -6,11 +6,13 @@ import { useUser } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import ExcelJS from "exceljs";
 import {
-  LayoutGrid, RefreshCw, X, AlertCircle, MapPin, DollarSign, Package,
-  Calendar, ChevronRight, Layers, CalendarDays, FileSpreadsheet, User, Receipt,
+  Boxes, RefreshCw, X, AlertCircle, MapPin, DollarSign, Package,
+  Calendar, ChevronRight, Layers, CalendarDays, FileSpreadsheet, User, Receipt, Search,
 } from "lucide-react";
 
-interface TipoRow {
+interface ProductoRow {
+  IdProducto: number;
+  Producto: string;
   IdTipoProducto: number;
   TipoProducto: string;
   Cantidad: number;
@@ -19,9 +21,7 @@ interface TipoRow {
 interface Sede { IdSede: number; Sede: string; Total: number; }
 type Period = "today" | "yesterday" | "week" | "month" | "custom";
 interface DetalleRow {
-  Mes?: number;
-  IdProducto?: number;
-  Producto?: string;
+  Mes: number;
   Cantidad: number;
   Total: number;
 }
@@ -42,16 +42,9 @@ const MESES = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
-const TYPE_HEX: Record<number, string> = {
-  1: "#3b82f6", // MENSUALIDAD
-  2: "#10b981", // INSCRIPCION
-  3: "#f59e0b", // LIGA
-  4: "#a855f7", // COPA
-  5: "#06b6d4", // COMISION
-  6: "#f43f5e", // ROPA
-};
-const PALETTE = ["#3b82f6", "#10b981", "#f59e0b", "#a855f7", "#06b6d4", "#f43f5e", "#84cc16", "#ec4899"];
-const colorFor = (idTipo: number, idx: number) => TYPE_HEX[idTipo] ?? PALETTE[idx % PALETTE.length];
+// Paleta por producto (cada producto un color distinto; cicla si hay muchos).
+const PALETTE = ["#3b82f6", "#10b981", "#f59e0b", "#a855f7", "#06b6d4", "#f43f5e", "#84cc16", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#eab308"];
+const colorFor = (idx: number) => PALETTE[idx % PALETTE.length];
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n || 0);
@@ -118,8 +111,8 @@ async function downloadExcel(sheet: string, title: string, cols: XCol[], data: R
 }
 
 // ── Treemap squarificado (rectángulos proporcionales al Total) ──
-interface TreeInput { value: number; data: TipoRow; }
-interface TreeRect { x: number; y: number; w: number; h: number; data: TipoRow; }
+interface TreeInput { value: number; data: ProductoRow; }
+interface TreeRect { x: number; y: number; w: number; h: number; data: ProductoRow; }
 
 function squarify(items: TreeInput[], width: number, height: number): TreeRect[] {
   const valid = items.filter((i) => i.value > 0);
@@ -130,7 +123,7 @@ function squarify(items: TreeInput[], width: number, height: number): TreeRect[]
 
   const result: TreeRect[] = [];
   let x = 0, y = 0, w = width, h = height;
-  let row: { area: number; data: TipoRow }[] = [];
+  let row: { area: number; data: ProductoRow }[] = [];
   let i = 0;
 
   const worst = (r: typeof row, len: number) => {
@@ -166,7 +159,7 @@ function squarify(items: TreeInput[], width: number, height: number): TreeRect[]
   return result;
 }
 
-export default function VentasPorTipoPage() {
+export default function VentasPorProductoPage() {
   const router = useRouter();
   const { user } = useUser();
 
@@ -177,17 +170,17 @@ export default function VentasPorTipoPage() {
   const [idSede, setIdSede] = useState<number | "all">("all");
 
   const [sedes, setSedes] = useState<Sede[]>([]);
-  const [rows, setRows] = useState<TipoRow[]>([]);
+  const [rows, setRows] = useState<ProductoRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [productQuery, setProductQuery] = useState("");
 
-  // Modal detalle (por mes / por producto)
+  // Modal detalle (por mes)
   const [detalleOpen, setDetalleOpen] = useState(false);
-  const [detalleTipo, setDetalleTipo] = useState<TipoRow | null>(null);
+  const [detalleProducto, setDetalleProducto] = useState<ProductoRow | null>(null);
   const [detalleLoading, setDetalleLoading] = useState(false);
   const [detalleData, setDetalleData] = useState<DetalleRow[]>([]);
-  const [detalleGroupBy, setDetalleGroupBy] = useState<"mes" | "producto">("producto");
   const [detalleError, setDetalleError] = useState<string | null>(null);
 
   // Modal detalle por jugador (tercer nivel)
@@ -222,7 +215,7 @@ export default function VentasPorTipoPage() {
     try {
       const params = new URLSearchParams({ dateFrom: from, dateTo: to });
       if (sede !== "all") params.set("idSede", String(sede));
-      const res = await fetch(`/api/ventas/por-tipo?${params}`);
+      const res = await fetch(`/api/ventas/por-producto?${params}`);
       const json = await res.json();
       if (json.success) {
         setRows(json.data);
@@ -258,28 +251,8 @@ export default function VentasPorTipoPage() {
     fetchData(dateFrom, dateTo, idSede);
   }, [dateFrom, dateTo, idSede]);
 
-  const openDetalle = useCallback(async (tipo: TipoRow) => {
-    setDetalleOpen(true);
-    setDetalleTipo(tipo);
-    setDetalleLoading(true);
-    setDetalleData([]);
-    setDetalleError(null);
-    try {
-      const params = new URLSearchParams({ dateFrom, dateTo, idTipoProducto: String(tipo.IdTipoProducto) });
-      if (idSede !== "all") params.set("idSede", String(idSede));
-      const res = await fetch(`/api/ventas/por-tipo/detalle?${params}`);
-      const json = await res.json();
-      if (json.success) { setDetalleData(json.data); setDetalleGroupBy(json.groupBy); }
-      else setDetalleError(json.message ?? "Error al cargar el detalle");
-    } catch {
-      setDetalleError("Error de conexión");
-    } finally {
-      setDetalleLoading(false);
-    }
-  }, [dateFrom, dateTo, idSede]);
-
-  // Carga el detalle por jugador con filtros arbitrarios (tipo, producto, mes, o
-  // ninguno para "Total"). `override` fija el total/conteo del pie.
+  // Carga el detalle por jugador con filtros arbitrarios (producto, lista de
+  // productos, o ninguno para "Total"). `override` fija el total/conteo del pie.
   const fetchJugadores = useCallback(async (
     extra: Record<string, string>,
     title: string,
@@ -294,7 +267,7 @@ export default function VentasPorTipoPage() {
     try {
       const params = new URLSearchParams({ dateFrom, dateTo, ...extra });
       if (idSede !== "all") params.set("idSede", String(idSede));
-      const res = await fetch(`/api/ventas/por-tipo/jugadores?${params}`);
+      const res = await fetch(`/api/ventas/por-producto/jugadores?${params}`);
       const json = await res.json();
       if (json.success) setJugData(json.data);
       else setJugError(json.message ?? "Error al cargar el detalle por jugador");
@@ -305,37 +278,64 @@ export default function VentasPorTipoPage() {
     }
   }, [dateFrom, dateTo, idSede]);
 
-  const openJugadores = useCallback((d: DetalleRow, tipo: TipoRow, groupBy: "mes" | "producto") => {
-    const label = groupBy === "mes"
-      ? `${tipo.TipoProducto} · ${MESES[d.Mes ?? 0] ?? `Mes ${d.Mes}`}`
-      : (d.Producto ?? tipo.TipoProducto);
-    const extra: Record<string, string> = { idTipoProducto: String(tipo.IdTipoProducto) };
-    if (groupBy === "mes") extra.mes = String(d.Mes);
-    else if (d.IdProducto != null) extra.idProducto = String(d.IdProducto);
-    fetchJugadores(extra, label, null);
+  const openDetalle = useCallback(async (producto: ProductoRow) => {
+    // Solo las mensualidades (IdTipoProducto = 1) tienen desglose por mes; para el
+    // resto de productos vamos directo al detalle por jugador.
+    if (producto.IdTipoProducto !== 1) {
+      fetchJugadores({ idProducto: String(producto.IdProducto) }, producto.Producto, null);
+      return;
+    }
+    setDetalleOpen(true);
+    setDetalleProducto(producto);
+    setDetalleLoading(true);
+    setDetalleData([]);
+    setDetalleError(null);
+    try {
+      const params = new URLSearchParams({ dateFrom, dateTo, idProducto: String(producto.IdProducto) });
+      if (idSede !== "all") params.set("idSede", String(idSede));
+      const res = await fetch(`/api/ventas/por-producto/detalle?${params}`);
+      const json = await res.json();
+      if (json.success) { setDetalleData(json.data); }
+      else setDetalleError(json.message ?? "Error al cargar el detalle");
+    } catch {
+      setDetalleError("Error de conexión");
+    } finally {
+      setDetalleLoading(false);
+    }
+  }, [dateFrom, dateTo, idSede, fetchJugadores]);
+
+  const openJugadores = useCallback((d: DetalleRow, producto: ProductoRow) => {
+    fetchJugadores(
+      { idProducto: String(producto.IdProducto), mes: String(d.Mes) },
+      `${producto.Producto} · ${MESES[d.Mes] ?? `Mes ${d.Mes}`}`,
+      null,
+    );
   }, [fetchJugadores]);
 
   // ── Exportaciones a Excel ──
   const exportResumen = () => {
     const cols: XCol[] = [
-      { header: "Tipo de Producto", key: "tipo", width: 35 },
+      { header: "Producto", key: "producto", width: 40 },
+      { header: "Tipo", key: "tipo", width: 24 },
       { header: "Cantidad", key: "cant", width: 12 },
       { header: "Total", key: "total", width: 18, money: true },
       { header: "%", key: "pct", width: 10 },
     ];
     const totalG = rows.reduce((s, r) => s + r.Total, 0);
-    const data = rows.map((r) => ({ tipo: r.TipoProducto, cant: r.Cantidad, total: r.Total, pct: totalG > 0 ? Number(((r.Total / totalG) * 100).toFixed(1)) : 0 }));
-    data.push({ tipo: "TOTAL", cant: rows.reduce((s, r) => s + r.Cantidad, 0), total: totalG, pct: 100 });
-    downloadExcel("Ventas por tipo", `Ventas por tipo de producto — ${sedeLabel} (${dateFrom} a ${dateTo})`, cols, data, `Ventas_por_tipo_${dateFrom}_${dateTo}.xlsx`);
+    const data = rows.map((r) => ({ producto: r.Producto, tipo: r.TipoProducto, cant: r.Cantidad, total: r.Total, pct: totalG > 0 ? Number(((r.Total / totalG) * 100).toFixed(1)) : 0 }));
+    data.push({ producto: "TOTAL", tipo: "", cant: rows.reduce((s, r) => s + r.Cantidad, 0), total: totalG, pct: 100 });
+    downloadExcel("Ventas por producto", `Ventas por producto — ${sedeLabel} (${dateFrom} a ${dateTo})`, cols, data, `Ventas_por_producto_${dateFrom}_${dateTo}.xlsx`);
   };
 
   const exportDetalle = () => {
-    if (!detalleTipo) return;
-    const cols: XCol[] = detalleGroupBy === "mes"
-      ? [{ header: "Mes", key: "k", width: 22 }, { header: "Cantidad", key: "cant", width: 12 }, { header: "Total", key: "total", width: 18, money: true }]
-      : [{ header: "Producto", key: "k", width: 45 }, { header: "Cantidad", key: "cant", width: 12 }, { header: "Total", key: "total", width: 18, money: true }];
-    const data = detalleData.map((d) => ({ k: detalleGroupBy === "mes" ? (MESES[d.Mes ?? 0] ?? `Mes ${d.Mes}`) : d.Producto, cant: d.Cantidad, total: d.Total }));
-    downloadExcel("Detalle", `${detalleTipo.TipoProducto} — ${sedeLabel} (${dateFrom} a ${dateTo})`, cols, data, `Detalle_${sanitize(detalleTipo.TipoProducto)}_${dateFrom}_${dateTo}.xlsx`);
+    if (!detalleProducto) return;
+    const cols: XCol[] = [
+      { header: "Mes", key: "k", width: 22 },
+      { header: "Cantidad", key: "cant", width: 12 },
+      { header: "Total", key: "total", width: 18, money: true },
+    ];
+    const data = detalleData.map((d) => ({ k: MESES[d.Mes] ?? `Mes ${d.Mes}`, cant: d.Cantidad, total: d.Total }));
+    downloadExcel("Detalle", `${detalleProducto.Producto} — ${sedeLabel} (${dateFrom} a ${dateTo})`, cols, data, `Detalle_${sanitize(detalleProducto.Producto)}_${dateFrom}_${dateTo}.xlsx`);
   };
 
   const exportJugadores = () => {
@@ -352,11 +352,19 @@ export default function VentasPorTipoPage() {
     downloadExcel("Detalle jugadores", `${jugTitle} — ${sedeLabel} (${dateFrom} a ${dateTo})`, cols, data, `Detalle_jugadores_${sanitize(jugTitle)}_${dateFrom}_${dateTo}.xlsx`);
   };
 
-  const totalGeneral = rows.reduce((s, r) => s + r.Total, 0);
-  const totalCantidad = rows.reduce((s, r) => s + r.Cantidad, 0);
+  // Búsqueda de producto (cliente): filtra por nombre o tipo. El treemap, el grid
+  // y los KPIs se recalculan sobre el subconjunto filtrado.
+  const q = productQuery.trim().toLowerCase();
+  const filteredRows = q
+    ? rows.filter((r) => r.Producto.toLowerCase().includes(q) || (r.TipoProducto ?? "").toLowerCase().includes(q))
+    : rows;
+
+  const totalGeneral = filteredRows.reduce((s, r) => s + r.Total, 0);
+  const totalCantidad = filteredRows.reduce((s, r) => s + r.Cantidad, 0);
   const grandTotalSedes = sedes.reduce((s, x) => s + x.Total, 0);
-  const rects = treeW > 0 ? squarify(rows.map((r) => ({ value: r.Total, data: r })), treeW, TREE_H) : [];
+  const rects = treeW > 0 ? squarify(filteredRows.map((r) => ({ value: r.Total, data: r })), treeW, TREE_H) : [];
   const sedeLabel = idSede === "all" ? "Todas las sedes" : (sedes.find((s) => s.IdSede === idSede)?.Sede ?? "Sede");
+  const idxByProducto = new Map(filteredRows.map((r, i) => [r.IdProducto, i]));
 
   return (
     <DashboardLayout>
@@ -366,8 +374,8 @@ export default function VentasPorTipoPage() {
         <div className="bg-white/5 backdrop-blur-xl border-b border-white/10 px-6 py-4 flex justify-between items-center sticky top-0 z-20">
           <div>
             <h1 className="text-xl font-black flex items-center gap-2">
-              <LayoutGrid size={20} className="text-blue-400" />
-              Ventas por Tipo de Producto
+              <Boxes size={20} className="text-blue-400" />
+              Ventas por Producto
             </h1>
             <p className="text-xs text-blue-300 mt-0.5">{sedeLabel} · {dateFrom} → {dateTo}</p>
           </div>
@@ -427,6 +435,27 @@ export default function VentasPorTipoPage() {
                   className="bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all [color-scheme:dark]" />
               </div>
             </div>
+
+            {/* Búsqueda de producto */}
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Buscar producto</label>
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={productQuery}
+                  onChange={(e) => setProductQuery(e.target.value)}
+                  placeholder="Nombre o tipo de producto..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-9 py-2.5 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all placeholder-slate-500"
+                />
+                {productQuery && (
+                  <button type="button" onClick={() => setProductQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-500 hover:text-white transition-colors" title="Limpiar">
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* ── Cards de sede (solo con ventas en el período) ── */}
@@ -468,7 +497,7 @@ export default function VentasPorTipoPage() {
               {[
                 { label: "Total Ventas", value: fmt2(totalGeneral), icon: <DollarSign size={16} className="text-emerald-400" />, ibg: "bg-emerald-500/10 border-emerald-500/20" },
                 { label: "Operaciones", value: totalCantidad.toLocaleString("es-MX"), icon: <Package size={16} className="text-blue-400" />, ibg: "bg-blue-500/10 border-blue-500/20" },
-                { label: "Tipos de Producto", value: rows.length.toString(), icon: <LayoutGrid size={16} className="text-purple-400" />, ibg: "bg-purple-500/10 border-purple-500/20" },
+                { label: "Productos", value: filteredRows.length.toString(), icon: <Boxes size={16} className="text-purple-400" />, ibg: "bg-purple-500/10 border-purple-500/20" },
               ].map((c) => (
                 <div key={c.label} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-start gap-3">
                   <div className={`p-2 rounded-xl border flex-shrink-0 ${c.ibg}`}>{c.icon}</div>
@@ -503,8 +532,17 @@ export default function VentasPorTipoPage() {
             </div>
           )}
 
+          {/* Sin coincidencias con la búsqueda de producto */}
+          {!isLoading && !error && rows.length > 0 && filteredRows.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-500">
+              <Search size={40} className="opacity-20" />
+              <p className="text-base font-black">Sin coincidencias</p>
+              <p className="text-sm opacity-60">Ningún producto coincide con «{productQuery}».</p>
+            </div>
+          )}
+
           {/* ── Treemap + Grid ── */}
-          {!isLoading && !error && rows.length > 0 && (
+          {!isLoading && !error && filteredRows.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
               {/* Treemap (rectángulos) */}
@@ -512,17 +550,17 @@ export default function VentasPorTipoPage() {
                 <h2 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-3">Distribución de ventas</h2>
                 <div ref={treeRefCb} className="relative w-full rounded-2xl overflow-hidden bg-white/5 border border-white/10" style={{ height: TREE_H }}>
                   {rects.map((r, idx) => {
-                    const color = colorFor(r.data.IdTipoProducto, idx);
+                    const color = colorFor(idx);
                     const pctVal = totalGeneral > 0 ? (r.data.Total / totalGeneral) * 100 : 0;
                     const showLabel = r.w > 62 && r.h > 34;
                     return (
-                      <button key={r.data.IdTipoProducto} onClick={() => openDetalle(r.data)}
+                      <button key={r.data.IdProducto} onClick={() => openDetalle(r.data)}
                         className="absolute rounded-lg overflow-hidden text-left transition-all hover:ring-2 hover:ring-white/70 hover:z-10 focus:outline-none"
                         style={{ left: r.x + 2, top: r.y + 2, width: Math.max(0, r.w - 4), height: Math.max(0, r.h - 4), backgroundColor: color }}
-                        title={`${r.data.TipoProducto} · ${fmt2(r.data.Total)}`}>
+                        title={`${r.data.Producto} · ${fmt2(r.data.Total)}`}>
                         {showLabel && (
                           <div className="flex flex-col h-full justify-between p-2.5">
-                            <span className="text-[11px] font-black text-white leading-tight drop-shadow-md line-clamp-2">{r.data.TipoProducto}</span>
+                            <span className="text-[11px] font-black text-white leading-tight drop-shadow-md line-clamp-2">{r.data.Producto}</span>
                             <div className="drop-shadow-md">
                               <span className="block text-sm font-black text-white leading-none">{fmt(r.data.Total)}</span>
                               <span className="text-[10px] font-bold text-white/85">{pctVal.toFixed(1)}% · {r.data.Cantidad.toLocaleString("es-MX")}</span>
@@ -535,27 +573,27 @@ export default function VentasPorTipoPage() {
                 </div>
               </div>
 
-              {/* Grid por tipo */}
+              {/* Grid por producto */}
               <div>
-                <h2 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-3">Ventas por tipo</h2>
+                <h2 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-3">Ventas por producto</h2>
                 <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
                   <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-2.5 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-white/10 bg-white/5">
-                    <span>Tipo de producto</span>
+                    <span>Producto</span>
                     <span className="text-right w-16">Cant.</span>
                     <span className="text-right w-28">Total</span>
                   </div>
                   <div className="divide-y divide-white/5">
-                    {rows.map((r, idx) => {
-                      const color = colorFor(r.IdTipoProducto, idx);
+                    {filteredRows.map((r, idx) => {
+                      const color = colorFor(idx);
                       const pctVal = totalGeneral > 0 ? (r.Total / totalGeneral) * 100 : 0;
                       return (
-                        <button key={r.IdTipoProducto} onClick={() => openDetalle(r)}
+                        <button key={r.IdProducto} onClick={() => openDetalle(r)}
                           className="w-full grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-3 items-center hover:bg-white/5 transition-colors text-left group">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
                             <div className="min-w-0">
-                              <p className="text-sm font-bold text-slate-200 truncate group-hover:text-white">{r.TipoProducto}</p>
-                              <p className="text-[10px] text-slate-500">{pctVal.toFixed(1)}% del total</p>
+                              <p className="text-sm font-bold text-slate-200 truncate group-hover:text-white">{r.Producto}</p>
+                              <p className="text-[10px] text-slate-500 truncate">{r.TipoProducto} · {pctVal.toFixed(1)}% del total</p>
                             </div>
                           </div>
                           <span className="text-xs font-bold text-slate-400 text-right w-16 tabular-nums">{r.Cantidad.toLocaleString("es-MX")}</span>
@@ -569,7 +607,11 @@ export default function VentasPorTipoPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => fetchJugadores({}, "Todos los tipos", { total: totalGeneral, count: totalCantidad })}
+                    onClick={() => fetchJugadores(
+                      q ? { idProductos: filteredRows.map((r) => String(r.IdProducto)).join(",") } : {},
+                      q ? `Todos los productos · «${productQuery}»` : "Todos los productos",
+                      { total: totalGeneral, count: totalCantidad },
+                    )}
                     title="Ver todas las ventas del total"
                     className="w-full grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-3 border-t border-white/10 bg-white/5 hover:bg-white/10 transition-colors text-left group"
                   >
@@ -586,20 +628,20 @@ export default function VentasPorTipoPage() {
           )}
         </div>
 
-        {/* ── Modal: Detalle por tipo ── */}
+        {/* ── Modal: Detalle por producto (por mes) ── */}
         {detalleOpen && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[120] p-4">
             <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
               {/* Header */}
               <div className="p-5 border-b border-white/5 flex items-center justify-between bg-white/5">
                 <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-2xl border" style={{ backgroundColor: `${colorFor(detalleTipo?.IdTipoProducto ?? 0, 0)}22`, borderColor: `${colorFor(detalleTipo?.IdTipoProducto ?? 0, 0)}55` }}>
-                    {detalleGroupBy === "mes" ? <CalendarDays size={22} style={{ color: colorFor(detalleTipo?.IdTipoProducto ?? 0, 0) }} /> : <Package size={22} style={{ color: colorFor(detalleTipo?.IdTipoProducto ?? 0, 0) }} />}
+                  <div className="p-3 rounded-2xl border" style={{ backgroundColor: `${colorFor(idxByProducto.get(detalleProducto?.IdProducto ?? -1) ?? 0)}22`, borderColor: `${colorFor(idxByProducto.get(detalleProducto?.IdProducto ?? -1) ?? 0)}55` }}>
+                    <CalendarDays size={22} style={{ color: colorFor(idxByProducto.get(detalleProducto?.IdProducto ?? -1) ?? 0) }} />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-white">{detalleTipo?.TipoProducto}</h3>
+                    <h3 className="text-lg font-black text-white">{detalleProducto?.Producto}</h3>
                     <p className="text-xs text-slate-400">
-                      {sedeLabel} · {dateFrom} → {dateTo} · {detalleGroupBy === "mes" ? "Desglose por mes" : "Desglose por producto"}
+                      {sedeLabel} · {dateFrom} → {dateTo} · Desglose por mes
                     </p>
                   </div>
                 </div>
@@ -636,18 +678,18 @@ export default function VentasPorTipoPage() {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-white/5 text-[9px] uppercase font-black text-slate-500 tracking-widest border-b border-white/5">
-                          <th className="px-4 py-3">{detalleGroupBy === "mes" ? "Mes" : "Producto"}</th>
+                          <th className="px-4 py-3">Mes</th>
                           <th className="px-4 py-3 text-right">Cantidad</th>
                           <th className="px-4 py-3 text-right">Total</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5">
-                        {detalleData.map((d, i) => (
-                          <tr key={detalleGroupBy === "mes" ? `m${d.Mes}` : `p${d.IdProducto ?? i}`}
-                            onClick={() => detalleTipo && openJugadores(d, detalleTipo, detalleGroupBy)}
+                        {detalleData.map((d) => (
+                          <tr key={`m${d.Mes}`}
+                            onClick={() => detalleProducto && openJugadores(d, detalleProducto)}
                             className="hover:bg-white/5 transition-colors cursor-pointer group">
                             <td className="px-4 py-3 text-sm font-bold text-slate-200 group-hover:text-white">
-                              {detalleGroupBy === "mes" ? (MESES[d.Mes ?? 0] ?? `Mes ${d.Mes}`) : d.Producto}
+                              {MESES[d.Mes] ?? `Mes ${d.Mes}`}
                             </td>
                             <td className="px-4 py-3 text-right text-xs font-bold text-slate-400 tabular-nums">{d.Cantidad.toLocaleString("es-MX")}</td>
                             <td className="px-4 py-3 text-right text-sm font-black text-white tabular-nums">
@@ -666,7 +708,7 @@ export default function VentasPorTipoPage() {
 
               {/* Footer */}
               <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center text-[11px] text-slate-500 px-6">
-                <p>{detalleData.length} {detalleGroupBy === "mes" ? "mes(es)" : "producto(s)"} · clic en una fila para ver por jugador</p>
+                <p>{detalleData.length} mes(es) · clic en una fila para ver por jugador</p>
                 <p className="font-black text-white">
                   Total: <span className="text-emerald-400">{fmt2(detalleData.reduce((s, d) => s + d.Total, 0))}</span>
                 </p>
