@@ -79,6 +79,10 @@ export async function GET(request: Request) {
         ];
         if (CORTES_DE_ADEUDO.includes(filtro)) {
             where.push(`NOT ${EXCLUIDO_ADEUDOS}`);
+            // Los jugadores dados de alta en una temporada POSTERIOR (IdTemporadaActiva
+            // mayor) no existían en ésta: quedan fuera de todo corte de adeudo. Alta
+            // desconocida (NULL) se trata como antigua (se incluye).
+            where.push(`COALESCE(J.IdTemporadaActiva, 0) <= ${seasonId}`);
         } else if (clinicsParam === '0') {
             where.push(`NOT ${EXCLUIDO_ADEUDOS}`);
         } else if (clinicsParam === '1') {

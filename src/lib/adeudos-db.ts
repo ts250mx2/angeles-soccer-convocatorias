@@ -310,7 +310,12 @@ export async function countsByGroup(
              GROUP BY P.IdJugador
          ) MEN ON MEN.IdJugador = J.IdJugador
          ${promoJoin}
-         WHERE ${SIN_CLINICS} ${sedeClause}
+         WHERE ${SIN_CLINICS}
+           -- Los jugadores dados de alta en una temporada POSTERIOR (IdTemporadaActiva
+           -- mayor) no existían en ésta: no se les calcula su adeudo. Alta desconocida
+           -- (NULL) se trata como antigua (se incluye).
+           AND COALESCE(J.IdTemporadaActiva, 0) <= ${m.seasonId}
+           ${sedeClause}
          GROUP BY ${groupCol}`,
         params
     ) as any[];

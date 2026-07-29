@@ -7,7 +7,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import ExcelJS from "exceljs";
 import {
   LayoutGrid, RefreshCw, X, AlertCircle, MapPin, DollarSign, Package,
-  Calendar, ChevronRight, Layers, CalendarDays, FileSpreadsheet, User, Receipt,
+  Calendar, ChevronRight, Layers, CalendarDays, FileSpreadsheet, User, Receipt, Search,
 } from "lucide-react";
 
 interface TipoRow {
@@ -199,6 +199,7 @@ export default function VentasPorTipoPage() {
   // Cuando el detalle es el "Total" del grid, el pie muestra el total/conteo real
   // (del grid) en vez de sumar solo las filas cargadas (que van limitadas).
   const [jugOverride, setJugOverride] = useState<{ total: number; count: number } | null>(null);
+  const [jugQuery, setJugQuery] = useState("");
 
   // Treemap width — callback ref para re-medir cada vez que el contenedor (re)monta.
   const [treeW, setTreeW] = useState(0);
@@ -287,6 +288,7 @@ export default function VentasPorTipoPage() {
   ) => {
     setJugTitle(title);
     setJugOverride(override);
+    setJugQuery("");
     setJugOpen(true);
     setJugLoading(true);
     setJugData([]);
@@ -314,6 +316,16 @@ export default function VentasPorTipoPage() {
     else if (d.IdProducto != null) extra.idProducto = String(d.IdProducto);
     fetchJugadores(extra, label, null);
   }, [fetchJugadores]);
+
+  // Búsqueda dentro del detalle por jugador: por jugador, producto o forma de pago.
+  const jq = jugQuery.trim().toLowerCase();
+  const filteredJug = jq
+    ? jugData.filter((j) =>
+        (j.Jugador ?? "").toLowerCase().includes(jq) ||
+        (j.Producto ?? "").toLowerCase().includes(jq) ||
+        (j.FormaPago ?? "").toLowerCase().includes(jq))
+    : jugData;
+  const jugTotal = filteredJug.reduce((s, j) => s + j.Pago, 0);
 
   // ── Exportaciones a Excel ──
   const exportResumen = () => {
@@ -348,7 +360,7 @@ export default function VentasPorTipoPage() {
       { header: "Recibo", key: "recibo", width: 14 },
       { header: "Monto", key: "monto", width: 16, money: true },
     ];
-    const data = jugData.map((j) => ({ fecha: fmtFechaHora(j.Fecha), jugador: j.Jugador, producto: j.Producto, sede: j.Sede, forma: j.FormaPago, recibo: j.Recibo, monto: j.Pago }));
+    const data = filteredJug.map((j) => ({ fecha: fmtFechaHora(j.Fecha), jugador: j.Jugador, producto: j.Producto, sede: j.Sede, forma: j.FormaPago, recibo: j.Recibo, monto: j.Pago }));
     downloadExcel("Detalle jugadores", `${jugTitle} — ${sedeLabel} (${dateFrom} a ${dateTo})`, cols, data, `Detalle_jugadores_${sanitize(jugTitle)}_${dateFrom}_${dateTo}.xlsx`);
   };
 
@@ -691,7 +703,7 @@ export default function VentasPorTipoPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={exportJugadores} disabled={jugLoading || jugData.length === 0}
+                  <button onClick={exportJugadores} disabled={jugLoading || filteredJug.length === 0}
                     className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-200 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Exportar a Excel">
                     <FileSpreadsheet size={15} /><span className="hidden sm:inline">Excel</span>
                   </button>
@@ -719,33 +731,59 @@ export default function VentasPorTipoPage() {
                     <p className="text-lg font-black">Sin registros</p>
                   </div>
                 ) : (
-                  <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-white/5 text-[9px] uppercase font-black text-slate-500 tracking-widest border-b border-white/5">
-                            <th className="px-4 py-3">Fecha</th>
-                            <th className="px-4 py-3">Jugador</th>
-                            <th className="px-4 py-3">Producto</th>
-                            <th className="px-4 py-3">Forma pago</th>
-                            <th className="px-4 py-3">Recibo</th>
-                            <th className="px-4 py-3 text-right">Monto</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5 text-slate-300">
-                          {jugData.map((j) => (
-                            <tr key={j.IdPago} className="hover:bg-white/5 transition-colors text-xs">
-                              <td className="px-4 py-3 whitespace-nowrap text-slate-400 tabular-nums">{fmtFechaHora(j.Fecha)}</td>
-                              <td className="px-4 py-3 font-bold text-white">{j.Jugador}</td>
-                              <td className="px-4 py-3 text-slate-400">{j.Producto}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-[10px] font-black text-slate-400">{j.FormaPago}</td>
-                              <td className="px-4 py-3 text-slate-500 tabular-nums">{j.Recibo || "—"}</td>
-                              <td className="px-4 py-3 text-right font-black text-emerald-400 tabular-nums whitespace-nowrap">{fmt2(j.Pago)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  <div className="space-y-3">
+                    {/* Búsqueda por jugador, producto o forma de pago */}
+                    <div className="relative">
+                      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        value={jugQuery}
+                        onChange={(e) => setJugQuery(e.target.value)}
+                        placeholder="Buscar por jugador, producto o forma de pago..."
+                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-9 py-2.5 text-white text-sm outline-none focus:border-blue-500/60 focus:bg-white/10 transition-all placeholder-slate-500"
+                      />
+                      {jugQuery && (
+                        <button type="button" onClick={() => setJugQuery("")}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-500 hover:text-white transition-colors" title="Limpiar">
+                          <X size={15} />
+                        </button>
+                      )}
                     </div>
+                    {filteredJug.length === 0 ? (
+                      <div className="h-40 flex flex-col items-center justify-center gap-2 text-slate-500">
+                        <Search size={36} className="opacity-20" />
+                        <p className="text-sm font-black">Sin coincidencias</p>
+                      </div>
+                    ) : (
+                      <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-white/5 text-[9px] uppercase font-black text-slate-500 tracking-widest border-b border-white/5">
+                                <th className="px-4 py-3">Fecha</th>
+                                <th className="px-4 py-3">Jugador</th>
+                                <th className="px-4 py-3">Producto</th>
+                                <th className="px-4 py-3">Forma pago</th>
+                                <th className="px-4 py-3">Recibo</th>
+                                <th className="px-4 py-3 text-right">Monto</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5 text-slate-300">
+                              {filteredJug.map((j) => (
+                                <tr key={j.IdPago} className="hover:bg-white/5 transition-colors text-xs">
+                                  <td className="px-4 py-3 whitespace-nowrap text-slate-400 tabular-nums">{fmtFechaHora(j.Fecha)}</td>
+                                  <td className="px-4 py-3 font-bold text-white">{j.Jugador}</td>
+                                  <td className="px-4 py-3 text-slate-400">{j.Producto}</td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-[10px] font-black text-slate-400">{j.FormaPago}</td>
+                                  <td className="px-4 py-3 text-slate-500 tabular-nums">{j.Recibo || "—"}</td>
+                                  <td className="px-4 py-3 text-right font-black text-emerald-400 tabular-nums whitespace-nowrap">{fmt2(j.Pago)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -753,12 +791,14 @@ export default function VentasPorTipoPage() {
               {/* Footer */}
               <div className="p-4 bg-white/5 border-t border-white/10 flex justify-between items-center text-[11px] text-slate-500 px-6">
                 <p>
-                  {jugOverride && jugOverride.count > jugData.length
-                    ? `${jugData.length.toLocaleString("es-MX")} de ${jugOverride.count.toLocaleString("es-MX")} venta(s)`
-                    : `${jugData.length.toLocaleString("es-MX")} venta(s)`}
+                  {jq
+                    ? `${filteredJug.length.toLocaleString("es-MX")} de ${jugData.length.toLocaleString("es-MX")} venta(s)`
+                    : (jugOverride && jugOverride.count > jugData.length
+                        ? `${jugData.length.toLocaleString("es-MX")} de ${jugOverride.count.toLocaleString("es-MX")} venta(s)`
+                        : `${jugData.length.toLocaleString("es-MX")} venta(s)`)}
                 </p>
                 <p className="font-black text-white">
-                  Total: <span className="text-emerald-400">{fmt2(jugOverride ? jugOverride.total : jugData.reduce((s, j) => s + j.Pago, 0))}</span>
+                  Total: <span className="text-emerald-400">{fmt2(jq ? jugTotal : (jugOverride ? jugOverride.total : jugData.reduce((s, j) => s + j.Pago, 0)))}</span>
                 </p>
               </div>
             </div>

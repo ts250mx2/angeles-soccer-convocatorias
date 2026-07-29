@@ -45,7 +45,10 @@ export async function GET(request: Request) {
         const [rows] = await pool.query(
             `SELECT
                 P.IdPago,
-                CONVERT_TZ(P.FechaPago, '+00:00', '-06:00') AS Fecha,
+                -- FechaPago ya está en hora LOCAL (sigue el reloj NOW() del servidor);
+                -- NO se convierte de zona horaria. Se devuelve como texto sin offset
+                -- (YYYY-MM-DDTHH:mm:ss) para que el navegador la interprete como local.
+                DATE_FORMAT(P.FechaPago, '%Y-%m-%dT%H:%i:%s') AS Fecha,
                 P.Jugador,
                 PR.Producto,
                 P.Mes,
