@@ -4,14 +4,14 @@ import { pool } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 function buildDateFilter(dateFrom: string | null, dateTo: string | null): { clause: string; params: any[] } {
-    const col = `DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00'))`;
+    // FechaPago ya está en hora LOCAL (sigue el reloj NOW() del servidor); no se
+    // convierte de zona horaria. Se compara contra NOW() (mismo reloj).
+    const col = `DATE(P.FechaPago)`;
     if (dateFrom && dateTo) {
         return { clause: `${col} BETWEEN ? AND ?`, params: [dateFrom, dateTo] };
     }
-    const localNow = `CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '-06:00')`;
     return {
-        clause: `YEAR(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = YEAR(${localNow})
-                 AND MONTH(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = MONTH(${localNow})`,
+        clause: `YEAR(P.FechaPago) = YEAR(NOW()) AND MONTH(P.FechaPago) = MONTH(NOW())`,
         params: [],
     };
 }

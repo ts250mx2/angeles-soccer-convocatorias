@@ -344,7 +344,7 @@ export default function AdeudosSedePage() {
               disabled={!anterior}
               onDebe={() => setModal({ title: 'Con Adeudo · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'debe', ...scopeAnterior })}
               onAlCorriente={() => setModal({ title: 'Al Corriente · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'al-corriente', ...scopeAnterior })}
-              onKeepers={() => setModal({ title: 'Porteros al Corriente · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'keepers', ...scopeAnterior })}
+              onKeepers={() => setModal({ title: 'Porteros · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'keepers', ...scopeAnterior })}
               onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'becado-sin-inscripcion', ...scopeAnterior })}
               onFutsalSinPagos={() => setModal({ title: 'Futsal Sin Pagos · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'futsal-sin-pagos', ...scopeAnterior })}
               onFutsal1Mes={() => setModal({ title: 'Futsal 1 Mes · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'futsal-1-mes', ...scopeAnterior })}
@@ -378,7 +378,7 @@ export default function AdeudosSedePage() {
               futsal3Mas={totalActualFutsal3Mas}
               onDebe={() => setModal({ title: 'Con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'debe' })}
               onAlCorriente={() => setModal({ title: 'Al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'al-corriente' })}
-              onKeepers={() => setModal({ title: 'Porteros al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers' })}
+              onKeepers={() => setModal({ title: 'Porteros · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers' })}
               onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'becado-sin-inscripcion' })}
               onFutsalSinPagos={() => setModal({ title: 'Futsal Sin Pagos · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-sin-pagos' })}
               onFutsal1Mes={() => setModal({ title: 'Futsal 1 Mes · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-1-mes' })}
@@ -575,7 +575,7 @@ function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, becad
             title="Keepers y porteros al corriente: cuentan como inscritos con la regla de portero (una inscripción vale para todas las temporadas)"
             className="w-full bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/20 rounded-xl px-2 py-1.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <p className="text-[8px] uppercase font-black text-cyan-300/80 tracking-wider">Porteros al corriente</p>
+            <p className="text-[8px] uppercase font-black text-cyan-300/80 tracking-wider">Porteros</p>
             <p className="text-lg font-black text-cyan-300">{keepers}</p>
           </button>
           <button
@@ -778,7 +778,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
               type="button"
               disabled={!anterior}
               title="Keepers/porteros al corriente (regla de portero)"
-              onClick={() => open({ ...base, ...scopeAnterior, title: 'Porteros al Corriente · Temporada Anterior', filtro: 'keepers', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+              onClick={() => open({ ...base, ...scopeAnterior, title: 'Porteros · Temporada Anterior', filtro: 'keepers', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
               className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
             >
               <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>
@@ -890,7 +890,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
             <button
               type="button"
               title="Keepers/porteros al corriente (regla de portero)"
-              onClick={() => open({ ...base, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              onClick={() => open({ ...base, title: 'Porteros · Esta Temporada', filtro: 'keepers', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
               className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
             >
               <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>

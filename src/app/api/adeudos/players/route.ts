@@ -363,8 +363,8 @@ export async function GET(request: Request) {
             switch (filtro) {
                 case 'bajas': return p.Status === 2;
                 // El desglose del "Con adeudo" normal excluye futsal (va aparte).
-                case 'pendiente-inscripcion': return p.Status === 0 && !becado && !p.EsFutsal && !p.InscripcionPagada;
-                case 'pendiente-mensualidad': return p.Status === 0 && !becado && !p.EsFutsal && p.MissingCount > 0;
+                case 'pendiente-inscripcion': return p.Status === 0 && !becado && !p.EsFutsal && !p.EsKeeperOPortero && !p.InscripcionPagada;
+                case 'pendiente-mensualidad': return p.Status === 0 && !becado && !p.EsFutsal && !p.EsKeeperOPortero && p.MissingCount > 0;
                 // Al corriente exige estar inscrito; el becado al 100% sin inscripción
                 // no debe nada pero se reporta aparte. Keepers/porteros y futsal al
                 // corriente se separan en sus propios cortes.
@@ -373,8 +373,8 @@ export async function GET(request: Request) {
                         && !p.EsKeeperOPortero && !p.EsFutsal
                         && (becado || p.MissingCount === 0);
                 case 'keepers':
-                    return p.Status === 0 && !!p.InscripcionPagada && !!p.EsKeeperOPortero
-                        && (becado || p.MissingCount === 0);
+                    // Todos los porteros/keepers van a su grupo (no manejan mensualidad).
+                    return p.Status === 0 && !!p.EsKeeperOPortero;
                 case 'futsal-corriente':
                     return p.Status === 0 && !!p.InscripcionPagada
                         && !!p.EsFutsal && !p.EsKeeperOPortero
@@ -388,17 +388,17 @@ export async function GET(request: Request) {
                 case 'futsal-3-mas':
                     return p.Status === 0 && !!p.EsFutsal && !p.EsKeeperOPortero && p.PagosCount >= 3;
                 case 'becado-sin-inscripcion':
-                    return p.Status === 0 && becado && !p.InscripcionPagada;
-                // Posible baja: no pagó inscripción ni un solo mes ya vencido (sin futsal).
+                    return p.Status === 0 && becado && !p.EsKeeperOPortero && !p.InscripcionPagada;
+                // Posible baja: no pagó inscripción ni un solo mes ya vencido (sin futsal ni porteros).
                 case 'posible-baja':
                     // No pagó inscripción ni un solo mes (robusto al tope por categoría).
                     return m.mesesExigibles > 0
-                        && p.Status === 0 && !becado && !p.EsFutsal
+                        && p.Status === 0 && !becado && !p.EsFutsal && !p.EsKeeperOPortero
                         && !p.InscripcionPagada
                         && p.PagosCount === 0;
-                // Con adeudo normal: excluye futsal (que va en su propio corte).
+                // Con adeudo normal: excluye futsal y porteros (van en su propio corte).
                 case 'debe':
-                    return p.Status === 0 && !becado && !p.EsFutsal
+                    return p.Status === 0 && !becado && !p.EsFutsal && !p.EsKeeperOPortero
                         && (!p.InscripcionPagada || p.MissingCount > 0);
                 // Futsal con adeudo (no keeper).
                 case 'futsal-debe':
@@ -408,7 +408,7 @@ export async function GET(request: Request) {
                     // Deben ese mes concreto: no lo pagaron y ya estaban inscritos para
                     // entonces (el mes es igual o posterior a su mes de inscripción).
                     if (mesFiltro === null || isNaN(mesFiltro)) return false;
-                    if (p.Status !== 0 || becado || p.EsFutsal) return false;
+                    if (p.Status !== 0 || becado || p.EsFutsal || p.EsKeeperOPortero) return false;
                     if (mesFiltro < p.MesInicio || mesFiltro > p.CapEnd) return false;
                     const pagados = String(p.MesesPagados || '')
                         .split(',').map((x: string) => parseInt(x.trim())).filter((x: number) => !isNaN(x));
@@ -424,7 +424,7 @@ export async function GET(request: Request) {
            modales), PERO NO del propio corte 'posible-baja' (ahí se siguen viendo, para
            que el conteo de posibles bajas no cambie). */
         const esPosibleBaja = (p: any): boolean =>
-            m.mesesExigibles > 0 && p.Status === 0 && !p.BecaTotal && !p.EsFutsal
+            m.mesesExigibles > 0 && p.Status === 0 && !p.BecaTotal && !p.EsFutsal && !p.EsKeeperOPortero
             && !p.InscripcionPagada && p.PagosCount === 0;
         const CORTES_QUITAN_PB = ['debe', 'pendiente-inscripcion', 'pendiente-mensualidad', 'debe-mes'];
         const base = (descartarPB && CORTES_QUITAN_PB.includes(filtro))

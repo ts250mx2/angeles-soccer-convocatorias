@@ -5,31 +5,31 @@ export const dynamic = 'force-dynamic';
 
 // El historial de ventas se lee de tblPagos (tabla viva: los pagos/ventas reales).
 // La antigua tblVentas quedó sin datos nuevos desde finales de 2023, por eso el
-// historial se veía vacío. FechaPago se guarda en UTC y se convierte a -06:00.
+// historial se veía vacío. FechaPago ya está en hora LOCAL (sigue el reloj NOW()
+// del servidor); no se convierte de zona horaria.
 function buildVentasDateFilter(period: string, dateFrom: string | null, dateTo: string | null): { clause: string; params: any[] } {
-    const fecha = `DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00'))`;
-    const localNow = `CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '-06:00')`;
+    const fecha = `DATE(P.FechaPago)`;
+    const now = `NOW()`;
     if (dateFrom && dateTo) {
         return { clause: `${fecha} BETWEEN ? AND ?`, params: [dateFrom, dateTo] };
     }
     switch (period) {
         case 'today':
-            return { clause: `${fecha} = DATE(${localNow})`, params: [] };
+            return { clause: `${fecha} = DATE(${now})`, params: [] };
         case 'yesterday':
-            return { clause: `${fecha} = DATE(${localNow} - INTERVAL 1 DAY)`, params: [] };
+            return { clause: `${fecha} = DATE(${now} - INTERVAL 1 DAY)`, params: [] };
         case 'week':
-            return { clause: `YEARWEEK(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00'), 1) = YEARWEEK(${localNow}, 1)`, params: [] };
+            return { clause: `YEARWEEK(P.FechaPago, 1) = YEARWEEK(${now}, 1)`, params: [] };
         case 'month':
             return {
-                clause: `YEAR(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = YEAR(${localNow})
-                         AND MONTH(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = MONTH(${localNow})`,
+                clause: `YEAR(P.FechaPago) = YEAR(${now}) AND MONTH(P.FechaPago) = MONTH(${now})`,
                 params: [],
             };
         case 'all':
             return { clause: `1=1`, params: [] };
         default:
             // Default to last 30 days
-            return { clause: `CONVERT_TZ(P.FechaPago, '+00:00', '-06:00') >= DATE_SUB(${localNow}, INTERVAL 30 DAY)`, params: [] };
+            return { clause: `P.FechaPago >= DATE_SUB(${now}, INTERVAL 30 DAY)`, params: [] };
     }
 }
 
@@ -45,7 +45,9 @@ export async function GET(request: Request) {
         let query = `
             SELECT
                 P.IdPago AS IdVenta,
-                CONVERT_TZ(P.FechaPago, '+00:00', '-06:00') AS FechaVenta,
+                -- FechaPago ya está en hora LOCAL; no se convierte (se devuelve sin
+                -- offset para que el navegador la interprete como local, no UTC).
+                DATE_FORMAT(P.FechaPago, '%Y-%m-%dT%H:%i:%s') AS FechaVenta,
                 P.IdJugador,
                 P.Jugador,
                 CASE WHEN P.Mes > 0 THEN CONCAT(PR.Producto, ' · mes ', P.Mes) ELSE PR.Producto END AS ConceptoVenta,

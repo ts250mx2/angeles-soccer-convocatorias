@@ -213,15 +213,16 @@ export async function countsByGroup(
        meses), PERO NO del conteo de posibles bajas (ese sigue mostrándose para saber
        cuántos se descartaron). El posible baja: sin inscripción y sin un solo mes pagado. */
     const posibleBajaExpr =
-        `(NOT ${ES_BECA_TOTAL} AND NOT ${ES_FUTSAL} AND NOT ${esInscritoExpr} AND COALESCE(MEN.PagosCount, 0) = 0)`;
+        `(NOT ${ES_BECA_TOTAL} AND NOT ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND NOT ${esInscritoExpr} AND COALESCE(MEN.PagosCount, 0) = 0)`;
     const excluirPBClause = (excluirPosiblesBajas && m.mesesExigibles > 0)
         ? `AND NOT ${posibleBajaExpr}`
         : '';
 
-    // El desglose por mes es del "Con adeudo" normal, que excluye futsal (va aparte).
+    // El desglose por mes es del "Con adeudo" normal, que excluye futsal y porteros.
     const conteosPorMes = meses
         .map((mes) => `SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
                                  AND NOT ${ES_FUTSAL}
+                                 AND NOT ${ES_KEEPER_O_PORTERO}
                                  AND ${mes} >= ${mesIniExpr}
                                  AND ${mes} <= ${mesFinExpr}
                                  AND COALESCE(MEN.M${mes}, 0) = 0
@@ -239,10 +240,11 @@ export async function countsByGroup(
     const [rows] = await pool.query(
         `SELECT
             ${groupCol} as Grupo,
-            -- Con adeudo, EXCLUYENDO futsal (que no maneja adeudo).
+            -- Con adeudo, EXCLUYENDO futsal y porteros (no manejan adeudo mensual).
             SUM(CASE WHEN J.Status = 0
                       AND NOT ${ES_BECA_TOTAL}
                       AND NOT ${ES_FUTSAL}
+                      AND NOT ${ES_KEEPER_O_PORTERO}
                       AND (NOT ${esInscritoExpr} OR (${faltantesExpr}) > 0)
                       ${excluirPBClause}
                  THEN 1 ELSE 0 END) as Debe,
@@ -253,28 +255,28 @@ export async function countsByGroup(
                       AND NOT ${ES_FUTSAL}
                       AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
                  THEN 1 ELSE 0 END) as AlCorriente,
-            -- Keepers/porteros al corriente.
+            -- Porteros/keepers: van TODOS a su propio grupo (no manejan mensualidad),
+            -- así que no aparecen en debe / al corriente / posibles bajas.
             SUM(CASE WHEN J.Status = 0
-                      AND ${esInscritoExpr}
                       AND ${ES_KEEPER_O_PORTERO}
-                      AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
                  THEN 1 ELSE 0 END) as Keepers,
             -- Futsal clasificado por cantidad de meses pagados en la temporada:
             SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) = 0 THEN 1 ELSE 0 END) as FutsalSinPagos,
             SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) = 1 THEN 1 ELSE 0 END) as Futsal1Mes,
             SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) = 2 THEN 1 ELSE 0 END) as Futsal2Meses,
             SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) >= 3 THEN 1 ELSE 0 END) as Futsal3Mas,
-            SUM(CASE WHEN J.Status = 0 AND ${ES_BECA_TOTAL} AND NOT ${esInscritoExpr}
+            SUM(CASE WHEN J.Status = 0 AND ${ES_BECA_TOTAL} AND NOT ${ES_KEEPER_O_PORTERO} AND NOT ${esInscritoExpr}
                  THEN 1 ELSE 0 END) as BecadosSinInscripcion,
-            -- Posible baja: no pagó la inscripción ni un solo mes ya vencido (sin futsal).
+            -- Posible baja: no pagó la inscripción ni un solo mes ya vencido (sin futsal ni porteros).
             SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
                       AND NOT ${ES_FUTSAL}
+                      AND NOT ${ES_KEEPER_O_PORTERO}
                       AND NOT ${esInscritoExpr}
                       AND COALESCE(MEN.PagosCount, 0) = 0
                  THEN 1 ELSE 0 END) as PosiblesBajas,
-            -- Deben inscripción del "Con adeudo" normal (sin futsal).
+            -- Deben inscripción del "Con adeudo" normal (sin futsal ni porteros).
             SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
-                      AND NOT ${ES_FUTSAL} AND NOT ${esInscritoExpr}
+                      AND NOT ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND NOT ${esInscritoExpr}
                       ${excluirPBClause}
                  THEN 1 ELSE 0 END) as DebeInscripcion
             ${conteosPorMes ? ', ' + conteosPorMes : ''}

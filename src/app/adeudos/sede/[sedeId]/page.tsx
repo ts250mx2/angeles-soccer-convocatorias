@@ -351,7 +351,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
               type="button"
               disabled={!anterior}
               title="Keepers/porteros al corriente (regla de portero)"
-              onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Porteros al Corriente · Temporada Anterior', filtro: 'keepers', subtitle: label(anterior?.temporadaNombre) })}
+              onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Porteros · Temporada Anterior', filtro: 'keepers', subtitle: label(anterior?.temporadaNombre) })}
               className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
             >
               <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>
@@ -461,7 +461,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
             <button
               type="button"
               title="Keepers/porteros al corriente (regla de portero)"
-              onClick={() => onOpenPlayers({ ...base, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers', subtitle: label(actual?.temporadaNombre) })}
+              onClick={() => onOpenPlayers({ ...base, title: 'Porteros · Esta Temporada', filtro: 'keepers', subtitle: label(actual?.temporadaNombre) })}
               className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
             >
               <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>
