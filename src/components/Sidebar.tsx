@@ -24,6 +24,7 @@ import {
   CalendarRange,
   LayoutGrid,
   Boxes,
+  CalendarDays,
   QrCode,
   Bot,
 } from "lucide-react";
@@ -134,6 +135,11 @@ export default function Sidebar() {
           label: "Ventas por Producto",
           href: "/ventas/por-producto",
           icon: <Boxes size={16} />,
+        },
+        {
+          label: "Ventas por Día",
+          href: "/ventas/por-dia",
+          icon: <CalendarDays size={16} />,
         },
         {
           label: "Cortes de Caja",
