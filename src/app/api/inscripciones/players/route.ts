@@ -3,6 +3,7 @@ import { pool } from '@/lib/db';
 import {
     JUGADORES_DE_TEMPORADA_SQL,
     MENSUALIDADES_EN_TEMPORADA_SQL,
+    INSCRIPCION_PREVIA_SQL,
     MESES_ANTICIPO_SOSPECHOSO,
     TIPO_PRODUCTO_INSCRIPCION,
     TIPO_PRODUCTO_MENSUALIDAD,
@@ -124,6 +125,18 @@ export async function GET(request: Request) {
             where.push(`NOT ${ES_VENTA_PUBLICO}`);
             if (filtro === 'becados') {
                 where.push("J.Beca IS NOT NULL AND J.Beca <> '0' AND J.Beca <> ''");
+            }
+            /* Corte por primera inscripción del jugador (requiere temporada):
+                 nueva        = es su primera inscripción histórica (sin previa)
+                 reinscripcion = ya tenía inscripción en una temporada anterior */
+            const tipoInscripcion = searchParams.get('tipoInscripcion');
+            if (temporadaId && (tipoInscripcion === 'nueva' || tipoInscripcion === 'reinscripcion')) {
+                where.push(
+                    tipoInscripcion === 'reinscripcion'
+                        ? `J.IdJugador IN (${INSCRIPCION_PREVIA_SQL})`
+                        : `J.IdJugador NOT IN (${INSCRIPCION_PREVIA_SQL})`
+                );
+                params.push(temporadaId);
             }
         } else if (filtro === 'bajas') {
             where.push('J.Status = 2');

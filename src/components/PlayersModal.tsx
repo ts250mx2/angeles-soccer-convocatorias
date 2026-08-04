@@ -26,6 +26,8 @@ export interface PlayersModalConfig {
   clinics?: 0 | 1;
   /** Segmento de plantilla/inscritos: 'normal', 'keepers', 'futsal', 'clinicsfutsal' o 'ventapublico'. */
   grupo?: 'normal' | 'keepers' | 'futsal' | 'clinicsfutsal' | 'ventapublico';
+  /** Corte de inscritos por primera inscripción: 'nueva' (primera) o 'reinscripcion'. */
+  tipoInscripcion?: 'nueva' | 'reinscripcion';
   /** Ruta al drill-down por categorías; si viene, se muestra la liga "Por Categoría" */
   categoriaHref?: string;
 }
@@ -77,6 +79,7 @@ export default function PlayersModal({
     if (config.categoria) params.set("categoria", config.categoria);
     if (config.clinics !== undefined) params.set("clinics", String(config.clinics));
     if (config.grupo) params.set("grupo", config.grupo);
+    if (config.tipoInscripcion) params.set("tipoInscripcion", config.tipoInscripcion);
     if (temporadaId) params.set("temporadaId", String(temporadaId));
 
     (async () => {

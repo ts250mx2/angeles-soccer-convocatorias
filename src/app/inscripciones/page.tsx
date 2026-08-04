@@ -23,6 +23,11 @@ interface SedeSummary {
   InscritosKeepers: number;
   InscritosFutsal: number;
   InscritosClinicsFutsal: number;
+  /** De los inscritos, los que ya tenían inscripción en una temporada anterior. */
+  Reinscritos: number;
+  ReinscritosKeepers: number;
+  ReinscritosFutsal: number;
+  ReinscritosClinicsFutsal: number;
   Bajas: number;
   BajasKeepers: number;
   BajasFutsal: number;
@@ -60,6 +65,47 @@ interface Temporada {
   IdTemporada: number;
   Temporada: string;
   EsActiva: boolean;
+}
+
+/** Celda de un área de inscritos con el total y su desglose Nuevas / Reinscripciones. */
+function AreaInscritos({ label, tone, total, nuevas, reinsc, onTotal, onNuevas, onReinsc }: {
+  label: string;
+  tone: string;
+  total: number;
+  nuevas: number;
+  reinsc: number;
+  onTotal: () => void;
+  onNuevas: () => void;
+  onReinsc: () => void;
+}) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-lg px-2 py-1">
+      <button type="button" onClick={onTotal} className="w-full text-left hover:opacity-80 transition-opacity">
+        <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">{label}</p>
+        <p className={`text-lg font-black ${tone}`}>{total}</p>
+      </button>
+      <div className="grid grid-cols-2 gap-1 mt-1">
+        <button
+          type="button"
+          onClick={onNuevas}
+          title="Inscripciones nuevas: es la primera inscripción histórica del jugador"
+          className="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded px-1.5 py-0.5 text-left transition-all"
+        >
+          <p className="text-[7px] uppercase font-black text-emerald-300/80 tracking-wider leading-none">Nuevas</p>
+          <p className="text-sm font-black text-emerald-300 leading-tight">{nuevas}</p>
+        </button>
+        <button
+          type="button"
+          onClick={onReinsc}
+          title="Reinscripciones: el jugador ya tenía inscripción en una temporada anterior"
+          className="bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded px-1.5 py-0.5 text-left transition-all"
+        >
+          <p className="text-[7px] uppercase font-black text-amber-300/80 tracking-wider leading-none">Reinsc.</p>
+          <p className="text-sm font-black text-amber-300 leading-tight">{reinsc}</p>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function InscripcionesSedesPage() {
@@ -156,6 +202,11 @@ export default function InscripcionesSedesPage() {
   const inscritosFutsal = sumaPorTipo(0, s => s.InscritosFutsal);
   const inscritosClinicsFutsal = sumTodos(s => s.InscritosClinicsFutsal);
   const inscritosNormal = inscritosSedes - inscritosKeepers - inscritosFutsal - inscritosClinicsFutsal;
+  // Reinscritos por área (ya tenían inscripción antes); "nuevas" = inscritos - reinscritos.
+  const reinscritosKeepers = sumaPorTipo(0, s => s.ReinscritosKeepers);
+  const reinscritosFutsal = sumaPorTipo(0, s => s.ReinscritosFutsal);
+  const reinscritosClinicsFutsal = sumTodos(s => s.ReinscritosClinicsFutsal);
+  const reinscritosNormal = sumaPorTipo(0, s => s.Reinscritos) - reinscritosKeepers - reinscritosFutsal - reinscritosClinicsFutsal;
   // Base del avance: plantilla elegible (no-clinics, sin venta pública) = normal + keepers + futsal.
   const activosElegibles = activosSedes + activosKeepers + activosFutsal;
   // Bajas separando keepers, futsal y clinics futsal.
@@ -250,32 +301,36 @@ export default function InscripcionesSedesPage() {
                   <span className="text-[9px] text-slate-500 italic">incluye becados</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setModal({ title: 'Inscritos · Sedes', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'normal' })}
-                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
-                  >
-                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Sedes</p>
-                    <p className="text-lg font-black text-emerald-400">{inscritosNormal}</p>
-                  </button>
-                  <button
-                    type="button"
-                    title="Keepers/porteros inscritos con la regla de portero (una inscripción de cualquier temporada)"
-                    onClick={() => setModal({ title: 'Inscritos · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'keepers' })}
-                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
-                  >
-                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Keepers</p>
-                    <p className="text-lg font-black text-cyan-300">{inscritosKeepers}</p>
-                  </button>
-                  <button
-                    type="button"
-                    title="Inscritos de futsal (sede EsFutsal o categoría futsal)"
-                    onClick={() => setModal({ title: 'Inscritos · Futsal', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'futsal' })}
-                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
-                  >
-                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Futsal</p>
-                    <p className="text-lg font-black text-fuchsia-300">{inscritosFutsal}</p>
-                  </button>
+                  <AreaInscritos
+                    label="Sedes"
+                    tone="text-emerald-400"
+                    total={inscritosNormal}
+                    nuevas={inscritosNormal - reinscritosNormal}
+                    reinsc={reinscritosNormal}
+                    onTotal={() => setModal({ title: 'Inscritos · Sedes', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'normal' })}
+                    onNuevas={() => setModal({ title: 'Inscripciones Nuevas · Sedes', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'nueva' })}
+                    onReinsc={() => setModal({ title: 'Reinscripciones · Sedes', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'reinscripcion' })}
+                  />
+                  <AreaInscritos
+                    label="Keepers"
+                    tone="text-cyan-300"
+                    total={inscritosKeepers}
+                    nuevas={inscritosKeepers - reinscritosKeepers}
+                    reinsc={reinscritosKeepers}
+                    onTotal={() => setModal({ title: 'Inscritos · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'keepers' })}
+                    onNuevas={() => setModal({ title: 'Inscripciones Nuevas · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'nueva' })}
+                    onReinsc={() => setModal({ title: 'Reinscripciones · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'reinscripcion' })}
+                  />
+                  <AreaInscritos
+                    label="Futsal"
+                    tone="text-fuchsia-300"
+                    total={inscritosFutsal}
+                    nuevas={inscritosFutsal - reinscritosFutsal}
+                    reinsc={reinscritosFutsal}
+                    onTotal={() => setModal({ title: 'Inscritos · Futsal', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'futsal' })}
+                    onNuevas={() => setModal({ title: 'Inscripciones Nuevas · Futsal', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'nueva' })}
+                    onReinsc={() => setModal({ title: 'Reinscripciones · Futsal', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'reinscripcion' })}
+                  />
                 </div>
                 {/* Avance de inscripción sobre la plantilla elegible (normal + keepers + futsal). */}
                 <div className="mt-2">

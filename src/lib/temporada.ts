@@ -67,3 +67,27 @@ export const MENSUALIDADES_EN_TEMPORADA_SQL = `
           BETWEEN (YEAR(T.FechaInicio) * 100 + MONTH(T.FechaInicio))
               AND (YEAR(T.FechaFin) * 100 + MONTH(T.FechaFin))
 `;
+
+/**
+ * Jugadores con al menos un pago de INSCRIPCIÓN (IdTipoProducto = 2) en una temporada
+ * ANTERIOR a la seleccionada, comparando por FechaInicio. Sirve para distinguir:
+ *   - Reinscripción: el jugador YA tenía una inscripción en una temporada previa.
+ *   - Inscripción (nueva): esta es su primera inscripción histórica.
+ *
+ * Se compara por FechaInicio (no por IdTemporada) para no depender de que los ids sean
+ * monótonos con el tiempo. La inscripción "de esa" temporada se acota con IdTemporada,
+ * igual que el resto del módulo.
+ *
+ * Uso: `... IN (${INSCRIPCION_PREVIA_SQL})` con un parámetro posicional (el IdTemporada
+ * seleccionado).
+ */
+export const INSCRIPCION_PREVIA_SQL = `
+    SELECT DISTINCT A.IdJugador
+    FROM tblPagos A
+    INNER JOIN tblProductos B ON A.IdProducto = B.IdProducto
+    INNER JOIN tblTemporadas TP ON TP.IdTemporada = A.IdTemporada
+    INNER JOIN tblTemporadas TS ON TS.IdTemporada = ?
+    WHERE B.IdTipoProducto = ${TIPO_PRODUCTO_INSCRIPCION} AND A.Status = 0
+      AND A.IdJugador IS NOT NULL
+      AND TP.FechaInicio < TS.FechaInicio
+`;
