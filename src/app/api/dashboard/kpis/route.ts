@@ -1,27 +1,30 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 
+// FechaPago se guarda en hora LOCAL (sigue el reloj NOW() del servidor), así que NO se
+// convierte de zona horaria: se compara directamente contra NOW(). Convertirla duplicaba
+// el desfase de 6h y desplazaba pagos a un día distinto al capturado.
 function buildDateFilter(period: string, dateFrom: string | null, dateTo: string | null): { clause: string, isCustom: boolean } {
     // Custom range overrides period
     if (dateFrom && dateTo) {
         return {
-            clause: `DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) BETWEEN '${dateFrom}' AND '${dateTo}'`,
+            clause: `DATE(P.FechaPago) BETWEEN '${dateFrom}' AND '${dateTo}'`,
             isCustom: true
         };
     }
 
     switch (period) {
         case 'today':
-            return { clause: `DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = DATE(CONVERT_TZ(NOW(), '+00:00', '-06:00'))`, isCustom: false };
+            return { clause: `DATE(P.FechaPago) = DATE(NOW())`, isCustom: false };
         case 'yesterday':
-            return { clause: `DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = DATE(CONVERT_TZ(NOW() - INTERVAL 1 DAY, '+00:00', '-06:00'))`, isCustom: false };
+            return { clause: `DATE(P.FechaPago) = DATE(NOW() - INTERVAL 1 DAY)`, isCustom: false };
         case 'week':
-            return { clause: `YEARWEEK(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00'), 1) = YEARWEEK(CONVERT_TZ(NOW(), '+00:00', '-06:00'), 1)`, isCustom: false };
+            return { clause: `YEARWEEK(P.FechaPago, 1) = YEARWEEK(NOW(), 1)`, isCustom: false };
         case 'month':
         default:
             return {
-                clause: `YEAR(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = YEAR(CONVERT_TZ(NOW(), '+00:00', '-06:00'))
-                    AND MONTH(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = MONTH(CONVERT_TZ(NOW(), '+00:00', '-06:00'))`,
+                clause: `YEAR(P.FechaPago) = YEAR(NOW())
+                    AND MONTH(P.FechaPago) = MONTH(NOW())`,
                 isCustom: false
             };
     }
@@ -143,14 +146,14 @@ export async function GET(request: Request) {
         // ─── 30-day Timeline ──────────────────────────────────────
         const timelineQuery = `
             SELECT
-                DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) AS Fecha,
+                DATE(P.FechaPago) AS Fecha,
                 COUNT(DISTINCT P.IdPago)  AS Pagos,
                 COALESCE(SUM(P.Pago), 0) AS Total
             FROM tblPagos P
             WHERE P.Status = 0
-              AND CONVERT_TZ(P.FechaPago, '+00:00', '-06:00') >= CONVERT_TZ(NOW(), '+00:00', '-06:00') - INTERVAL 30 DAY
+              AND P.FechaPago >= NOW() - INTERVAL 30 DAY
               ${currentSeasonId ? 'AND P.IdTemporada = ?' : ''}
-            GROUP BY DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00'))
+            GROUP BY DATE(P.FechaPago)
             ORDER BY Fecha ASC
         `;
         const [timelineRows] = await pool.query(timelineQuery, kpiParams) as any[];

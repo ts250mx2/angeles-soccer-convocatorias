@@ -103,8 +103,10 @@ export interface AdeudoCounts {
     debe: number;
     /** Al corriente, EXCLUYENDO keepers/porteros y futsal. */
     alCorriente: number;
-    /** Keepers/porteros al corriente (inscritos y sin meses vencidos). */
+    /** Keepers/porteros activos (todos). */
     keepers: number;
+    /** Keepers/porteros CON adeudo (sin inscripción por regla única, o con meses vencidos). */
+    keepersDebe: number;
     /** Beca 100% sin pago de inscripción. */
     becadosSinInscripcion: number;
     /** Deben absolutamente todo: sin inscripción y sin un solo mes vencido pagado. */
@@ -255,11 +257,18 @@ export async function countsByGroup(
                       AND NOT ${ES_FUTSAL}
                       AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
                  THEN 1 ELSE 0 END) as AlCorriente,
-            -- Porteros/keepers: van TODOS a su propio grupo (no manejan mensualidad),
-            -- así que no aparecen en debe / al corriente / posibles bajas.
+            -- Porteros/keepers: van a su propio grupo (no aparecen en el "debe" normal
+            -- ni en "al corriente"). Keepers = todos; KeepersDebe = los que deben (sin
+            -- inscripción por la regla única, o con mensualidades vencidas). Al corriente
+            -- se deriva como Keepers - KeepersDebe.
             SUM(CASE WHEN J.Status = 0
                       AND ${ES_KEEPER_O_PORTERO}
                  THEN 1 ELSE 0 END) as Keepers,
+            SUM(CASE WHEN J.Status = 0
+                      AND ${ES_KEEPER_O_PORTERO}
+                      AND NOT ${ES_BECA_TOTAL}
+                      AND (NOT ${esInscritoExpr} OR (${faltantesExpr}) > 0)
+                 THEN 1 ELSE 0 END) as KeepersDebe,
             -- Futsal clasificado por cantidad de meses pagados en la temporada:
             SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) = 0 THEN 1 ELSE 0 END) as FutsalSinPagos,
             SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) = 1 THEN 1 ELSE 0 END) as Futsal1Mes,
@@ -311,12 +320,21 @@ export async function countsByGroup(
                AND (P.Anio * 100 + P.Mes) BETWEEN ? AND ?
              GROUP BY P.IdJugador
          ) MEN ON MEN.IdJugador = J.IdJugador
+         LEFT JOIN (
+             -- Temporada del PRIMER pago de cada jugador (para excluir a los nuevos:
+             -- quien solo tiene pagos de temporadas posteriores no existía en ésta).
+             SELECT IdJugador, MIN(IdTemporada) AS minTemp
+             FROM tblPagos WHERE Status = 0 GROUP BY IdJugador
+         ) PT ON PT.IdJugador = J.IdJugador
          ${promoJoin}
          WHERE ${SIN_CLINICS}
-           -- Los jugadores dados de alta en una temporada POSTERIOR (IdTemporadaActiva
-           -- mayor) no existían en ésta: no se les calcula su adeudo. Alta desconocida
-           -- (NULL) se trata como antigua (se incluye).
-           AND COALESCE(J.IdTemporadaActiva, 0) <= ${m.seasonId}
+           -- Un jugador entra al adeudo de la temporada solo si estuvo en ella o antes:
+           -- tiene algún pago en una temporada <= ésta, o (si nunca ha pagado) su alta
+           -- es <= ésta. Quien solo tiene pagos de temporadas POSTERIORES queda fuera.
+           AND (
+               (PT.minTemp IS NOT NULL AND PT.minTemp <= ${m.seasonId})
+               OR (PT.minTemp IS NULL AND COALESCE(J.IdTemporadaActiva, 0) <= ${m.seasonId})
+           )
            ${sedeClause}
          GROUP BY ${groupCol}`,
         params
@@ -328,6 +346,7 @@ export async function countsByGroup(
             debe: Number(r.Debe) || 0,
             alCorriente: Number(r.AlCorriente) || 0,
             keepers: Number(r.Keepers) || 0,
+            keepersDebe: Number(r.KeepersDebe) || 0,
             becadosSinInscripcion: Number(r.BecadosSinInscripcion) || 0,
             /* Sin meses vencidos la condición "debe todos los meses" se cumpliría
                de forma vacía, así que el corte solo aplica con temporada transcurrida. */
@@ -345,7 +364,7 @@ export async function countsByGroup(
 }
 
 export const SIN_ADEUDOS: AdeudoCounts = {
-    debe: 0, alCorriente: 0, keepers: 0, becadosSinInscripcion: 0,
+    debe: 0, alCorriente: 0, keepers: 0, keepersDebe: 0, becadosSinInscripcion: 0,
     posiblesBajas: 0, debeInscripcion: 0, debeMeses: [], clinicsFutsal: 0,
     futsalSinPagos: 0, futsal1Mes: 0, futsal2Meses: 0, futsal3Mas: 0,
 };

@@ -72,17 +72,17 @@ export async function GET(request: Request) {
         const EXCLUIDO_ADEUDOS =
             `(COALESCE(S.EsClinics, 0) = 1 OR ${ES_VENTA_PUBLICO} OR ${esClinicsFutsal('S')})`;
         const CORTES_DE_ADEUDO = [
-            'debe', 'futsal-debe', 'al-corriente', 'keepers', 'futsal-corriente',
+            'debe', 'futsal-debe', 'al-corriente', 'keepers', 'keepers-debe', 'keepers-corriente',
+            'futsal-corriente',
             'futsal-sin-pagos', 'futsal-1-mes', 'futsal-2-meses', 'futsal-3-mas',
             'pendiente-inscripcion', 'pendiente-mensualidad', 'debe-mes',
             'becado-sin-inscripcion', 'posible-baja',
         ];
         if (CORTES_DE_ADEUDO.includes(filtro)) {
             where.push(`NOT ${EXCLUIDO_ADEUDOS}`);
-            // Los jugadores dados de alta en una temporada POSTERIOR (IdTemporadaActiva
-            // mayor) no existían en ésta: quedan fuera de todo corte de adeudo. Alta
-            // desconocida (NULL) se trata como antigua (se incluye).
-            where.push(`COALESCE(J.IdTemporadaActiva, 0) <= ${seasonId}`);
+            // El recorte por temporada de alta (jugadores nuevos que no existían en ésta)
+            // se aplica en JS más abajo con `enScopeSeason`, usando el primer pago real
+            // del jugador (minTemp) y, en su defecto, IdTemporadaActiva.
         } else if (clinicsParam === '0') {
             where.push(`NOT ${EXCLUIDO_ADEUDOS}`);
         } else if (clinicsParam === '1') {
@@ -179,6 +179,7 @@ export async function GET(request: Request) {
                 J.Status,
                 J.Beca,
                 J.IdSede,
+                J.IdTemporadaActiva,
                 COALESCE(S.Sede, J.Sede) as SedeNombre,
                 -- Inscrito: inscripción de la temporada, regla keeper (KINS) o promoción.
                 CASE WHEN ${esYaInscrito} OR ${esPromo}
@@ -375,6 +376,14 @@ export async function GET(request: Request) {
                 case 'keepers':
                     // Todos los porteros/keepers van a su grupo (no manejan mensualidad).
                     return p.Status === 0 && !!p.EsKeeperOPortero;
+                // Porteros CON adeudo: sin inscripción (regla única) o con meses vencidos.
+                case 'keepers-debe':
+                    return p.Status === 0 && !!p.EsKeeperOPortero && !becado
+                        && (!p.InscripcionPagada || p.MissingCount > 0);
+                // Porteros al corriente: becado, o inscrito y sin meses vencidos.
+                case 'keepers-corriente':
+                    return p.Status === 0 && !!p.EsKeeperOPortero
+                        && (becado || (!!p.InscripcionPagada && p.MissingCount === 0));
                 case 'futsal-corriente':
                     return p.Status === 0 && !!p.InscripcionPagada
                         && !!p.EsFutsal && !p.EsKeeperOPortero
@@ -427,9 +436,32 @@ export async function GET(request: Request) {
             m.mesesExigibles > 0 && p.Status === 0 && !p.BecaTotal && !p.EsFutsal && !p.EsKeeperOPortero
             && !p.InscripcionPagada && p.PagosCount === 0;
         const CORTES_QUITAN_PB = ['debe', 'pendiente-inscripcion', 'pendiente-mensualidad', 'debe-mes'];
-        const base = (descartarPB && CORTES_QUITAN_PB.includes(filtro))
-            ? computed.filter((p) => !esPosibleBaja(p))
+
+        /* Recorte por temporada de alta (solo cortes de adeudo): el jugador cuyo PRIMER
+           pago real (minTemp) es de una temporada POSTERIOR a la consultada no existía en
+           ésta, así que aunque figure con "adeudo" en la anterior debe salir. Si nunca ha
+           pagado (minTemp NULL) se cae a IdTemporadaActiva. Debe coincidir con el filtro
+           equivalente de countsByGroup (la KPI). */
+        const minTempByJugador = new Map<number, number>();
+        try {
+            const [mtRows] = await pool.query(
+                `SELECT IdJugador, MIN(IdTemporada) AS minTemp
+                 FROM tblPagos WHERE Status = 0 GROUP BY IdJugador`
+            ) as any[];
+            for (const r of mtRows as any[]) minTempByJugador.set(Number(r.IdJugador), Number(r.minTemp));
+        } catch { /* si falla, no se recorta por temporada de alta */ }
+        const enScopeSeason = (p: any): boolean => {
+            const minT = minTempByJugador.get(Number(p.IdJugador));
+            if (minT != null && !isNaN(minT)) return minT <= seasonId;
+            return (Number(p.IdTemporadaActiva) || 0) <= seasonId;
+        };
+
+        const scoped = CORTES_DE_ADEUDO.includes(filtro)
+            ? computed.filter(enScopeSeason)
             : computed;
+        const base = (descartarPB && CORTES_QUITAN_PB.includes(filtro))
+            ? scoped.filter((p) => !esPosibleBaja(p))
+            : scoped;
         const data = base.filter(pasaFiltro);
         const totalAdeudo = data.reduce((s, p) => s + (Number(p.Adeudo) || 0), 0);
         const totalPagado = data.reduce((s, p) => s + (Number(p.Pagado) || 0), 0);

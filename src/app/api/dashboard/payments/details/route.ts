@@ -1,21 +1,24 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 
+// FechaPago se guarda en hora LOCAL (sigue el reloj NOW() del servidor); NO se convierte
+// de zona horaria: se compara directamente contra NOW(). Debe coincidir con el mismo
+// criterio en /api/dashboard/kpis para que el detalle cuadre con la KPI.
 function buildDateFilter(period: string, dateFrom: string | null, dateTo: string | null): string {
     if (dateFrom && dateTo) {
-        return `DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) BETWEEN '${dateFrom}' AND '${dateTo}'`;
+        return `DATE(P.FechaPago) BETWEEN '${dateFrom}' AND '${dateTo}'`;
     }
     switch (period) {
         case 'today':
-            return `DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = DATE(CONVERT_TZ(NOW(), '+00:00', '-06:00'))`;
+            return `DATE(P.FechaPago) = DATE(NOW())`;
         case 'yesterday':
-            return `DATE(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = DATE(CONVERT_TZ(NOW() - INTERVAL 1 DAY, '+00:00', '-06:00'))`;
+            return `DATE(P.FechaPago) = DATE(NOW() - INTERVAL 1 DAY)`;
         case 'week':
-            return `YEARWEEK(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00'), 1) = YEARWEEK(CONVERT_TZ(NOW(), '+00:00', '-06:00'), 1)`;
+            return `YEARWEEK(P.FechaPago, 1) = YEARWEEK(NOW(), 1)`;
         case 'month':
         default:
-            return `YEAR(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = YEAR(CONVERT_TZ(NOW(), '+00:00', '-06:00'))
-                AND MONTH(CONVERT_TZ(P.FechaPago, '+00:00', '-06:00')) = MONTH(CONVERT_TZ(NOW(), '+00:00', '-06:00'))`;
+            return `YEAR(P.FechaPago) = YEAR(NOW())
+                AND MONTH(P.FechaPago) = MONTH(NOW())`;
     }
 }
 
@@ -44,7 +47,9 @@ export async function GET(request: Request) {
             SELECT 
                 P.IdPago,
                 P.Pago,
-                P.FechaPago,
+                -- FechaPago ya está en hora LOCAL; se devuelve como ISO sin offset para
+                -- que el navegador la interprete como local (sin desfase de zona).
+                DATE_FORMAT(P.FechaPago, '%Y-%m-%dT%H:%i:%s') AS FechaPago,
                 P.Recibo,
                 J.IdJugador,
                 J.Jugador,

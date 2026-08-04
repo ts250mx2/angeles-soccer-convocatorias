@@ -36,6 +36,7 @@ interface SedeSummary {
   ActualDebe: number;
   ActualAlCorriente: number;
   ActualKeepers: number;
+  ActualKeepersDebe: number;
   ActualBecadosSinInscripcion: number;
   ActualDebeInscripcion: number;
   ActualDebeMeses: DebeMes[];
@@ -46,6 +47,7 @@ interface SedeSummary {
   AnteriorDebe: number;
   AnteriorAlCorriente: number;
   AnteriorKeepers: number;
+  AnteriorKeepersDebe: number;
   AnteriorBecadosSinInscripcion: number;
   AnteriorPosiblesBajas: number;
   AnteriorDebeInscripcion: number;
@@ -223,6 +225,7 @@ export default function AdeudosSedePage() {
   const totalActualDebe = sum(s => s.ActualDebe);
   const totalActualAlCorriente = sum(s => s.ActualAlCorriente);
   const totalActualKeepers = sum(s => s.ActualKeepers);
+  const totalActualKeepersDebe = sum(s => s.ActualKeepersDebe);
   const totalActualFutsalSinPagos = sum(s => s.ActualFutsalSinPagos);
   const totalActualFutsal1Mes = sum(s => s.ActualFutsal1Mes);
   const totalActualFutsal2Meses = sum(s => s.ActualFutsal2Meses);
@@ -231,6 +234,7 @@ export default function AdeudosSedePage() {
   const totalAnteriorDebe = sum(s => s.AnteriorDebe);
   const totalAnteriorAlCorriente = sum(s => s.AnteriorAlCorriente);
   const totalAnteriorKeepers = sum(s => s.AnteriorKeepers);
+  const totalAnteriorKeepersDebe = sum(s => s.AnteriorKeepersDebe);
   const totalAnteriorFutsalSinPagos = sum(s => s.AnteriorFutsalSinPagos);
   const totalAnteriorFutsal1Mes = sum(s => s.AnteriorFutsal1Mes);
   const totalAnteriorFutsal2Meses = sum(s => s.AnteriorFutsal2Meses);
@@ -336,6 +340,7 @@ export default function AdeudosSedePage() {
               debe={totalAnteriorDebe}
               alCorriente={totalAnteriorAlCorriente}
               keepers={totalAnteriorKeepers}
+              keepersDebe={totalAnteriorKeepersDebe}
               becadosSinInsc={totalAnteriorBecadosSinInsc}
               futsalSinPagos={totalAnteriorFutsalSinPagos}
               futsal1Mes={totalAnteriorFutsal1Mes}
@@ -344,7 +349,8 @@ export default function AdeudosSedePage() {
               disabled={!anterior}
               onDebe={() => setModal({ title: 'Con Adeudo · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'debe', ...scopeAnterior })}
               onAlCorriente={() => setModal({ title: 'Al Corriente · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'al-corriente', ...scopeAnterior })}
-              onKeepers={() => setModal({ title: 'Porteros · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'keepers', ...scopeAnterior })}
+              onKeepersDebe={() => setModal({ title: 'Porteros con Adeudo · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'keepers-debe', ...scopeAnterior })}
+              onKeepersCorriente={() => setModal({ title: 'Porteros al Corriente · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'keepers-corriente', ...scopeAnterior })}
               onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'becado-sin-inscripcion', ...scopeAnterior })}
               onFutsalSinPagos={() => setModal({ title: 'Futsal Sin Pagos · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'futsal-sin-pagos', ...scopeAnterior })}
               onFutsal1Mes={() => setModal({ title: 'Futsal 1 Mes · Temporada Anterior', subtitle: anterior?.temporadaNombre, filtro: 'futsal-1-mes', ...scopeAnterior })}
@@ -371,6 +377,7 @@ export default function AdeudosSedePage() {
               debe={totalActualDebe}
               alCorriente={totalActualAlCorriente}
               keepers={totalActualKeepers}
+              keepersDebe={totalActualKeepersDebe}
               becadosSinInsc={totalActualBecadosSinInsc}
               futsalSinPagos={totalActualFutsalSinPagos}
               futsal1Mes={totalActualFutsal1Mes}
@@ -378,7 +385,8 @@ export default function AdeudosSedePage() {
               futsal3Mas={totalActualFutsal3Mas}
               onDebe={() => setModal({ title: 'Con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'debe' })}
               onAlCorriente={() => setModal({ title: 'Al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'al-corriente' })}
-              onKeepers={() => setModal({ title: 'Porteros · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers' })}
+              onKeepersDebe={() => setModal({ title: 'Porteros con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers-debe' })}
+              onKeepersCorriente={() => setModal({ title: 'Porteros al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers-corriente' })}
               onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'becado-sin-inscripcion' })}
               onFutsalSinPagos={() => setModal({ title: 'Futsal Sin Pagos · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-sin-pagos' })}
               onFutsal1Mes={() => setModal({ title: 'Futsal 1 Mes · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-1-mes' })}
@@ -519,11 +527,11 @@ function KpiSplit({ label, icon, tone, segments }: {
 }
 
 /** KPI con cifras clicables: con adeudo, al corriente, porteros, becados y desglose futsal. */
-function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, becadosSinInsc, futsalSinPagos, futsal1Mes, futsal2Meses, futsal3Mas, onDebe, onAlCorriente, onKeepers, onBecados, onFutsalSinPagos, onFutsal1Mes, onFutsal2Meses, onFutsal3Mas, disabled, desglose, posiblesBajas, onPosiblesBajas, descartarPB, onToggleDescartar }: {
+function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, keepersDebe, becadosSinInsc, futsalSinPagos, futsal1Mes, futsal2Meses, futsal3Mas, onDebe, onAlCorriente, onKeepersDebe, onKeepersCorriente, onBecados, onFutsalSinPagos, onFutsal1Mes, onFutsal2Meses, onFutsal3Mas, disabled, desglose, posiblesBajas, onPosiblesBajas, descartarPB, onToggleDescartar }: {
   label: string; caption: string; icon: React.ReactNode; tone: string;
-  debe: number; alCorriente: number; keepers: number; becadosSinInsc: number;
+  debe: number; alCorriente: number; keepers: number; keepersDebe: number; becadosSinInsc: number;
   futsalSinPagos: number; futsal1Mes: number; futsal2Meses: number; futsal3Mas: number;
-  onDebe: () => void; onAlCorriente: () => void; onKeepers: () => void; onBecados: () => void;
+  onDebe: () => void; onAlCorriente: () => void; onKeepersDebe: () => void; onKeepersCorriente: () => void; onBecados: () => void;
   onFutsalSinPagos: () => void; onFutsal1Mes: () => void; onFutsal2Meses: () => void; onFutsal3Mas: () => void;
   disabled?: boolean; desglose?: React.ReactNode;
   /** Solo se muestra si se provee (temporadas ya transcurridas). */
@@ -568,16 +576,28 @@ function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, becad
             <p className="text-[8px] uppercase font-black text-teal-400/80 tracking-wider">Al corriente</p>
             <p className="text-lg font-black text-teal-400">{alCorriente}</p>
           </button>
-          <button
-            type="button"
-            onClick={onKeepers}
-            disabled={disabled}
-            title="Keepers y porteros al corriente: cuentan como inscritos con la regla de portero (una inscripción vale para todas las temporadas)"
-            className="w-full bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/20 rounded-xl px-2 py-1.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <p className="text-[8px] uppercase font-black text-cyan-300/80 tracking-wider">Porteros</p>
-            <p className="text-lg font-black text-cyan-300">{keepers}</p>
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onKeepersDebe}
+              disabled={disabled}
+              title="Porteros con adeudo: sin inscripción (regla de portero) o con meses vencidos"
+              className="bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/20 rounded-xl px-2 py-1.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <p className="text-[8px] uppercase font-black text-rose-400/80 tracking-wider leading-tight">Porteros c/adeudo</p>
+              <p className="text-lg font-black text-rose-400">{keepersDebe}</p>
+            </button>
+            <button
+              type="button"
+              onClick={onKeepersCorriente}
+              disabled={disabled}
+              title="Porteros al corriente: inscritos (regla de portero) y sin meses vencidos"
+              className="bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/20 rounded-xl px-2 py-1.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <p className="text-[8px] uppercase font-black text-cyan-300/80 tracking-wider leading-tight">Porteros al corr.</p>
+              <p className="text-lg font-black text-cyan-300">{keepers - keepersDebe}</p>
+            </button>
+          </div>
           <button
             type="button"
             onClick={onBecados}
@@ -774,16 +794,28 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
               <p className="text-[8px] uppercase font-black text-teal-400/70 tracking-wider">Al corriente</p>
               <p className="text-sm font-black text-teal-400">{sede.AnteriorAlCorriente}</p>
             </button>
-            <button
-              type="button"
-              disabled={!anterior}
-              title="Keepers/porteros al corriente (regla de portero)"
-              onClick={() => open({ ...base, ...scopeAnterior, title: 'Porteros · Temporada Anterior', filtro: 'keepers', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
-              className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
-            >
-              <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>
-              <p className="text-sm font-black text-cyan-300">{sede.AnteriorKeepers}</p>
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={!anterior}
+                title="Porteros con adeudo: sin inscripción (regla de portero) o con meses vencidos"
+                onClick={() => open({ ...base, ...scopeAnterior, title: 'Porteros con Adeudo · Temporada Anterior', filtro: 'keepers-debe', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+                className={`w-full ${miniBtn} bg-rose-500/5 border-rose-500/10 hover:bg-rose-500/15`}
+              >
+                <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider leading-tight">Porteros c/adeudo</p>
+                <p className="text-sm font-black text-rose-400">{sede.AnteriorKeepersDebe}</p>
+              </button>
+              <button
+                type="button"
+                disabled={!anterior}
+                title="Porteros al corriente: inscritos (regla de portero) y sin meses vencidos"
+                onClick={() => open({ ...base, ...scopeAnterior, title: 'Porteros al Corriente · Temporada Anterior', filtro: 'keepers-corriente', subtitle: [sede.Sede, anterior?.temporadaNombre].filter(Boolean).join(' · ') })}
+                className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
+              >
+                <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider leading-tight">Porteros al corr.</p>
+                <p className="text-sm font-black text-cyan-300">{sede.AnteriorKeepers - sede.AnteriorKeepersDebe}</p>
+              </button>
+            </div>
             <button
               type="button"
               disabled={!anterior}
@@ -887,15 +919,26 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
               <p className="text-[8px] uppercase font-black text-teal-400/70 tracking-wider">Al corriente</p>
               <p className="text-sm font-black text-teal-400">{sede.ActualAlCorriente}</p>
             </button>
-            <button
-              type="button"
-              title="Keepers/porteros al corriente (regla de portero)"
-              onClick={() => open({ ...base, title: 'Porteros · Esta Temporada', filtro: 'keepers', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
-              className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
-            >
-              <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider">Porteros</p>
-              <p className="text-sm font-black text-cyan-300">{sede.ActualKeepers}</p>
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                title="Porteros con adeudo: sin inscripción (regla de portero) o con meses vencidos"
+                onClick={() => open({ ...base, title: 'Porteros con Adeudo · Esta Temporada', filtro: 'keepers-debe', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                className={`w-full ${miniBtn} bg-rose-500/5 border-rose-500/10 hover:bg-rose-500/15`}
+              >
+                <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider leading-tight">Porteros c/adeudo</p>
+                <p className="text-sm font-black text-rose-400">{sede.ActualKeepersDebe}</p>
+              </button>
+              <button
+                type="button"
+                title="Porteros al corriente: inscritos (regla de portero) y sin meses vencidos"
+                onClick={() => open({ ...base, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers-corriente', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
+              >
+                <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider leading-tight">Porteros al corr.</p>
+                <p className="text-sm font-black text-cyan-300">{sede.ActualKeepers - sede.ActualKeepersDebe}</p>
+              </button>
+            </div>
             <button
               type="button"
               title="Beca 100% sin pago de inscripción"

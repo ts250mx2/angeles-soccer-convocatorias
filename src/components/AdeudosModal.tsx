@@ -13,7 +13,7 @@ import {
 
 export type AdeudosFilter =
   | "activos" | "bajas" | "pendiente-inscripcion" | "pendiente-mensualidad"
-  | "al-corriente" | "keepers" | "futsal-corriente" | "becado-sin-inscripcion" | "posible-baja" | "debe" | "futsal-debe"
+  | "al-corriente" | "keepers" | "keepers-debe" | "keepers-corriente" | "futsal-corriente" | "becado-sin-inscripcion" | "posible-baja" | "debe" | "futsal-debe"
   | "futsal-sin-pagos" | "futsal-1-mes" | "futsal-2-meses" | "futsal-3-mas" | "debe-mes" | "todos";
 
 export interface AdeudosModalConfig {
@@ -45,6 +45,8 @@ const ACCENT: Record<AdeudosFilter, string> = {
   "pendiente-mensualidad": "bg-orange-500",
   "al-corriente": "bg-teal-500",
   keepers: "bg-cyan-500",
+  "keepers-debe": "bg-rose-500",
+  "keepers-corriente": "bg-cyan-500",
   "futsal-corriente": "bg-fuchsia-500",
   "becado-sin-inscripcion": "bg-purple-500",
   "posible-baja": "bg-red-600",
