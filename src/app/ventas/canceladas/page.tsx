@@ -4,9 +4,13 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import ExcelJS from "exceljs";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   Ban, Search, RefreshCw, Calendar, X,
   Wallet, CreditCard, Receipt, MapPin, TrendingDown, Layers,
+  FileSpreadsheet, FileText,
 } from "lucide-react";
 
 type Period = "today" | "yesterday" | "week" | "month" | "all";
@@ -37,6 +41,19 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n);
 const fmt0 = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n || 0);
+const fmtFechaHora = (v: string) => {
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return String(v ?? "");
+  return d.toLocaleString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+};
+
+const PERIOD_LABELS: Record<Period, string> = {
+  today: "Hoy",
+  yesterday: "Ayer",
+  week: "Esta Semana",
+  month: "Este Mes",
+  all: "Rango personalizado",
+};
 
 export default function VentasCanceladasPage() {
   const router = useRouter();
@@ -57,6 +74,7 @@ export default function VentasCanceladasPage() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [pendingFrom, setPendingFrom] = useState("");
   const [pendingTo, setPendingTo] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   // Redirect non-admins
   useEffect(() => {
@@ -131,6 +149,80 @@ export default function VentasCanceladasPage() {
   const totalTarjeta = sales.filter(s => s.FormaPago === "TARJETA").reduce((acc, s) => acc + s.Total, 0);
   const totalTransferencia = sales.filter(s => s.FormaPago === "TRANSFERENCIA").reduce((acc, s) => acc + s.Total, 0);
 
+  // ── Exportación ──
+  const sedeLabel = selectedSedeFilter === ""
+    ? "Todas las sedes"
+    : (sedes.find(s => String(s.IdSede) === selectedSedeFilter)?.Sede ?? "Sede");
+  const rangoLabel = period === "all" && dateFrom && dateTo
+    ? `${dateFrom} a ${dateTo}`
+    : PERIOD_LABELS[period];
+  const fileSuffix = period === "all" && dateFrom && dateTo ? `${dateFrom}_${dateTo}` : period;
+  const reciboRef = (s: SaleCancelada) => (s.Recibo ? `Recibo: ${s.Recibo}` : s.Referencia ? `Ref: ${s.Referencia}` : "—");
+
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Ventas canceladas");
+      ws.getCell("A1").value = `Ventas canceladas — ${sedeLabel} (${rangoLabel})`;
+      ws.getCell("A1").font = { bold: true, size: 14, color: { argb: "FF7F1D1D" } };
+      ws.columns = [
+        { key: "fecha", width: 18 },
+        { key: "comprador", width: 32 },
+        { key: "concepto", width: 34 },
+        { key: "sede", width: 20 },
+        { key: "forma", width: 16 },
+        { key: "recibo", width: 18 },
+        { key: "total", width: 14, style: { numFmt: '"$"#,##0.00' } },
+      ];
+      const header = ws.getRow(3);
+      header.values = ["Fecha", "Comprador", "Concepto / Producto", "Sede", "Forma de pago", "Folio / Recibo", "Total"];
+      header.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      header.eachCell((c) => {
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF991B1B" } };
+        c.alignment = { horizontal: "center" };
+      });
+      sales.forEach((s) => {
+        ws.addRow([fmtFechaHora(s.FechaVenta), s.Jugador, s.ConceptoVenta, s.Sede || "—", s.FormaPago, reciboRef(s), s.Total]);
+      });
+      const tot = ws.addRow([`TOTAL (${sales.length} cancelaciones)`, "", "", "", "", "", totalCancelado]);
+      tot.font = { bold: true, color: { argb: "FF7F1D1D" } };
+      const buffer = await wb.xlsx.writeBuffer();
+      triggerDownload(
+        new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `Ventas_canceladas_${fileSuffix}.xlsx`
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportPdf = () => {
+    setExporting(true);
+    try {
+      const doc = new jsPDF();
+      doc.setFontSize(14);
+      doc.text("Ventas canceladas", 14, 16);
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(`${sedeLabel} · ${rangoLabel}`, 14, 22);
+      autoTable(doc, {
+        startY: 27,
+        head: [["Fecha", "Comprador", "Concepto / Producto", "Sede", "Forma", "Folio / Recibo", "Total"]],
+        body: sales.map((s) => [fmtFechaHora(s.FechaVenta), s.Jugador, s.ConceptoVenta, s.Sede || "—", s.FormaPago, reciboRef(s), fmt(s.Total)]),
+        foot: [[`TOTAL (${sales.length} cancelaciones)`, "", "", "", "", "", fmt(totalCancelado)]],
+        styles: { fontSize: 7 },
+        headStyles: { fillColor: [153, 27, 27], fontSize: 7 },
+        footStyles: { fillColor: [69, 10, 10], textColor: 255, fontStyle: "bold" },
+        columnStyles: { 6: { halign: "right" } },
+        margin: { left: 14, right: 14 },
+      });
+      doc.save(`Ventas_canceladas_${fileSuffix}.pdf`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <DashboardLayout>
       <main className="overflow-y-auto flex-1 text-white">
@@ -152,12 +244,13 @@ export default function VentasCanceladasPage() {
                 Act. {lastUpdated.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
+            <ExportGroup label="Exportar" disabled={isLoading || sales.length === 0 || exporting} onExcel={exportExcel} onPdf={exportPdf} />
             <button
               onClick={fetchSales}
               disabled={isLoading}
               className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white transition-all"
             >
-              <RefreshCw size={15} className={isLoading ? "animate-spin" : ""} />
+              <RefreshCw size={15} className={isLoading || exporting ? "animate-spin" : ""} />
             </button>
           </div>
         </div>
@@ -378,5 +471,29 @@ export default function VentasCanceladasPage() {
 
       </main>
     </DashboardLayout>
+  );
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Grupo de exportación: etiqueta + botón Excel + botón PDF.
+function ExportGroup({ label, disabled, onExcel, onPdf }: { label: string; disabled?: boolean; onExcel: () => void; onPdf: () => void }) {
+  return (
+    <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl pl-2.5 pr-1 py-1">
+      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 hidden sm:inline">{label}</span>
+      <button onClick={onExcel} disabled={disabled} title={`${label}: Excel`}
+        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-200 text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+        <FileSpreadsheet size={13} /> Excel
+      </button>
+      <button onClick={onPdf} disabled={disabled} title={`${label}: PDF`}
+        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-200 text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+        <FileText size={13} /> PDF
+      </button>
+    </div>
   );
 }
