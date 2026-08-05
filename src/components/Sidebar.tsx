@@ -27,6 +27,7 @@ import {
   CalendarDays,
   QrCode,
   Bot,
+  Ban,
 } from "lucide-react";
 
 interface NavItem {
@@ -140,6 +141,11 @@ export default function Sidebar() {
           label: "Ventas por Día",
           href: "/ventas/por-dia",
           icon: <CalendarDays size={16} />,
+        },
+        {
+          label: "Ventas Canceladas",
+          href: "/ventas/canceladas",
+          icon: <Ban size={16} />,
         },
         {
           label: "Cortes de Caja",
