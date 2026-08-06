@@ -60,9 +60,14 @@ export async function GET(request: Request) {
 
         // La promo mira la temporada siguiente: para 'actual' es 'siguiente'; para
         // 'anterior' la siguiente es justamente 'actual'.
-        const actualCounts = await countsByGroup(actual, 'sede', null, siguiente);
+        // Esta temporada: solo los inscritos generan adeudo (mensualidades). Los no
+        // inscritos salen del cálculo y se reportan en "Sin inscripción".
+        const actualCounts = await countsByGroup(actual, 'sede', null, { siguiente, soloInscritos: true });
         const anteriorCounts = anterior
-            ? await countsByGroup(anterior, 'sede', null, actual, descartarPBAnterior)
+            ? await countsByGroup(anterior, 'sede', null, {
+                  siguiente: actual,
+                  excluirPosiblesBajas: descartarPBAnterior,
+              })
             : null;
 
         const data = (baseRows as any[]).map((r: any) => {
@@ -91,6 +96,7 @@ export async function GET(request: Request) {
                 ActualKeepersDebe: a.keepersDebe,
                 ActualBecadosSinInscripcion: a.becadosSinInscripcion,
                 ActualDebeInscripcion: a.debeInscripcion,
+                ActualSinInscripcion: a.sinInscripcion,
                 ActualDebeMeses: a.debeMeses,
                 ActualFutsalSinPagos: a.futsalSinPagos,
                 ActualFutsal1Mes: a.futsal1Mes,

@@ -32,6 +32,7 @@ interface SedeRow {
     ActualKeepers: number;
     ActualBecadosSinInscripcion: number;
     ActualDebeInscripcion: number;
+    ActualSinInscripcion?: number;
     ActualDebeMeses?: DebeMes[];
     ActualFutsalSinPagos?: number;
     ActualFutsal1Mes?: number;
@@ -102,7 +103,7 @@ function construirDatos(sedes: SedeRow[], actualNombre: string, anteriorNombre: 
     const actAlCorriente = total(sedes, (s) => s.ActualAlCorriente);
     const actKeepers = total(sedes, (s) => s.ActualKeepers);
     const actBecados = total(sedes, (s) => s.ActualBecadosSinInscripcion);
-    const actInsc = total(sedes, (s) => s.ActualDebeInscripcion);
+    const actSinInsc = total(sedes, (s) => s.ActualSinInscripcion);
     const actMeses = totalMeses(sedes, (s) => s.ActualDebeMeses);
 
     const actFutsalSinPagos = total(sedes, (s) => s.ActualFutsalSinPagos);
@@ -136,8 +137,10 @@ function construirDatos(sedes: SedeRow[], actualNombre: string, anteriorNombre: 
     lineas.push('');
 
     lineas.push(`## Adeudos — Esta temporada (${actualNombre})`);
-    lineas.push(`- Con adeudo (sedes): ${actDebe}`);
-    lineas.push(`- Desglose de lo adeudado: ${desgloseTexto(actInsc, actMeses)}`);
+    lineas.push('- Nota: en la temporada en curso solo los jugadores YA INSCRITOS generan adeudo, y únicamente de mensualidades. Los no inscritos no cuentan como deuda: se reportan aparte en "Sin inscripción".');
+    lineas.push(`- Con adeudo (sedes, solo mensualidades): ${actDebe}`);
+    lineas.push(`- Desglose de lo adeudado: ${desgloseTexto(0, actMeses)}`);
+    lineas.push(`- Sin inscripción (activos que aún no se inscriben): ${actSinInsc}`);
     lineas.push(`- Al corriente (sedes): ${actAlCorriente}`);
     lineas.push(`- Porteros al corriente: ${actKeepers}`);
     lineas.push(`- Futsal (meses pagados): Sin pagos: ${actFutsalSinPagos}, 1 mes: ${actFutsal1Mes}, 2 meses: ${actFutsal2Meses}, 3+: ${actFutsal3Mas}`);
@@ -165,7 +168,8 @@ function construirDatos(sedes: SedeRow[], actualNombre: string, anteriorNombre: 
 const SYSTEM_PROMPT = `Eres un analista financiero y de operaciones experto de Ángeles Soccer, una academia de futbol con varias sedes/campus. Tu trabajo es analizar los adeudos (cuotas de inscripción y mensualidades) de los jugadores para apoyar la cobranza, la retención y la toma de decisiones de dirección.
 
 Glosario de conceptos que recibirás:
-- "Con adeudo": jugadores activos que deben la inscripción y/o una o más mensualidades ya vencidas.
+- "Con adeudo": jugadores activos que deben una o más mensualidades ya vencidas y/o la inscripción. En la TEMPORADA ANTERIOR incluye la inscripción; en la TEMPORADA EN CURSO solo cuentan los ya inscritos y solo por mensualidades.
+- "Sin inscripción" (solo temporada en curso): jugadores activos que aún no se inscriben. No generan adeudo todavía, pero son riesgo de no continuidad y la prioridad comercial más clara.
 - "Al corriente": jugadores activos que están al día (no incluye keepers/porteros ni futsal, que se reportan aparte).
 - "Porteros al corriente" (keepers): tienen una regla especial: una sola inscripción de portero vale para todas las temporadas.
 - "Futsal": cuenta dentro de los adeudos igual que una sede normal, pero se reporta por separado.

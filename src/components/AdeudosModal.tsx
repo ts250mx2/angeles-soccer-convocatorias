@@ -36,6 +36,9 @@ export interface AdeudosModalConfig {
   temporadaNombre?: string;
   /** Descartar posibles bajas: los excluye de todos los cortes de esta temporada. */
   descartarPB?: boolean;
+  /** Regla de la temporada en curso: solo los inscritos generan adeudo (los no
+   *  inscritos salen del "Con adeudo" y su monto queda en 0). */
+  soloInscritos?: boolean;
 }
 
 const ACCENT: Record<AdeudosFilter, string> = {
@@ -119,6 +122,7 @@ export default function AdeudosModal({
     if (config.clinics !== undefined) params.set("clinics", String(config.clinics));
     if (config.grupo) params.set("grupo", config.grupo);
     if (config.descartarPB) params.set("descartarPB", "1");
+    if (config.soloInscritos) params.set("soloInscritos", "1");
     if (temporadaEfectiva) params.set("temporadaId", String(temporadaEfectiva));
 
     (async () => {

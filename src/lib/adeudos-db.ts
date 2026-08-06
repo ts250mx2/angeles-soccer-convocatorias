@@ -111,8 +111,14 @@ export interface AdeudoCounts {
     becadosSinInscripcion: number;
     /** Deben absolutamente todo: sin inscripción y sin un solo mes vencido pagado. */
     posiblesBajas: number;
-    /** Activos sin pago de inscripción en la temporada. */
+    /** Activos sin pago de inscripción en la temporada. Con `soloInscritos` vale 0. */
     debeInscripcion: number;
+    /**
+     * Activos del grupo normal (sin futsal, porteros ni beca 100%) que no se han
+     * inscrito en la temporada. Con `soloInscritos` son justamente los que quedan
+     * fuera del cálculo de adeudo.
+     */
+    sinInscripcion: number;
     /** Por cada mes ya vencido, cuántos activos no lo han pagado. */
     debeMeses: { mes: number; cantidad: number }[];
     /** Clinics Futsal activos: sede futsal + categoría CLINICS (excluidos de adeudo). */
@@ -127,6 +133,19 @@ export interface AdeudoCounts {
     futsal3Mas: number;
 }
 
+export interface CountsByGroupOptions {
+    /** Temporada inmediata siguiente: habilita la promoción de inscripción. */
+    siguiente?: SeasonMonths | null;
+    /** Descarta los posibles bajas del "Con adeudo" y de su desglose. */
+    excluirPosiblesBajas?: boolean;
+    /**
+     * Regla de la temporada en curso: solo los INSCRITOS generan adeudo. Quien no
+     * pagó la inscripción de la temporada sale del cálculo por completo (no debe
+     * inscripción ni mensualidades) y se reporta aparte en `sinInscripcion`.
+     */
+    soloInscritos?: boolean;
+}
+
 /**
  * Cuenta, para una temporada, cuántos jugadores activos deben algo (inscripción o
  * un mes ya vencido) y cuántos van al corriente, agrupado por sede o por categoría.
@@ -138,8 +157,7 @@ export async function countsByGroup(
     m: SeasonMonths,
     groupBy: 'sede' | 'categoria',
     sedeId?: number | null,
-    siguiente?: SeasonMonths | null,
-    excluirPosiblesBajas?: boolean,
+    { siguiente, excluirPosiblesBajas, soloInscritos }: CountsByGroupOptions = {},
 ): Promise<Map<string | number, AdeudoCounts>> {
     const groupCol = groupBy === 'sede' ? 'J.IdSede' : 'J.Categoria';
     const sedeClause = sedeId ? 'AND J.IdSede = ?' : '';
@@ -220,6 +238,14 @@ export async function countsByGroup(
         ? `AND NOT ${posibleBajaExpr}`
         : '';
 
+    /* Con `soloInscritos` el adeudo se limita a los inscritos de la temporada: los no
+       inscritos no arrastran mensualidades (ni la inscripción, que deja de ser adeudo)
+       y se contabilizan aparte en SinInscripcion. */
+    const soloInscritosClause = soloInscritos ? `AND ${esInscritoExpr}` : '';
+    const debeExpr = soloInscritos
+        ? `${esInscritoExpr} AND (${faltantesExpr}) > 0`
+        : `(NOT ${esInscritoExpr} OR (${faltantesExpr}) > 0)`;
+
     // El desglose por mes es del "Con adeudo" normal, que excluye futsal y porteros.
     const conteosPorMes = meses
         .map((mes) => `SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
@@ -228,6 +254,7 @@ export async function countsByGroup(
                                  AND ${mes} >= ${mesIniExpr}
                                  AND ${mes} <= ${mesFinExpr}
                                  AND COALESCE(MEN.M${mes}, 0) = 0
+                                 ${soloInscritosClause}
                                  ${excluirPBClause}
                             THEN 1 ELSE 0 END) as Debe${mes}`)
         .join(', ');
@@ -247,7 +274,7 @@ export async function countsByGroup(
                       AND NOT ${ES_BECA_TOTAL}
                       AND NOT ${ES_FUTSAL}
                       AND NOT ${ES_KEEPER_O_PORTERO}
-                      AND (NOT ${esInscritoExpr} OR (${faltantesExpr}) > 0)
+                      AND ${debeExpr}
                       ${excluirPBClause}
                  THEN 1 ELSE 0 END) as Debe,
             -- Al corriente exige estar inscrito; futsal y porteros van por separado.
@@ -283,11 +310,19 @@ export async function countsByGroup(
                       AND NOT ${esInscritoExpr}
                       AND COALESCE(MEN.PagosCount, 0) = 0
                  THEN 1 ELSE 0 END) as PosiblesBajas,
-            -- Deben inscripción del "Con adeudo" normal (sin futsal ni porteros).
-            SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
+            -- Deben inscripción del "Con adeudo" normal (sin futsal ni porteros). Con
+            -- soloInscritos la inscripción deja de ser un adeudo: siempre 0.
+            ${soloInscritos
+                ? '0'
+                : `SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
                       AND NOT ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND NOT ${esInscritoExpr}
                       ${excluirPBClause}
-                 THEN 1 ELSE 0 END) as DebeInscripcion
+                 THEN 1 ELSE 0 END)`} as DebeInscripcion,
+            -- Sin inscripción: activos del grupo normal que no se inscribieron en la
+            -- temporada. Con soloInscritos son los que quedan fuera del adeudo.
+            SUM(CASE WHEN J.Status = 0 AND NOT ${ES_BECA_TOTAL}
+                      AND NOT ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND NOT ${esInscritoExpr}
+                 THEN 1 ELSE 0 END) as SinInscripcion
             ${conteosPorMes ? ', ' + conteosPorMes : ''}
          FROM tblJugadores J
          LEFT JOIN tblSedes SD ON SD.IdSede = J.IdSede
@@ -352,6 +387,7 @@ export async function countsByGroup(
                de forma vacía, así que el corte solo aplica con temporada transcurrida. */
             posiblesBajas: m.mesesExigibles > 0 ? Number(r.PosiblesBajas) || 0 : 0,
             debeInscripcion: Number(r.DebeInscripcion) || 0,
+            sinInscripcion: Number(r.SinInscripcion) || 0,
             debeMeses: meses.map((mes) => ({ mes, cantidad: Number(r[`Debe${mes}`]) || 0 })),
             clinicsFutsal: 0,
             futsalSinPagos: Number(r.FutsalSinPagos) || 0,
@@ -365,6 +401,6 @@ export async function countsByGroup(
 
 export const SIN_ADEUDOS: AdeudoCounts = {
     debe: 0, alCorriente: 0, keepers: 0, keepersDebe: 0, becadosSinInscripcion: 0,
-    posiblesBajas: 0, debeInscripcion: 0, debeMeses: [], clinicsFutsal: 0,
+    posiblesBajas: 0, debeInscripcion: 0, sinInscripcion: 0, debeMeses: [], clinicsFutsal: 0,
     futsalSinPagos: 0, futsal1Mes: 0, futsal2Meses: 0, futsal3Mas: 0,
 };

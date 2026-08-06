@@ -14,7 +14,8 @@ const MAX_ROWS = 6000;
  * filtro (empata con los conteos de las tarjetas de sede/categoría):
  *   activos                Status 0
  *   bajas                  Status 2
- *   pendiente-inscripcion  Status 0 y sin pago de inscripción
+ *   pendiente-inscripcion  Status 0 y sin pago de inscripción (es también el corte
+ *                          "Sin inscripción" de la temporada en curso)
  *   pendiente-mensualidad  Status 0 y le falta al menos un mes ya vencido
  *   al-corriente           Status 0, con inscripción y sin meses vencidos por pagar
  *   becado-sin-inscripcion Status 0, beca 100% y sin pago de inscripción
@@ -39,6 +40,11 @@ export async function GET(request: Request) {
         const clinicsParam = searchParams.get('clinics');
         // Descartar (temporal) los posibles bajas: se excluyen de todos los cortes.
         const descartarPB = searchParams.get('descartarPB') === '1';
+        /* Regla de la temporada en curso: solo los inscritos generan adeudo. El no
+           inscrito del grupo normal sale del "Con adeudo" (y del desglose por mes) y
+           su monto queda en 0; se le consulta con el corte 'pendiente-inscripcion'
+           ("Sin inscripción"). Debe coincidir con countsByGroup({ soloInscritos }). */
+        const soloInscritos = searchParams.get('soloInscritos') === '1';
 
         /* Los KPIs globales consultan sin sede ni categoría, acotando solo por
            temporada. Se exige al menos uno de los tres para no devolver la tabla
@@ -322,8 +328,13 @@ export async function GET(request: Request) {
             const becaPct = isNaN(becaNum) ? 0 : Math.max(0, Math.min(100, becaNum));
             const monthly = monthlyBySede[p.IdSede] ?? generalMonthly;
 
+            /* Con soloInscritos, el no inscrito del grupo normal está fuera del cálculo
+               de adeudo de la temporada: ni inscripción ni mensualidades. Los porteros
+               conservan su regla (cualquier inscripción previa cuenta). */
+            const fueraPorSinInscripcion = soloInscritos && !p.InscripcionPagada && !p.EsKeeperOPortero;
+
             let adeudo = 0;
-            if (p.Status === 0 && becaPct < 100 && !p.EsFutsal) {
+            if (p.Status === 0 && becaPct < 100 && !p.EsFutsal && !fueraPorSinInscripcion) {
                 const inscDebt = p.InscripcionPagada ? 0 : inscriptionFee;
                 adeudo = missing * monthly * (1 - becaPct / 100) + inscDebt;
             }
@@ -405,10 +416,13 @@ export async function GET(request: Request) {
                         && p.Status === 0 && !becado && !p.EsFutsal && !p.EsKeeperOPortero
                         && !p.InscripcionPagada
                         && p.PagosCount === 0;
-                // Con adeudo normal: excluye futsal y porteros (van en su propio corte).
+                /* Con adeudo normal: excluye futsal y porteros (van en su propio corte).
+                   Con soloInscritos exige estar inscrito: el adeudo es solo de meses. */
                 case 'debe':
                     return p.Status === 0 && !becado && !p.EsFutsal && !p.EsKeeperOPortero
-                        && (!p.InscripcionPagada || p.MissingCount > 0);
+                        && (soloInscritos
+                            ? (!!p.InscripcionPagada && p.MissingCount > 0)
+                            : (!p.InscripcionPagada || p.MissingCount > 0));
                 // Futsal con adeudo (no keeper).
                 case 'futsal-debe':
                     return p.Status === 0 && !becado && !!p.EsFutsal && !p.EsKeeperOPortero
@@ -418,6 +432,7 @@ export async function GET(request: Request) {
                     // entonces (el mes es igual o posterior a su mes de inscripción).
                     if (mesFiltro === null || isNaN(mesFiltro)) return false;
                     if (p.Status !== 0 || becado || p.EsFutsal || p.EsKeeperOPortero) return false;
+                    if (soloInscritos && !p.InscripcionPagada) return false;
                     if (mesFiltro < p.MesInicio || mesFiltro > p.CapEnd) return false;
                     const pagados = String(p.MesesPagados || '')
                         .split(',').map((x: string) => parseInt(x.trim())).filter((x: number) => !isNaN(x));

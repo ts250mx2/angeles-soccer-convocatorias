@@ -41,9 +41,13 @@ export async function GET(request: Request) {
             baseParams
         ) as any[];
 
-        const actualCounts = await countsByGroup(actual, 'categoria', sedeId, siguiente);
+        // Esta temporada: solo los inscritos generan adeudo (igual que /api/adeudos/sedes).
+        const actualCounts = await countsByGroup(actual, 'categoria', sedeId, { siguiente, soloInscritos: true });
         const anteriorCounts = anterior
-            ? await countsByGroup(anterior, 'categoria', sedeId, actual, descartarPBAnterior)
+            ? await countsByGroup(anterior, 'categoria', sedeId, {
+                  siguiente: actual,
+                  excluirPosiblesBajas: descartarPBAnterior,
+              })
             : null;
 
         const data = (baseRows as any[]).map((r: any) => {
@@ -59,6 +63,7 @@ export async function GET(request: Request) {
                 ActualKeepersDebe: a.keepersDebe,
                 ActualBecadosSinInscripcion: a.becadosSinInscripcion,
                 ActualDebeInscripcion: a.debeInscripcion,
+                ActualSinInscripcion: a.sinInscripcion,
                 ActualDebeMeses: a.debeMeses,
                 ActualFutsalSinPagos: a.futsalSinPagos,
                 ActualFutsal1Mes: a.futsal1Mes,

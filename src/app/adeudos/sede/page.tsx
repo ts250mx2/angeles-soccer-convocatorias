@@ -39,6 +39,8 @@ interface SedeSummary {
   ActualKeepersDebe: number;
   ActualBecadosSinInscripcion: number;
   ActualDebeInscripcion: number;
+  /** Activos del grupo normal sin inscripción de esta temporada (fuera del adeudo). */
+  ActualSinInscripcion: number;
   ActualDebeMeses: DebeMes[];
   ActualFutsalSinPagos: number;
   ActualFutsal1Mes: number;
@@ -67,11 +69,14 @@ const MESES_CORTOS = [
  * Desglose del adeudo: un chip por concepto (inscripción y cada mes vencido) con
  * cuántos jugadores lo deben. Solo se muestran los conceptos con adeudo, para que
  * la tarjeta no se llene de ceros.
+ *
+ * En la temporada en curso la inscripción ya no es adeudo (los no inscritos salen del
+ * cálculo y van a "Sin inscripción"), así que ahí se omite `inscripcion`.
  */
-function DesgloseAdeudo({ inscripcion, meses, onInscripcion, onMes, size = 'sm' }: {
-  inscripcion: number;
+function DesgloseAdeudo({ inscripcion = 0, meses, onInscripcion, onMes, size = 'sm' }: {
+  inscripcion?: number;
   meses: DebeMes[];
-  onInscripcion: () => void;
+  onInscripcion?: () => void;
   onMes: (mes: number) => void;
   size?: 'sm' | 'xs';
 }) {
@@ -84,7 +89,7 @@ function DesgloseAdeudo({ inscripcion, meses, onInscripcion, onMes, size = 'sm' 
 
   return (
     <div className="flex flex-wrap gap-1 mt-1.5">
-      {inscripcion > 0 && (
+      {inscripcion > 0 && onInscripcion && (
         <button
           type="button"
           onClick={onInscripcion}
@@ -250,7 +255,7 @@ export default function AdeudosSedePage() {
       .map(([mes, cantidad]) => ({ mes, cantidad }))
       .sort((a, b) => a.mes - b.mes);
   };
-  const totalActualInsc = sum(s => s.ActualDebeInscripcion);
+  const totalActualSinInsc = sum(s => s.ActualSinInscripcion);
   const totalActualMeses = sumaMeses(s => s.ActualDebeMeses);
   const totalAnteriorInsc = sum(s => s.AnteriorDebeInscripcion);
   const totalAnteriorMeses = sumaMeses(s => s.AnteriorDebeMeses);
@@ -262,6 +267,9 @@ export default function AdeudosSedePage() {
   const scopeAnterior = anterior
     ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre, descartarPB }
     : {};
+  /* Cortes de esta temporada: solo los inscritos generan adeudo, así que el modal
+     debe aplicar la misma regla que las tarjetas. */
+  const scopeActual = { soloInscritos: true } as const;
 
   return (
     <DashboardLayout>
@@ -383,21 +391,21 @@ export default function AdeudosSedePage() {
               futsal1Mes={totalActualFutsal1Mes}
               futsal2Meses={totalActualFutsal2Meses}
               futsal3Mas={totalActualFutsal3Mas}
-              onDebe={() => setModal({ title: 'Con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'debe' })}
-              onAlCorriente={() => setModal({ title: 'Al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'al-corriente' })}
-              onKeepersDebe={() => setModal({ title: 'Porteros con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers-debe' })}
-              onKeepersCorriente={() => setModal({ title: 'Porteros al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers-corriente' })}
-              onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'becado-sin-inscripcion' })}
-              onFutsalSinPagos={() => setModal({ title: 'Futsal Sin Pagos · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-sin-pagos' })}
-              onFutsal1Mes={() => setModal({ title: 'Futsal 1 Mes · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-1-mes' })}
-              onFutsal2Meses={() => setModal({ title: 'Futsal 2 Meses · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-2-meses' })}
-              onFutsal3Mas={() => setModal({ title: 'Futsal 3+ Meses · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-3-mas' })}
+              onDebe={() => setModal({ title: 'Con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'debe', ...scopeActual })}
+              onAlCorriente={() => setModal({ title: 'Al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'al-corriente', ...scopeActual })}
+              onKeepersDebe={() => setModal({ title: 'Porteros con Adeudo · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers-debe', ...scopeActual })}
+              onKeepersCorriente={() => setModal({ title: 'Porteros al Corriente · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'keepers-corriente', ...scopeActual })}
+              onBecados={() => setModal({ title: 'Becados 100% sin Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'becado-sin-inscripcion', ...scopeActual })}
+              onFutsalSinPagos={() => setModal({ title: 'Futsal Sin Pagos · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-sin-pagos', ...scopeActual })}
+              onFutsal1Mes={() => setModal({ title: 'Futsal 1 Mes · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-1-mes', ...scopeActual })}
+              onFutsal2Meses={() => setModal({ title: 'Futsal 2 Meses · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-2-meses', ...scopeActual })}
+              onFutsal3Mas={() => setModal({ title: 'Futsal 3+ Meses · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'futsal-3-mas', ...scopeActual })}
+              sinInscripcion={totalActualSinInsc}
+              onSinInscripcion={() => setModal({ title: 'Sin Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'pendiente-inscripcion', ...scopeActual })}
               desglose={
                 <DesgloseAdeudo
-                  inscripcion={totalActualInsc}
                   meses={totalActualMeses}
-                  onInscripcion={() => setModal({ title: 'Deben Inscripción · Esta Temporada', subtitle: actual?.temporadaNombre, filtro: 'pendiente-inscripcion' })}
-                  onMes={(mes) => setModal({ title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, subtitle: actual?.temporadaNombre, filtro: 'debe-mes', mes })}
+                  onMes={(mes) => setModal({ title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, subtitle: actual?.temporadaNombre, filtro: 'debe-mes', mes, ...scopeActual })}
                 />
               }
             />
@@ -527,13 +535,16 @@ function KpiSplit({ label, icon, tone, segments }: {
 }
 
 /** KPI con cifras clicables: con adeudo, al corriente, porteros, becados y desglose futsal. */
-function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, keepersDebe, becadosSinInsc, futsalSinPagos, futsal1Mes, futsal2Meses, futsal3Mas, onDebe, onAlCorriente, onKeepersDebe, onKeepersCorriente, onBecados, onFutsalSinPagos, onFutsal1Mes, onFutsal2Meses, onFutsal3Mas, disabled, desglose, posiblesBajas, onPosiblesBajas, descartarPB, onToggleDescartar }: {
+function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, keepersDebe, becadosSinInsc, futsalSinPagos, futsal1Mes, futsal2Meses, futsal3Mas, onDebe, onAlCorriente, onKeepersDebe, onKeepersCorriente, onBecados, onFutsalSinPagos, onFutsal1Mes, onFutsal2Meses, onFutsal3Mas, disabled, desglose, sinInscripcion, onSinInscripcion, posiblesBajas, onPosiblesBajas, descartarPB, onToggleDescartar }: {
   label: string; caption: string; icon: React.ReactNode; tone: string;
   debe: number; alCorriente: number; keepers: number; keepersDebe: number; becadosSinInsc: number;
   futsalSinPagos: number; futsal1Mes: number; futsal2Meses: number; futsal3Mas: number;
   onDebe: () => void; onAlCorriente: () => void; onKeepersDebe: () => void; onKeepersCorriente: () => void; onBecados: () => void;
   onFutsalSinPagos: () => void; onFutsal1Mes: () => void; onFutsal2Meses: () => void; onFutsal3Mas: () => void;
   disabled?: boolean; desglose?: React.ReactNode;
+  /** Sin inscripción: solo la tarjeta de la temporada en curso, donde el no inscrito
+   *  queda fuera del adeudo. */
+  sinInscripcion?: number; onSinInscripcion?: () => void;
   /** Solo se muestra si se provee (temporadas ya transcurridas). */
   posiblesBajas?: number; onPosiblesBajas?: () => void;
   /** Check "descartar" de posibles bajas (solo la tarjeta de temporada anterior). */
@@ -564,6 +575,19 @@ function KpiDual({ label, caption, icon, tone, debe, alCorriente, keepers, keepe
             </button>
             {!disabled && desglose && <div className="px-2 pb-2">{desglose}</div>}
           </div>
+          {/* Sin inscripción: no generan adeudo en la temporada en curso. */}
+          {sinInscripcion !== undefined && onSinInscripcion && (
+            <button
+              type="button"
+              onClick={onSinInscripcion}
+              disabled={disabled}
+              title="Activos que no se han inscrito en esta temporada: quedan fuera del cálculo de adeudo"
+              className="w-full bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/25 rounded-xl px-2 py-1.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <p className="text-[8px] uppercase font-black text-amber-300/80 tracking-wider leading-tight">Sin inscripción</p>
+              <p className="text-lg font-black text-amber-300">{sinInscripcion}</p>
+            </button>
+          )}
         </div>
         <div className="space-y-2">
           <button
@@ -713,6 +737,8 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
   const scopeAnterior = anterior
     ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre, descartarPB }
     : {};
+  // Esta temporada: el modal aplica la misma regla que las tarjetas (solo inscritos).
+  const scopeActual = { soloInscritos: true } as const;
 
   const open = (cfg: Omit<AdeudosModalConfig, 'subtitle'> & { subtitle?: string }) =>
     onOpenPlayers({ ...cfg, subtitle: cfg.subtitle ?? sede.Sede });
@@ -893,7 +919,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
             <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
               <button
                 type="button"
-                onClick={() => open({ ...base, title: 'Con Adeudo · Esta Temporada', filtro: 'debe', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                onClick={() => open({ ...base, ...scopeActual, title: 'Con Adeudo · Esta Temporada', filtro: 'debe', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
                 className="w-full p-2 text-left hover:bg-rose-500/15 transition-all"
               >
                 <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider">Con adeudo</p>
@@ -902,18 +928,26 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
               <div className="px-2 pb-2">
                 <DesgloseAdeudo
                   size="xs"
-                  inscripcion={sede.ActualDebeInscripcion}
                   meses={sede.ActualDebeMeses ?? []}
-                  onInscripcion={() => open({ ...base, title: 'Deben Inscripción · Esta Temporada', filtro: 'pendiente-inscripcion', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
-                  onMes={(mes) => open({ ...base, title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, filtro: 'debe-mes', mes, subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                  onMes={(mes) => open({ ...base, ...scopeActual, title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, filtro: 'debe-mes', mes, subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
                 />
               </div>
             </div>
+            {/* Sin inscripción: activos que no se han inscrito en esta temporada. */}
+            <button
+              type="button"
+              title="Activos que no se han inscrito en esta temporada: quedan fuera del cálculo de adeudo"
+              onClick={() => open({ ...base, ...scopeActual, title: 'Sin Inscripción · Esta Temporada', filtro: 'pendiente-inscripcion', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              className={`w-full ${miniBtn} bg-amber-500/5 border-amber-500/15 hover:bg-amber-500/15`}
+            >
+              <p className="text-[8px] uppercase font-black text-amber-300/70 tracking-wider leading-tight">Sin inscripción</p>
+              <p className="text-sm font-black text-amber-300">{sede.ActualSinInscripcion}</p>
+            </button>
           </div>
           <div className="space-y-2">
             <button
               type="button"
-              onClick={() => open({ ...base, title: 'Al Corriente · Esta Temporada', filtro: 'al-corriente', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              onClick={() => open({ ...base, ...scopeActual, title: 'Al Corriente · Esta Temporada', filtro: 'al-corriente', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
               className={`w-full ${miniBtn} bg-teal-500/5 border-teal-500/10 hover:bg-teal-500/15`}
             >
               <p className="text-[8px] uppercase font-black text-teal-400/70 tracking-wider">Al corriente</p>
@@ -923,7 +957,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
               <button
                 type="button"
                 title="Porteros con adeudo: sin inscripción (regla de portero) o con meses vencidos"
-                onClick={() => open({ ...base, title: 'Porteros con Adeudo · Esta Temporada', filtro: 'keepers-debe', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                onClick={() => open({ ...base, ...scopeActual, title: 'Porteros con Adeudo · Esta Temporada', filtro: 'keepers-debe', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
                 className={`w-full ${miniBtn} bg-rose-500/5 border-rose-500/10 hover:bg-rose-500/15`}
               >
                 <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider leading-tight">Porteros c/adeudo</p>
@@ -932,7 +966,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
               <button
                 type="button"
                 title="Porteros al corriente: inscritos (regla de portero) y sin meses vencidos"
-                onClick={() => open({ ...base, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers-corriente', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+                onClick={() => open({ ...base, ...scopeActual, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers-corriente', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
                 className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
               >
                 <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider leading-tight">Porteros al corr.</p>
@@ -942,7 +976,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
             <button
               type="button"
               title="Beca 100% sin pago de inscripción"
-              onClick={() => open({ ...base, title: 'Becados 100% sin Inscripción · Esta Temporada', filtro: 'becado-sin-inscripcion', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              onClick={() => open({ ...base, ...scopeActual, title: 'Becados 100% sin Inscripción · Esta Temporada', filtro: 'becado-sin-inscripcion', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
               className={`w-full ${miniBtn} bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/15`}
             >
               <p className="text-[8px] uppercase font-black text-purple-300/70 tracking-wider leading-tight">Becados 100% s/insc</p>
@@ -957,7 +991,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
           <div className="grid grid-cols-4 gap-1 text-left">
             <button
               type="button"
-              onClick={() => open({ ...base, title: 'Futsal Sin Pagos · Esta Temporada', filtro: 'futsal-sin-pagos', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              onClick={() => open({ ...base, ...scopeActual, title: 'Futsal Sin Pagos · Esta Temporada', filtro: 'futsal-sin-pagos', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
               className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
             >
               <p className="text-[7px] font-bold text-slate-400">Sin pagos</p>
@@ -965,7 +999,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
             </button>
             <button
               type="button"
-              onClick={() => open({ ...base, title: 'Futsal 1 Mes · Esta Temporada', filtro: 'futsal-1-mes', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              onClick={() => open({ ...base, ...scopeActual, title: 'Futsal 1 Mes · Esta Temporada', filtro: 'futsal-1-mes', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
               className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
             >
               <p className="text-[7px] font-bold text-slate-400">1 mes</p>
@@ -973,7 +1007,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
             </button>
             <button
               type="button"
-              onClick={() => open({ ...base, title: 'Futsal 2 Meses · Esta Temporada', filtro: 'futsal-2-meses', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              onClick={() => open({ ...base, ...scopeActual, title: 'Futsal 2 Meses · Esta Temporada', filtro: 'futsal-2-meses', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
               className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
             >
               <p className="text-[7px] font-bold text-slate-400">2 meses</p>
@@ -981,7 +1015,7 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
             </button>
             <button
               type="button"
-              onClick={() => open({ ...base, title: 'Futsal 3+ Meses · Esta Temporada', filtro: 'futsal-3-mas', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
+              onClick={() => open({ ...base, ...scopeActual, title: 'Futsal 3+ Meses · Esta Temporada', filtro: 'futsal-3-mas', subtitle: [sede.Sede, actual?.temporadaNombre].filter(Boolean).join(' · ') })}
               className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
             >
               <p className="text-[7px] font-bold text-slate-400">3+</p>

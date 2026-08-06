@@ -22,6 +22,8 @@ interface CategoriaSummary {
   ActualKeepersDebe: number;
   ActualBecadosSinInscripcion: number;
   ActualDebeInscripcion: number;
+  /** Activos del grupo normal sin inscripción de esta temporada (fuera del adeudo). */
+  ActualSinInscripcion: number;
   ActualDebeMeses: DebeMes[];
   ActualFutsalSinPagos: number;
   ActualFutsal1Mes: number;
@@ -46,11 +48,15 @@ const MESES_CORTOS = [
   'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic',
 ];
 
-/** Desglose del adeudo por concepto (inscripción y cada mes vencido). */
-function DesgloseAdeudo({ inscripcion, meses, onInscripcion, onMes }: {
-  inscripcion: number;
+/**
+ * Desglose del adeudo por concepto (inscripción y cada mes vencido). En la temporada
+ * en curso la inscripción ya no es adeudo (los no inscritos salen del cálculo y van a
+ * "Sin inscripción"), así que ahí se omite `inscripcion`.
+ */
+function DesgloseAdeudo({ inscripcion = 0, meses, onInscripcion, onMes }: {
+  inscripcion?: number;
   meses: DebeMes[];
-  onInscripcion: () => void;
+  onInscripcion?: () => void;
   onMes: (mes: number) => void;
 }) {
   const conAdeudo = meses.filter((m) => m.cantidad > 0);
@@ -58,7 +64,7 @@ function DesgloseAdeudo({ inscripcion, meses, onInscripcion, onMes }: {
 
   return (
     <div className="flex flex-wrap gap-1 mt-1.5">
-      {inscripcion > 0 && (
+      {inscripcion > 0 && onInscripcion && (
         <button
           type="button"
           onClick={onInscripcion}
@@ -180,6 +186,12 @@ export default function AdeudosSedeCategoriasPage({ params }: { params: Promise<
             <span className="bg-teal-500/20 px-3 py-1.5 rounded-xl border border-teal-500/30 text-sm font-bold text-teal-400">
               {sum(c => c.ActualAlCorriente)} al corriente
             </span>
+            <span
+              title="Activos que no se han inscrito en esta temporada: quedan fuera del cálculo de adeudo"
+              className="bg-amber-500/20 px-3 py-1.5 rounded-xl border border-amber-500/30 text-sm font-bold text-amber-300"
+            >
+              {sum(c => c.ActualSinInscripcion)} sin inscripción
+            </span>
             <span className="bg-cyan-500/20 px-3 py-1.5 rounded-xl border border-cyan-500/30 text-sm font-bold text-cyan-300">
               {sum(c => c.ActualKeepers)} porteros
             </span>
@@ -273,6 +285,8 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
   const scopeAnterior = anterior
     ? { temporadaId: anterior.seasonId, temporadaNombre: anterior.temporadaNombre, descartarPB }
     : {};
+  // Esta temporada: el modal aplica la misma regla que las tarjetas (solo inscritos).
+  const scopeActual = { soloInscritos: true } as const;
   const label = (extra?: string) => [sedeName, categoria.Categoria, extra].filter(Boolean).join(' · ');
 
   const rowBtn = 'w-full text-left bg-white/[0.03] hover:bg-white/[0.08] p-2 rounded-lg border border-white/5 hover:border-white/15 transition-all cursor-pointer';
@@ -447,7 +461,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
           <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg overflow-hidden">
             <button
               type="button"
-              onClick={() => onOpenPlayers({ ...base, title: 'Con Adeudo · Esta Temporada', filtro: 'debe', subtitle: label(actual?.temporadaNombre) })}
+              onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Con Adeudo · Esta Temporada', filtro: 'debe', subtitle: label(actual?.temporadaNombre) })}
               className="w-full p-2 text-left hover:bg-rose-500/15 transition-all"
             >
               <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider">Con adeudo</p>
@@ -455,18 +469,26 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
             </button>
             <div className="px-2 pb-2">
               <DesgloseAdeudo
-                inscripcion={categoria.ActualDebeInscripcion}
                 meses={categoria.ActualDebeMeses ?? []}
-                onInscripcion={() => onOpenPlayers({ ...base, title: 'Deben Inscripción · Esta Temporada', filtro: 'pendiente-inscripcion', subtitle: label(actual?.temporadaNombre) })}
-                onMes={(mes) => onOpenPlayers({ ...base, title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, filtro: 'debe-mes', mes, subtitle: label(actual?.temporadaNombre) })}
+                onMes={(mes) => onOpenPlayers({ ...base, ...scopeActual, title: `Deben ${MESES_CORTOS[mes - 1]} · Esta Temporada`, filtro: 'debe-mes', mes, subtitle: label(actual?.temporadaNombre) })}
               />
             </div>
           </div>
+          {/* Sin inscripción: activos que no se han inscrito en esta temporada. */}
+          <button
+            type="button"
+            title="Activos que no se han inscrito en esta temporada: quedan fuera del cálculo de adeudo"
+            onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Sin Inscripción · Esta Temporada', filtro: 'pendiente-inscripcion', subtitle: label(actual?.temporadaNombre) })}
+            className={`w-full ${miniBtn} bg-amber-500/5 border-amber-500/15 hover:bg-amber-500/15`}
+          >
+            <p className="text-[8px] uppercase font-black text-amber-300/70 tracking-wider leading-tight">Sin inscripción</p>
+            <p className="text-sm font-black text-amber-300">{categoria.ActualSinInscripcion}</p>
+          </button>
           </div>
           <div className="space-y-2">
             <button
               type="button"
-              onClick={() => onOpenPlayers({ ...base, title: 'Al Corriente · Esta Temporada', filtro: 'al-corriente', subtitle: label(actual?.temporadaNombre) })}
+              onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Al Corriente · Esta Temporada', filtro: 'al-corriente', subtitle: label(actual?.temporadaNombre) })}
               className={`w-full ${miniBtn} bg-teal-500/5 border-teal-500/10 hover:bg-teal-500/15`}
             >
               <p className="text-[8px] uppercase font-black text-teal-400/70 tracking-wider">Al corriente</p>
@@ -476,7 +498,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
               <button
                 type="button"
                 title="Porteros con adeudo: sin inscripción (regla de portero) o con meses vencidos"
-                onClick={() => onOpenPlayers({ ...base, title: 'Porteros con Adeudo · Esta Temporada', filtro: 'keepers-debe', subtitle: label(actual?.temporadaNombre) })}
+                onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Porteros con Adeudo · Esta Temporada', filtro: 'keepers-debe', subtitle: label(actual?.temporadaNombre) })}
                 className={`w-full ${miniBtn} bg-rose-500/5 border-rose-500/10 hover:bg-rose-500/15`}
               >
                 <p className="text-[8px] uppercase font-black text-rose-400/70 tracking-wider leading-tight">Porteros c/adeudo</p>
@@ -485,7 +507,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
               <button
                 type="button"
                 title="Porteros al corriente: inscritos (regla de portero) y sin meses vencidos"
-                onClick={() => onOpenPlayers({ ...base, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers-corriente', subtitle: label(actual?.temporadaNombre) })}
+                onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers-corriente', subtitle: label(actual?.temporadaNombre) })}
                 className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
               >
                 <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider leading-tight">Porteros al corr.</p>
@@ -495,7 +517,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
             <button
               type="button"
               title="Beca 100% sin pago de inscripción"
-              onClick={() => onOpenPlayers({ ...base, title: 'Becados 100% sin Inscripción · Esta Temporada', filtro: 'becado-sin-inscripcion', subtitle: label(actual?.temporadaNombre) })}
+              onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Becados 100% sin Inscripción · Esta Temporada', filtro: 'becado-sin-inscripcion', subtitle: label(actual?.temporadaNombre) })}
               className={`w-full ${miniBtn} bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/15`}
             >
               <p className="text-[8px] uppercase font-black text-purple-300/70 tracking-wider leading-tight">Becados 100% s/insc</p>
@@ -510,7 +532,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
           <div className="grid grid-cols-4 gap-1 text-left">
             <button
               type="button"
-              onClick={() => onOpenPlayers({ ...base, title: 'Futsal Sin Pagos · Esta Temporada', filtro: 'futsal-sin-pagos', subtitle: label(actual?.temporadaNombre) })}
+              onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Futsal Sin Pagos · Esta Temporada', filtro: 'futsal-sin-pagos', subtitle: label(actual?.temporadaNombre) })}
               className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
             >
               <p className="text-[7px] font-bold text-slate-400">Sin pagos</p>
@@ -518,7 +540,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
             </button>
             <button
               type="button"
-              onClick={() => onOpenPlayers({ ...base, title: 'Futsal 1 Mes · Esta Temporada', filtro: 'futsal-1-mes', subtitle: label(actual?.temporadaNombre) })}
+              onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Futsal 1 Mes · Esta Temporada', filtro: 'futsal-1-mes', subtitle: label(actual?.temporadaNombre) })}
               className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
             >
               <p className="text-[7px] font-bold text-slate-400">1 mes</p>
@@ -526,7 +548,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
             </button>
             <button
               type="button"
-              onClick={() => onOpenPlayers({ ...base, title: 'Futsal 2 Meses · Esta Temporada', filtro: 'futsal-2-meses', subtitle: label(actual?.temporadaNombre) })}
+              onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Futsal 2 Meses · Esta Temporada', filtro: 'futsal-2-meses', subtitle: label(actual?.temporadaNombre) })}
               className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
             >
               <p className="text-[7px] font-bold text-slate-400">2 meses</p>
@@ -534,7 +556,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
             </button>
             <button
               type="button"
-              onClick={() => onOpenPlayers({ ...base, title: 'Futsal 3+ Meses · Esta Temporada', filtro: 'futsal-3-mas', subtitle: label(actual?.temporadaNombre) })}
+              onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Futsal 3+ Meses · Esta Temporada', filtro: 'futsal-3-mas', subtitle: label(actual?.temporadaNombre) })}
               className="bg-white/5 hover:bg-fuchsia-500/20 p-1 rounded border border-white/5 text-left"
             >
               <p className="text-[7px] font-bold text-slate-400">3+</p>
