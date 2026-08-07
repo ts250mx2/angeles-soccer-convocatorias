@@ -2256,25 +2256,38 @@ export default function Home() {
                           </div>
                         </td>
                         <td className="py-3 px-4 text-sm">{player.Categoria}</td>
+                        {/* Importes solo de los convocados: en los demás no aplican todavía.
+                            El precio sigue siendo editable para poder dejarlo listo antes de convocar. */}
                         <td className="py-3 px-4 text-sm">
                           {user ? (
                             <button
                               onClick={() => handleUpdatePrice(player)}
-                              className="font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer"
+                              title={player.EsConvocado ? 'Cambiar precio' : 'Asignar precio (aún no convocado)'}
+                              className={`font-semibold transition-colors cursor-pointer hover:underline ${
+                                player.EsConvocado ? 'text-blue-600 hover:text-blue-800' : 'text-slate-300 hover:text-slate-500'
+                              }`}
                             >
-                              {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio)}
+                              {player.EsConvocado
+                                ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio)
+                                : '—'}
                             </button>
                           ) : (
-                            <span className="font-semibold text-slate-600">
-                              {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio)}
+                            <span className={`font-semibold ${player.EsConvocado ? 'text-slate-600' : 'text-slate-300'}`}>
+                              {player.EsConvocado
+                                ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio)
+                                : '—'}
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-sm font-bold text-green-700">
-                          {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.PagoJugador || 0)}
+                        <td className={`py-3 px-4 text-sm font-bold ${player.EsConvocado ? 'text-green-700' : 'text-slate-300'}`}>
+                          {player.EsConvocado
+                            ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.PagoJugador || 0)
+                            : '—'}
                         </td>
-                        <td className="py-3 px-4 text-sm font-bold text-red-700 bg-red-50/30">
-                          {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.CXC || 0)}
+                        <td className={`py-3 px-4 text-sm font-bold ${player.EsConvocado ? 'text-red-700 bg-red-50/30' : 'text-slate-300'}`}>
+                          {player.EsConvocado
+                            ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.CXC || 0)
+                            : '—'}
                         </td>
                         <td className="py-3 px-4 text-center text-sm">
                           {player.EsConvocado ? (
@@ -2360,16 +2373,18 @@ export default function Home() {
                               </div>
                             </div>
                             
-                             <div className={`grid grid-cols-3 gap-1 ${player.EsConvocado ? 'my-3 p-2' : 'my-2 p-1.5'} bg-slate-50 rounded-md border border-slate-100`}>
+                             {/* Importes solo de los convocados: en los demás no aplican todavía. */}
+                             {player.EsConvocado && (
+                             <div className="grid grid-cols-3 gap-1 my-3 p-2 bg-slate-50 rounded-md border border-slate-100">
                                <div className="text-center border-r border-slate-200">
                                  <div className="text-[8px] text-slate-400 font-bold uppercase">Precio</div>
                                  <div className="text-[10px] font-bold text-blue-600">
                                    ${player.Precio}
                                  </div>
                                </div>
-                               <div 
+                               <div
                                  className="text-center border-r border-slate-200 cursor-pointer hover:bg-slate-200/50 transition-colors rounded"
-                                 onClick={() => player.EsConvocado && fetchPlayerPayments(player)}
+                                 onClick={() => fetchPlayerPayments(player)}
                                >
                                  <div className="text-[8px] text-slate-400 font-bold uppercase">Pag.</div>
                                  <div className="text-[10px] font-bold text-green-600">
@@ -2383,7 +2398,8 @@ export default function Home() {
                                  </div>
                                </div>
                              </div>
-  
+                             )}
+
                             <div className="flex gap-1.5 items-center">
                               {!player.EsConvocado ? (
                                 <button 
