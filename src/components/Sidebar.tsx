@@ -9,7 +9,6 @@ import {
   Trophy,
   Users,
   ClipboardList,
-  CreditCard,
   ChevronDown,
   LogOut,
   PanelLeftClose,
@@ -107,12 +106,6 @@ export default function Sidebar() {
           label: "Inscripciones",
           href: "/inscripciones",
           icon: <UserCheck size={16} />,
-        },
-        {
-          label: "Adeudos",
-          href: "/adeudos",
-          icon: <CreditCard size={16} />,
-          adminOnly: true,
         },
         {
           label: "Adeudos por Sede",
