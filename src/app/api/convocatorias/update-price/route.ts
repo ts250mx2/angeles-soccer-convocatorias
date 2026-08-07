@@ -5,13 +5,17 @@ export async function POST(request: Request) {
     try {
         const { seasonId, leagueId, playerId, categoria, color, precio } = await request.json();
 
-        if (!seasonId || !leagueId || !playerId || !categoria || color === undefined || precio === undefined) {
-            return NextResponse.json({ success: false, message: 'Missing required parameters (including color)' }, { status: 400 });
+        // El color es OPCIONAL: hay convocatorias sin color. Ver /api/convocatorias/remove.
+        if (!seasonId || !leagueId || !playerId || !categoria || precio === undefined) {
+            return NextResponse.json({ success: false, message: 'Faltan parámetros requeridos' }, { status: 400 });
         }
+        const colorParam = color ?? '';
 
         await pool.query(
-            'UPDATE tblDetalleConvocatorias SET Precio = ? WHERE IdJugador = ? AND IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?',
-            [precio, playerId, seasonId, leagueId, categoria, color]
+            `UPDATE tblDetalleConvocatorias SET Precio = ?
+             WHERE IdJugador = ? AND IdTemporada = ? AND IdLiga = ? AND Categoria = ?
+               AND COALESCE(Color, '') = ?`,
+            [precio, playerId, seasonId, leagueId, categoria, colorParam]
         );
 
         return NextResponse.json({ success: true });

@@ -398,7 +398,7 @@ export default function Home() {
           seasonId: item.IdTemporada,
           leagueId: item.IdLiga,
           categoria: item.Categoria,
-          color: item.Color
+          color: item.Color ?? ''
         })
       });
 
@@ -657,7 +657,7 @@ export default function Home() {
           seasonId: item.IdTemporada,
           leagueId: item.IdLiga,
           categoria: item.Categoria,
-          color: item.Color
+          color: item.Color ?? ''
         })
       });
 
@@ -720,7 +720,7 @@ export default function Home() {
           leagueId: selectedConvocatoria.IdLiga,
           playerId: player.IdJugador,
           categoria: selectedConvocatoria.Categoria,
-          color: selectedConvocatoria.Color
+          color: selectedConvocatoria.Color ?? ''
         })
       });
 
@@ -752,7 +752,7 @@ export default function Home() {
           leagueId: selectedConvocatoria.IdLiga,
           playerId: player.IdJugador,
           categoria: selectedConvocatoria.Categoria,
-          color: selectedConvocatoria.Color
+          color: selectedConvocatoria.Color ?? ''
         })
       });
 
@@ -784,7 +784,7 @@ export default function Home() {
           leagueId: selectedConvocatoria.IdLiga,
           playerId: player.IdJugador,
           categoria: selectedConvocatoria.Categoria,
-          color: selectedConvocatoria.Color
+          color: selectedConvocatoria.Color ?? ''
         })
       });
 
@@ -878,7 +878,7 @@ export default function Home() {
           leagueId: selectedConvocatoria.IdLiga,
           playerId: player.IdJugador,
           categoria: selectedConvocatoria.Categoria,
-          color: selectedConvocatoria.Color,
+          color: selectedConvocatoria.Color ?? '',
           precio
         })
       });
@@ -955,7 +955,7 @@ export default function Home() {
           leagueId: selectedConvocatoria.IdLiga,
           playerId: selectedPlayerId,
           categoria: selectedConvocatoria.Categoria,
-          color: selectedConvocatoria.Color
+          color: selectedConvocatoria.Color ?? ''
         })
       });
 

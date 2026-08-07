@@ -5,21 +5,23 @@ export async function POST(request: Request) {
     try {
         const { seasonId, leagueId, categoria, color } = await request.json();
 
-        if (!seasonId || !leagueId || !categoria || !color) {
+        // El color es OPCIONAL: hay convocatorias sin color. Ver /api/convocatorias/remove.
+        if (!seasonId || !leagueId || !categoria) {
             return NextResponse.json(
-                { success: false, message: 'Faltan parámetros requeridos (incluyendo color)' },
+                { success: false, message: 'Faltan parámetros requeridos' },
                 { status: 400 }
             );
         }
+        const colorParam = color ?? '';
 
         // Update convocatoria to closed
         const updateQuery = `
-            UPDATE tblConvocatorias 
-            SET Cerrada = 1 
-            WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?
+            UPDATE tblConvocatorias
+            SET Cerrada = 1
+            WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND COALESCE(Color, '') = ?
         `;
 
-        await pool.query(updateQuery, [seasonId, leagueId, categoria, color]);
+        await pool.query(updateQuery, [seasonId, leagueId, categoria, colorParam]);
 
         return NextResponse.json({
             success: true,
