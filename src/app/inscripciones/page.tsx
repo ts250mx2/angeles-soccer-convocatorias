@@ -64,7 +64,26 @@ function formatBecasDetail(becasDetail: string | null): string {
 interface Temporada {
   IdTemporada: number;
   Temporada: string;
+  FechaInicio: string;
   EsActiva: boolean;
+}
+
+/**
+ * Id de la temporada más reciente: la de FechaInicio mayor, con IdTemporada como
+ * desempate. Se resuelve por fecha y no por id a secas porque los ids no
+ * necesariamente van en orden cronológico.
+ */
+function idUltimaTemporada(temporadas: Temporada[]): number | null {
+  let ultima: Temporada | null = null;
+  for (const t of temporadas) {
+    if (!ultima) { ultima = t; continue; }
+    const fecha = new Date(t.FechaInicio).getTime();
+    const fechaUltima = new Date(ultima.FechaInicio).getTime();
+    if (fecha > fechaUltima || (fecha === fechaUltima && t.IdTemporada > ultima.IdTemporada)) {
+      ultima = t;
+    }
+  }
+  return ultima ? ultima.IdTemporada : null;
 }
 
 /** Celda de un área de inscritos con el total y su desglose Nuevas / Reinscripciones. */
@@ -180,6 +199,11 @@ export default function InscripcionesSedesPage() {
 
   const temporadaNombre = temporadas.find(t => t.IdTemporada === temporadaId)?.Temporada;
 
+  /* En la última temporada la inscripción apenas va en curso y la plantilla activa
+     todavía corresponde a la temporada previa, así que el área de "Jugadores Activos"
+     se oculta (en el total y en cada sede) para no leerse como referencia de ésta. */
+  const ocultarActivos = temporadaId !== null && temporadaId === idUltimaTemporada(temporadas);
+
   /* Plantilla activa separada por tipo de sede (clinics aparte). El avance de
      inscripción se mide solo sobre sedes normales: clinics no maneja inscripción,
      así que incluirlo hundiría el porcentaje sin significar nada. */
@@ -262,7 +286,9 @@ export default function InscripcionesSedesPage() {
             </div>
 
             <div className="flex gap-4 w-full md:w-auto flex-wrap">
-              {/* Plantilla activa partida en normal / keepers / venta público / clinics. */}
+              {/* Plantilla activa partida en normal / keepers / venta público / clinics.
+                  Se oculta en la última temporada (ver `ocultarActivos`). */}
+              {!ocultarActivos && (
               <div className="flex-1 md:flex-none bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl">
                 <div className="flex items-center gap-2 mb-1.5">
                   <div className="bg-sky-500/20 p-1.5 rounded-lg">
@@ -292,6 +318,7 @@ export default function InscripcionesSedesPage() {
                   ))}
                 </div>
               </div>
+              )}
               <div className="flex-1 md:flex-none bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl min-w-[210px]">
                 <div className="flex items-center gap-2 mb-1.5">
                   <div className="bg-emerald-500/20 p-1.5 rounded-lg">
@@ -421,7 +448,7 @@ export default function InscripcionesSedesPage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {sedesWithInscritos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} temporadaNombre={temporadaNombre} onOpenPlayers={setModal} />
+                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} temporadaNombre={temporadaNombre} ocultarActivos={ocultarActivos} onOpenPlayers={setModal} />
                     ))}
                   </div>
                 </div>
@@ -436,7 +463,7 @@ export default function InscripcionesSedesPage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-50 hover:opacity-100 transition-all duration-500">
                     {sedesWithoutInscritos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} temporadaNombre={temporadaNombre} onOpenPlayers={setModal} />
+                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} temporadaNombre={temporadaNombre} ocultarActivos={ocultarActivos} onOpenPlayers={setModal} />
                     ))}
                   </div>
                 </div>
@@ -467,11 +494,14 @@ function SedeCard({
   sede,
   temporadaId,
   temporadaNombre,
+  ocultarActivos,
   onOpenPlayers,
 }: {
   sede: SedeSummary;
   temporadaId: number | null;
   temporadaNombre?: string;
+  /** En la última temporada no se muestra la fila de plantilla activa. */
+  ocultarActivos: boolean;
   onOpenPlayers: (config: PlayersModalConfig) => void;
 }) {
   const categoriaHref = `/inscripciones/${sede.IdSede}${temporadaId ? `?temporada=${temporadaId}` : ''}`;
@@ -516,15 +546,17 @@ function SedeCard({
         </Link>
 
         <div className="space-y-2">
-          <button type="button" onClick={() => open('activos', 'Jugadores Activos')} className={rowClass}>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
-                <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
-                Jugadores Activos
-              </span>
-              <span className="text-xl font-black text-sky-400">{sede.Activos}</span>
-            </div>
-          </button>
+          {!ocultarActivos && (
+            <button type="button" onClick={() => open('activos', 'Jugadores Activos')} className={rowClass}>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
+                  <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
+                  Jugadores Activos
+                </span>
+                <span className="text-xl font-black text-sky-400">{sede.Activos}</span>
+              </div>
+            </button>
+          )}
 
           <button type="button" onClick={() => open('inscritos', 'Jugadores Inscritos')} className={rowClass}>
             <div className="flex justify-between items-center">
