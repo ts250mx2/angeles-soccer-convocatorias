@@ -43,6 +43,20 @@ interface DashboardData {
   byCategory: RowData[];
   timeline: TimelineEntry[];
   seasonSummary: { TotalPagosTemporada: number; JugadoresTemporada: number; TotalTemporada: number; };
+  /** Avance de la temporada: recaudación mes a mes y comparativo con la anterior. */
+  seasonProgress?: {
+    mesesTranscurridos: number;
+    mesesTotales: number;
+    /** code = Anio*100+Mes del cobro. */
+    porMes: { code: number; total: number }[];
+    comparativo: {
+      temporadaAnterior: string;
+      mesesComparados: number;
+      actual: number;
+      anterior: number;
+      variacionPct: number | null;
+    } | null;
+  } | null;
   breakdown?: { IdSedePago: number; IdSedeJugador: number; SedeJugador: string; Jugadores: number; Pagos: number; Total: number; }[];
   productBySede?: { IdSedePago: number; IdTipoProducto: number; TipoProducto: string; Pagos: number; Jugadores: number; Total: number; }[];
   productDetailBySede?: { IdSedePago: number; IdTipoProducto: number; IdProducto: number; Producto: string; Pagos: number; Jugadores: number; Total: number; }[];
@@ -84,6 +98,180 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n);
 const fmtC = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", notation: "compact", maximumFractionDigits: 1 }).format(n);
+/** Cifra completa sin centavos: para montos que deben poder cuadrarse contra otro reporte. */
+const fmt0 = (n: number) =>
+  new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n);
+
+const MESES_CORTOS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+/** Etiqueta de un código Anio*100+Mes. */
+const mesLabel = (code: number) => MESES_CORTOS[(code % 100) - 1] ?? "";
+
+/**
+ * Avance de la temporada: recaudación mes a mes (una barra por mes de cobro) y
+ * comparativo contra la temporada anterior a la misma altura.
+ *
+ * Serie única, así que no lleva leyenda: el título la nombra. El mes en curso se
+ * resalta con un tono más claro del MISMO azul y además lleva su etiqueta en la
+ * base, para que no dependa solo del color.
+ */
+function SeasonProgress({ progreso }: {
+  progreso: NonNullable<DashboardData["seasonProgress"]>;
+}) {
+  const { porMes, mesesTranscurridos, mesesTotales, comparativo } = progreso;
+  if (porMes.length === 0) return null;
+
+  const hoy = new Date();
+  const codeActual = hoy.getFullYear() * 100 + (hoy.getMonth() + 1);
+  const max = Math.max(...porMes.map((m) => m.total), 1);
+  const pctTranscurrido = mesesTotales > 0
+    ? Math.round((mesesTranscurridos / mesesTotales) * 100)
+    : null;
+
+  return (
+    <div className="mt-4 pt-3 border-t border-white/5">
+      <div className="flex justify-between items-baseline mb-2 gap-2">
+        <span className="text-[9px] uppercase font-black text-slate-500 tracking-wider">Recaudación por mes</span>
+        {pctTranscurrido !== null && (
+          <span className="text-[9px] text-slate-500 whitespace-nowrap">
+            Mes <span className="font-black text-slate-300">{mesesTranscurridos}</span> de {mesesTotales}
+            <span className="text-slate-600"> · {pctTranscurrido}% transcurrido</span>
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-end gap-[2px] h-14">
+        {porMes.map((m) => {
+          const esActual = m.code === codeActual;
+          // Mínimo visible para que un mes con poco cobro no desaparezca.
+          const pct = Math.max((m.total / max) * 100, 3);
+          return (
+            <div key={m.code} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+              <div
+                title={`${mesLabel(m.code)} ${Math.floor(m.code / 100)}: ${fmt(m.total)}`}
+                className={`w-full rounded-t transition-opacity hover:opacity-100 ${
+                  esActual ? 'bg-blue-400 opacity-100' : 'bg-blue-600 opacity-80'
+                }`}
+                style={{ height: `${pct}%` }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {/* Etiquetas selectivas: primer mes, último y el mes en curso. */}
+      <div className="flex gap-[2px] mt-1">
+        {porMes.map((m, i) => {
+          const esActual = m.code === codeActual;
+          const mostrar = esActual || i === 0 || i === porMes.length - 1;
+          return (
+            <span
+              key={m.code}
+              className={`flex-1 text-center text-[7px] leading-none truncate ${
+                esActual ? 'font-black text-blue-400' : 'text-slate-600'
+              }`}
+            >
+              {mostrar ? mesLabel(m.code) : ''}
+            </span>
+          );
+        })}
+      </div>
+
+      {comparativo && (
+        <div className="mt-3 pt-2.5 border-t border-white/5">
+          <p className="text-[9px] uppercase font-black text-slate-500 tracking-wider mb-1.5">
+            vs {comparativo.temporadaAnterior}
+            <span className="text-slate-600 normal-case tracking-normal font-medium">
+              {' '}· primeros {comparativo.mesesComparados} {comparativo.mesesComparados === 1 ? 'mes' : 'meses'}
+            </span>
+          </p>
+          <div className="flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-black text-white leading-none">{fmtC(comparativo.actual)}</p>
+              <p className="text-[9px] text-slate-500 mt-1 truncate">antes {fmtC(comparativo.anterior)}</p>
+            </div>
+            {comparativo.variacionPct === null ? (
+              <span className="text-[10px] font-bold text-slate-500">Sin comparativo</span>
+            ) : (
+              <span
+                title={`${fmt(comparativo.actual)} vs ${fmt(comparativo.anterior)} a la misma altura de la temporada`}
+                className={`flex items-center gap-1 text-xs font-black px-2 py-0.5 rounded-lg border whitespace-nowrap ${
+                  comparativo.variacionPct >= 0
+                    ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25'
+                    : 'text-rose-300 bg-rose-500/10 border-rose-500/25'
+                }`}
+              >
+                {comparativo.variacionPct >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                {comparativo.variacionPct >= 0 ? '+' : ''}{comparativo.variacionPct.toFixed(1)}%
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Acumulado de la temporada activa. Es la única tarjeta que NO responde al selector
+ * de período, de ahí el badge; cada renglón lleva su aclaración porque son los
+ * números que más se confundían con los KPIs de período y con la plantilla.
+ */
+function SeasonCard({ data }: { data: DashboardData | null }) {
+  const renglones = [
+    {
+      label: "Recaudado",
+      hint: "Todo el dinero cobrado en la temporada: inscripciones, mensualidades, copas, ligas y ventas. No depende del período de arriba.",
+      title: `Suma de todos los pagos vigentes registrados en esta temporada, sin importar la fecha de cobro.\nExacto: ${fmt(data?.seasonSummary.TotalTemporada ?? 0)}`,
+      val: fmt0(data?.seasonSummary.TotalTemporada ?? 0),
+      color: "text-white",
+    },
+    {
+      label: "Transacciones",
+      hint: "Recibos capturados. Los cancelados no cuentan.",
+      title: "Número de recibos vigentes de la temporada. Un recibo puede cubrir varios conceptos.",
+      val: (data?.seasonSummary.TotalPagosTemporada ?? 0).toLocaleString("es-MX"),
+      color: "text-emerald-400",
+    },
+    {
+      label: "Jugadores con pagos",
+      hint: "Jugadores distintos que han pagado algo. No es la plantilla ni los inscritos.",
+      title: "Jugadores distintos con al menos un pago vigente en la temporada. Para plantilla e inscritos usa Inscripciones por Sede.",
+      val: (data?.seasonSummary.JugadoresTemporada ?? 0).toLocaleString("es-MX"),
+      color: "text-purple-400",
+    },
+  ];
+
+  return (
+    <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-white/10 rounded-2xl p-5 flex flex-col justify-between">
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <div className="bg-blue-500/10 p-2 rounded-xl border border-blue-500/10"><Trophy size={16} className="text-blue-400" /></div>
+          <div className="min-w-0">
+            <p className="text-xs font-black text-white">Acumulado de la temporada</p>
+            <p className="text-[10px] text-slate-500 truncate">{data?.season?.Temporada || "Actual"}</p>
+          </div>
+          <span
+            title="Esta tarjeta no responde al selector de período: siempre muestra la temporada completa"
+            className="ml-auto text-[8px] font-black text-slate-400 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-full border border-white/10 whitespace-nowrap"
+          >
+            Toda la temporada
+          </span>
+        </div>
+        <div className="space-y-1">
+          {renglones.map(item => (
+            <div key={item.label} title={item.title} className="flex justify-between items-start gap-3 py-2 border-b border-white/5 last:border-0">
+              <div className="min-w-0">
+                <p className="text-[11px] text-slate-300 font-bold leading-none">{item.label}</p>
+                <p className="text-[9px] text-slate-500 leading-snug mt-1">{item.hint}</p>
+              </div>
+              <span className={`text-sm font-black ${item.color} whitespace-nowrap flex-shrink-0`}>{item.val}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {data?.seasonProgress && <SeasonProgress progreso={data.seasonProgress} />}
+    </div>
+  );
+}
 
 // Reusable horizontal bar section
 function BarSection({ title, icon, data, labelKey, colorBase, period, onClickItem }: {
@@ -1423,67 +1611,48 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Timeline + Season */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white/5 border border-white/10 rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div><h3 className="text-sm font-black text-white">Tendencia de Pagos (30 días)</h3><p className="text-[10px] text-slate-500 mt-0.5">Monto por día</p></div>
-                <BarChart3 size={16} className="text-slate-500" />
-              </div>
-              {isLoading ? <div className="h-32 bg-white/5 rounded-xl animate-pulse" /> : timelineSlice.length > 0 ? (
-                <div className="flex items-end gap-1 h-32">
-                  {timelineSlice.map((entry, i) => {
-                    const pct = Math.max((entry.Total / maxTimeline) * 100, 2);
-                    const dateLabel = new Date(entry.Fecha + "T12:00:00").toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
-                    return (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-1 group/bar">
-                        <div className="w-full">
-                          <div title={`${dateLabel}: ${fmt(entry.Total)}`} className="w-full rounded-t-sm bg-gradient-to-t from-blue-700 to-blue-400 opacity-70 group-hover/bar:opacity-100 transition-all cursor-default" style={{ height: `${pct * 1.28}px` }} />
-                        </div>
-                        {(i === 0 || i === Math.floor(timelineSlice.length / 2) || i === timelineSlice.length - 1) && (
-                          <span className="text-[7px] text-slate-600 text-center leading-tight whitespace-nowrap">{dateLabel}</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : <div className="h-32 flex items-center justify-center text-slate-500 text-sm">Sin datos en los últimos 30 días</div>}
-            </div>
-
-            <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-white/10 rounded-2xl p-5 flex flex-col justify-between">
+          {/* Tendencia de pagos, a todo lo ancho */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-5">
               <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="bg-blue-500/10 p-2 rounded-xl border border-blue-500/10"><Trophy size={16} className="text-blue-400" /></div>
-                  <div><p className="text-xs font-black text-white">Temporada Completa</p><p className="text-[10px] text-slate-500">{data?.season?.Temporada || "Actual"}</p></div>
-                </div>
-                <div className="space-y-3">
-                  {[
-                    { label: "Total Recaudado", val: fmtC(data?.seasonSummary.TotalTemporada ?? 0), color: "text-white" },
-                    { label: "Total Pagos", val: (data?.seasonSummary.TotalPagosTemporada ?? 0).toLocaleString("es-MX"), color: "text-emerald-400" },
-                    { label: "Jugadores", val: (data?.seasonSummary.JugadoresTemporada ?? 0).toLocaleString("es-MX"), color: "text-purple-400" },
-                  ].map(item => (
-                    <div key={item.label} className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
-                      <span className="text-[11px] text-slate-400 font-medium">{item.label}</span>
-                      <span className={`text-sm font-black ${item.color}`}>{item.val}</span>
-                    </div>
-                  ))}
-                </div>
+                <h3 className="text-sm font-black text-white">Tendencia de Pagos (últimos {timelineSlice.length} días con pagos)</h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">Monto cobrado por día</p>
               </div>
-              {data && data.seasonSummary.TotalTemporada > 0 && (
-                <div className="mt-4 pt-3 border-t border-white/5">
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-[9px] uppercase font-black text-slate-500 tracking-wider">{periodLabel} / Temporada</span>
-                    <span className="text-[10px] font-bold text-blue-400">{((data.kpi.totalRecaudado / data.seasonSummary.TotalTemporada) * 100).toFixed(1)}%</span>
-                  </div>
-                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-blue-600 to-blue-400 rounded-full transition-all duration-700" style={{ width: `${Math.min((data.kpi.totalRecaudado / data.seasonSummary.TotalTemporada) * 100, 100)}%` }} />
-                  </div>
-                </div>
-              )}
+              <BarChart3 size={16} className="text-slate-500" />
             </div>
+            {isLoading ? <div className="h-56 bg-white/5 rounded-xl animate-pulse" /> : timelineSlice.length > 0 ? (
+              <div className="flex items-stretch gap-1 h-56">
+                {timelineSlice.map((entry, i) => {
+                  /* Se topa al 90% para dejar sitio a la cantidad encima de la barra;
+                     el mínimo evita que un día flojo desaparezca. */
+                  const pct = Math.min(Math.max((entry.Total / maxTimeline) * 90, 2), 90);
+                  const dateLabel = new Date(entry.Fecha + "T12:00:00").toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
+                  /* Con pantalla angosta no cabe una etiqueta por barra: se dejan las
+                     de los extremos y la del centro, y el resto aparece desde lg. */
+                  const esClave = i === 0 || i === Math.floor(timelineSlice.length / 2) || i === timelineSlice.length - 1;
+                  return (
+                    <div key={i} className="flex-1 flex flex-col min-w-0 group/bar">
+                      <div className="flex-1 flex flex-col justify-end items-center">
+                        <span className="hidden lg:block text-[9px] font-bold text-slate-400 group-hover/bar:text-white transition-colors mb-1 whitespace-nowrap">
+                          {fmtC(entry.Total)}
+                        </span>
+                        <div
+                          title={`${dateLabel}: ${fmt(entry.Total)} · ${entry.Pagos} pagos`}
+                          className="w-full rounded-t bg-gradient-to-t from-blue-700 to-blue-400 opacity-80 group-hover/bar:opacity-100 transition-all cursor-default"
+                          style={{ height: `${pct}%` }}
+                        />
+                      </div>
+                      <span className={`text-[8px] text-slate-500 text-center leading-tight whitespace-nowrap mt-1.5 ${esClave ? '' : 'hidden lg:block'}`}>
+                        {dateLabel}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <div className="h-56 flex items-center justify-center text-slate-500 text-sm">Sin datos en los últimos 30 días</div>}
           </div>
 
-          {/* Bottom: By Sede + By League + By Category */}
+          {/* Bottom: Por Sede + Por Liga + Acumulado de la temporada */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <BarSection
               title="Por Sede"
@@ -1502,15 +1671,7 @@ export default function DashboardPage() {
               period={periodLabel}
               onClickItem={(item) => fetchDetails({ idLiga: item.IdLiga }, item.Liga || 'Liga', periodLabel)}
             />
-            <BarSection
-              title="Por Categoría"
-              icon={<Users size={14} className="text-purple-400" />}
-              data={data?.byCategory ?? []}
-              labelKey="Categoria"
-              colorBase="from-purple-600 to-purple-400"
-              period={periodLabel}
-              onClickItem={(item) => fetchDetails({ categoria: item.Categoria }, item.Categoria || 'Categoría', periodLabel)}
-            />
+            <SeasonCard data={data} />
           </div>
 
           {/* Empty state */}

@@ -1,5 +1,38 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { loadSeasonAndPrevious } from '@/lib/adeudos-db';
+import type { SeasonMonths } from '@/lib/adeudos-season';
+
+/** Recaudación de una temporada agrupada por mes de cobro (Anio*100+Mes de FechaPago). */
+async function recaudacionPorMes(seasonId: number): Promise<{ code: number; total: number }[]> {
+    const [rows] = await pool.query(
+        `SELECT YEAR(P.FechaPago) * 100 + MONTH(P.FechaPago) AS Code,
+                COALESCE(SUM(P.Pago), 0) AS Total
+         FROM tblPagos P
+         WHERE P.Status = 0 AND P.IdTemporada = ? AND P.FechaPago IS NOT NULL
+         GROUP BY Code
+         ORDER BY Code`,
+        [seasonId]
+    ) as unknown as [Array<{ Code: number | string; Total: number | string }>, unknown];
+    return rows.map((r) => ({ code: Number(r.Code), total: Number(r.Total) || 0 }));
+}
+
+/**
+ * Recaudado en los primeros `meses` meses calendario de la temporada: es lo que
+ * permite comparar dos temporadas "a la misma altura" y no contra su total final.
+ */
+function recaudadoHastaElMes(
+    porMes: { code: number; total: number }[],
+    m: SeasonMonths,
+    meses: number,
+): number {
+    if (meses <= 0) return 0;
+    const desde = m.anioInicio * 100 + m.startMonth;
+    const hasta = m.anioInicio * 100 + Math.min(m.startMonth + meses - 1, m.endMonth);
+    return porMes
+        .filter((r) => r.code >= desde && r.code <= hasta)
+        .reduce((acc, r) => acc + r.total, 0);
+}
 
 // FechaPago se guarda en hora LOCAL (sigue el reloj NOW() del servidor), así que NO se
 // convierte de zona horaria: se compara directamente contra NOW(). Convertirla duplicaba
@@ -171,6 +204,55 @@ export async function GET(request: Request) {
             if ((sRows as any[]).length > 0) seasonSummary = (sRows as any[])[0];
         }
 
+        /* ─── Avance de la temporada: recaudación mes a mes y comparativo con la
+           temporada anterior a la misma altura (mismos meses transcurridos). ─── */
+        let seasonProgress: {
+            mesesTranscurridos: number;
+            mesesTotales: number;
+            porMes: { code: number; total: number }[];
+            comparativo: {
+                temporadaAnterior: string;
+                mesesComparados: number;
+                actual: number;
+                anterior: number;
+                variacionPct: number | null;
+            } | null;
+        } | null = null;
+
+        const seasons = await loadSeasonAndPrevious(null);
+        if (seasons) {
+            const { actual, anterior } = seasons;
+            const porMes = await recaudacionPorMes(actual.seasonId);
+            // Meses ya corridos de la temporada, sin pasarse de su duración.
+            const transcurridos = Math.min(actual.mesesExigibles, actual.numMonthsExpected);
+
+            let comparativo = null;
+            if (anterior && transcurridos > 0) {
+                // Si la anterior fue más corta, se compara hasta donde alcanza.
+                const mesesComparados = Math.min(transcurridos, anterior.numMonthsExpected);
+                const porMesAnterior = await recaudacionPorMes(anterior.seasonId);
+                const totalAnterior = recaudadoHastaElMes(porMesAnterior, anterior, mesesComparados);
+                const totalActual = recaudadoHastaElMes(porMes, actual, mesesComparados);
+                comparativo = {
+                    temporadaAnterior: anterior.temporadaNombre,
+                    mesesComparados,
+                    actual: totalActual,
+                    anterior: totalAnterior,
+                    // Sin base con qué comparar el porcentaje no significa nada.
+                    variacionPct: totalAnterior > 0
+                        ? ((totalActual - totalAnterior) / totalAnterior) * 100
+                        : null,
+                };
+            }
+
+            seasonProgress = {
+                mesesTranscurridos: transcurridos,
+                mesesTotales: actual.numMonthsExpected,
+                porMes,
+                comparativo,
+            };
+        }
+
         // ─── Sede de Pago vs. Player Registered Sede Breakdown ────
         const breakdownQuery = `
             SELECT
@@ -249,6 +331,7 @@ export async function GET(request: Request) {
             byCategory: categoryRows,
             timeline: timelineRows,
             seasonSummary,
+            seasonProgress,
             breakdown: brRows,
             productBySede: productBySedeRows,
             productDetailBySede: productDetailBySedeRows,
