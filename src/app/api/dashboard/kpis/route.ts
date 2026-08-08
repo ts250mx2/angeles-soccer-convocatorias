@@ -177,9 +177,13 @@ export async function GET(request: Request) {
         const [categoryRows] = await pool.query(categoryQuery, kpiParams) as any[];
 
         // ─── 30-day Timeline ──────────────────────────────────────
+        /* Fecha como CADENA 'YYYY-MM-DD': con DATE() mysql2 devuelve un objeto Date que
+           al serializarse a JSON queda como '2026-08-05T06:00:00.000Z', y el cliente lo
+           concatenaba con 'T12:00:00' produciendo "Invalid Date". DATE_FORMAT además
+           evita cualquier conversión de zona horaria, igual que el resto del archivo. */
         const timelineQuery = `
             SELECT
-                DATE(P.FechaPago) AS Fecha,
+                DATE_FORMAT(P.FechaPago, '%Y-%m-%d') AS Fecha,
                 COUNT(DISTINCT P.IdPago)  AS Pagos,
                 COALESCE(SUM(P.Pago), 0) AS Total
             FROM tblPagos P

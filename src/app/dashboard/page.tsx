@@ -1626,7 +1626,10 @@ export default function DashboardPage() {
                   /* Se topa al 90% para dejar sitio a la cantidad encima de la barra;
                      el mínimo evita que un día flojo desaparezca. */
                   const pct = Math.min(Math.max((entry.Total / maxTimeline) * 90, 2), 90);
-                  const dateLabel = new Date(entry.Fecha + "T12:00:00").toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
+                  /* slice(0,10) tolera que Fecha llegue como 'YYYY-MM-DD' o como ISO
+                     completo; sin eso la concatenación daba "Invalid Date". */
+                  const dateLabel = new Date(String(entry.Fecha).slice(0, 10) + "T12:00:00")
+                    .toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
                   /* Con pantalla angosta no cabe una etiqueta por barra: se dejan las
                      de los extremos y la del centro, y el resto aparece desde lg. */
                   const esClave = i === 0 || i === Math.floor(timelineSlice.length / 2) || i === timelineSlice.length - 1;
