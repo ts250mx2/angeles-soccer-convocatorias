@@ -190,7 +190,7 @@ export async function GET(request: Request) {
             WHERE P.Status = 0
               AND P.FechaPago >= NOW() - INTERVAL 30 DAY
               ${currentSeasonId ? 'AND P.IdTemporada = ?' : ''}
-            GROUP BY DATE(P.FechaPago)
+            GROUP BY DATE_FORMAT(P.FechaPago, '%Y-%m-%d')
             ORDER BY Fecha ASC
         `;
         const [timelineRows] = await pool.query(timelineQuery, kpiParams) as any[];
