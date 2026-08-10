@@ -318,12 +318,27 @@ const BORDER = {
 };
 
 /**
+ * Campos del listado en pantalla que necesita el Excel de movimientos. Se declara
+ * aparte (y no como PlayerRow) porque lo consumen dos módulos: el listado de
+ * inscripciones y el de adeudos, cuyas filas traen columnas distintas.
+ */
+export interface MovimientosPlayer {
+    IdJugador: number;
+    Jugador: string;
+    Categoria: string;
+    Status: number;
+    Beca: string | null;
+    SedeNombre: string;
+    InscripcionPagada: number;
+}
+
+/**
  * Excel de movimientos: un renglón por pago, agrupado por jugador con subtotal,
  * más una hoja resumen con el total por jugador.
  */
 export async function exportMovimientosToExcel(
     movimientos: MovimientoRow[],
-    players: PlayerRow[],
+    players: MovimientosPlayer[],
     title: string,
     subtitle: string,
 ) {
@@ -343,7 +358,7 @@ export async function exportMovimientosToExcel(
     }
 
     let granTotal = 0;
-    const resumen: { p: PlayerRow; movs: number; total: number }[] = [];
+    const resumen: { p: MovimientosPlayer; movs: number; total: number }[] = [];
 
     for (const p of players) {
         const movs = porJugador.get(p.IdJugador) ?? [];

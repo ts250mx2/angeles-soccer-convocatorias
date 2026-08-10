@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   X, Search, User, AlertCircle, Loader2, MapPin, FileDown, FileSpreadsheet,
-  CheckCircle2, XCircle, GraduationCap, ChevronRight, AlertTriangle,
+  CheckCircle2, XCircle, GraduationCap, ChevronRight, AlertTriangle, ListTree,
 } from "lucide-react";
 import PlayerPagosModal, { type PagosTarget, type InscripcionSospechosa } from "@/components/PlayerPagosModal";
 import {
   type AdeudoRow, type AdeudosConfig, exportAdeudosToPdf, exportAdeudosToExcel,
   money, MESES_CORTOS, esBeca100, parseMeses, becaPct, becaLabel,
 } from "@/lib/adeudos-export";
+// El Excel de movimientos es común a los listados de inscripciones y de adeudos.
+import { exportMovimientosToExcel } from "@/lib/inscripciones-export";
 
 export type AdeudosFilter =
   | "activos" | "bajas" | "pendiente-inscripcion" | "pendiente-mensualidad"
@@ -83,6 +85,7 @@ export default function AdeudosModal({
   const [query, setQuery] = useState("");
   const [pagosTarget, setPagosTarget] = useState<PagosTarget | null>(null);
   const [sospechosa, setSospechosa] = useState<InscripcionSospechosa | null>(null);
+  const [descargandoMov, setDescargandoMov] = useState(false);
 
   // Abre el detalle del jugador; si trae inscripción sospechosa la pasa al modal.
   const abrirDetalle = (p: AdeudoRow) => {
@@ -152,6 +155,34 @@ export default function AdeudosModal({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [config, pagosTarget, onClose]);
+
+  /* Trae los movimientos de los jugadores que están en pantalla (respeta el buscador)
+     y arma el Excel. Los ids van por POST porque pueden ser cientos. La temporada es
+     la efectiva del corte, así que los cortes de "temporada anterior" traen sus pagos. */
+  const descargarMovimientos = async (lista: AdeudoRow[], title: string, subtitle: string) => {
+    if (lista.length === 0) return;
+    setDescargandoMov(true);
+    try {
+      const res = await fetch("/api/inscripciones/movimientos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idJugadores: lista.map((p) => p.IdJugador),
+          temporadaId: temporadaEfectiva ?? undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setError(json.message ?? "No se pudieron obtener los movimientos");
+        return;
+      }
+      await exportMovimientosToExcel(json.data, lista, title, subtitle);
+    } catch {
+      setError("Error de conexión al obtener los movimientos");
+    } finally {
+      setDescargandoMov(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -241,6 +272,15 @@ export default function AdeudosModal({
               className={`${expBtn} bg-emerald-600/15 hover:bg-emerald-600/25 border-emerald-500/30 text-emerald-200`}
             >
               <FileSpreadsheet size={13} /> Excel
+            </button>
+            <button
+              onClick={() => descargarMovimientos(ordenados, config.title, exportSubtitle)}
+              disabled={!canExport || descargandoMov}
+              title="Excel con el detalle de pagos de cada jugador del listado"
+              className={`${expBtn} bg-violet-600/15 hover:bg-violet-600/25 border-violet-500/30 text-violet-200`}
+            >
+              {descargandoMov ? <Loader2 size={13} className="animate-spin" /> : <ListTree size={13} />}
+              Excel de Movimientos
             </button>
           </div>
         </div>
