@@ -258,7 +258,9 @@ export default function AdeudosModal({
             </button>
           </div>
 
-          <div className="mt-3 flex items-center justify-end gap-2">
+          {/* flex-wrap: con tres botones la fila ya no cabe en ventanas angostas y el
+              contenedor del modal recorta lo que se desborde. */}
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
             <button
               onClick={() => cfg && exportAdeudosToPdf(ordenados, cfg, config.title, exportSubtitle)}
               disabled={!canExport}
