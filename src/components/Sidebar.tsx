@@ -99,6 +99,19 @@ export default function Sidebar() {
       ],
     },
     {
+      label: "Gastos",
+      icon: <Receipt size={18} />,
+      adminOnly: true,
+      children: [
+        {
+          label: "Egresos por Sede",
+          href: "/gastos/egresos",
+          icon: <MapPin size={16} />,
+          adminOnly: true,
+        },
+      ],
+    },
+    {
       label: "Jugadores",
       icon: <Users size={18} />,
       children: [
