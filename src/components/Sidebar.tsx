@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useUser } from "@/contexts/user-context";
@@ -13,7 +14,6 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  Shield,
   MapPin,
   UserCheck,
   Banknote,
@@ -233,9 +233,16 @@ export default function Sidebar() {
         <div className="flex items-center justify-between px-4 py-4 border-b border-white/10 min-h-[64px]">
           {!collapsed && (
             <div className="flex items-center gap-2 overflow-hidden">
-              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg">
-                <Shield size={16} className="text-white" />
-              </div>
+              {/* El escudo del club (el mismo archivo que el favicon), sin caja de
+                  color detrás: el emblema ya trae su propia forma. */}
+              <Image
+                src="/favicon.ico"
+                alt="Ángeles Soccer"
+                width={32}
+                height={32}
+                unoptimized
+                className="flex-shrink-0 w-8 h-8 object-contain drop-shadow"
+              />
               <div className="min-w-0">
                 <p className="text-xs font-black text-white leading-tight truncate">
                   Ángeles Soccer
@@ -249,9 +256,14 @@ export default function Sidebar() {
             </div>
           )}
           {collapsed && (
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg mx-auto">
-              <Shield size={16} className="text-white" />
-            </div>
+            <Image
+              src="/favicon.ico"
+              alt="Ángeles Soccer"
+              width={32}
+              height={32}
+              unoptimized
+              className="w-8 h-8 object-contain drop-shadow mx-auto"
+            />
           )}
           <button
             onClick={() => setCollapsed(!collapsed)}
