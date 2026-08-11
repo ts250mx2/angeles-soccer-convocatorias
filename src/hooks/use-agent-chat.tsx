@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 /** La conversación se guarda en sessionStorage para que sobreviva al navegar
  *  entre el chat flotante y la página completa del agente. */
@@ -24,10 +24,16 @@ export interface ChatMessage {
 }
 
 /**
- * Lógica compartida del agente: historial, streaming NDJSON y selección de modelo.
- * La usan tanto la página completa como el chat flotante.
+ * Estado del agente: historial, streaming NDJSON y modelo elegido.
+ *
+ * Vive en un contexto ÚNICO montado en DashboardLayout, no en un hook por
+ * componente: el chat flotante y la página completa están montados a la vez
+ * (el widget solo se oculta en /agente), así que con un estado por instancia
+ * se desincronizaban —lo que escribías en uno no aparecía en el otro—. Con el
+ * contexto son literalmente la misma conversación, el mismo modelo y el mismo
+ * indicador de "respondiendo".
  */
-export function useAgentChat() {
+function useAgentChatState() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const hydrated = useRef(false);
@@ -152,4 +158,19 @@ export function useAgentChat() {
   }, []);
 
   return { messages, busy, send, clear, modelos, modelo, setModelo };
+}
+
+type AgentChatValue = ReturnType<typeof useAgentChatState>;
+
+const AgentChatContext = createContext<AgentChatValue | null>(null);
+
+export function AgentChatProvider({ children }: { children: ReactNode }) {
+  const value = useAgentChatState();
+  return <AgentChatContext.Provider value={value}>{children}</AgentChatContext.Provider>;
+}
+
+export function useAgentChat(): AgentChatValue {
+  const ctx = useContext(AgentChatContext);
+  if (!ctx) throw new Error("useAgentChat debe usarse dentro de <AgentChatProvider>");
+  return ctx;
 }

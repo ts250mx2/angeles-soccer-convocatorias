@@ -21,7 +21,7 @@ export default function AgentChatWidget() {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { messages, busy, send, clear } = useAgentChat();
+  const { messages, busy, send, clear, modelos, modelo, setModelo } = useAgentChat();
 
   useEffect(() => {
     if (open) {
@@ -52,11 +52,28 @@ export default function AgentChatWidget() {
                 <Bot size={15} className="text-blue-300" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-black text-white leading-tight">Agente</p>
+                <p className="text-sm font-black text-white leading-tight">Agente Inteligente</p>
                 <p className="text-[10px] text-slate-500 truncate">Consulta la base en vivo</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
+              {/* Mismo selector que la página: el estado es compartido, así que
+                  cambiarlo aquí lo cambia allá y al revés. */}
+              {modelos.length > 1 && (
+                <select
+                  value={modelo}
+                  onChange={(e) => setModelo(e.target.value)}
+                  disabled={busy}
+                  title={modelos.find((m) => m.key === modelo)?.descripcion}
+                  className="appearance-none max-w-[110px] px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300 outline-none cursor-pointer hover:bg-white/10 focus:border-blue-500/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed [color-scheme:dark]"
+                >
+                  {modelos.map((m) => (
+                    <option key={m.key} value={m.key} className="bg-slate-900 text-white">
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              )}
               {messages.length > 0 && (
                 <button onClick={clear} disabled={busy} title="Limpiar"
                   className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-all disabled:opacity-40">
