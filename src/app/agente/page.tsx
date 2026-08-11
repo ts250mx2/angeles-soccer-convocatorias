@@ -7,7 +7,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import AgentAnswer from "@/components/AgentAnswer";
 import {
-  Bot, Send, Loader2, AlertCircle, Database, User as UserIcon, Trash2, ShieldAlert,
+  Bot, Send, Loader2, AlertCircle, User as UserIcon, Trash2, ShieldAlert,
 } from "lucide-react";
 
 const SUGERENCIAS = [
@@ -136,19 +136,7 @@ export default function AgentePage() {
                   </div>
                 )}
                 <div className={`min-w-0 ${m.role === "user" ? "max-w-[85%]" : "flex-1"}`}>
-                  {/* Consultas ejecutadas */}
-                  {m.role === "assistant" && (m.queries?.length ?? 0) > 0 && (
-                    <div className="mb-2 space-y-1">
-                      {m.queries!.map((q, qi) => (
-                        <details key={qi} className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
-                          <summary className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer flex items-center gap-1.5 hover:text-slate-200">
-                            <Database size={11} /> Consulta {qi + 1}
-                          </summary>
-                          <pre className="px-3 pb-2 text-[10px] text-emerald-300/90 whitespace-pre-wrap break-all font-mono">{q}</pre>
-                        </details>
-                      ))}
-                    </div>
-                  )}
+                  {/* El agente sigue consultando la base; el SQL no se muestra. */}
 
                   <div className={`rounded-2xl px-4 py-3 break-words ${
                     m.role === "user"

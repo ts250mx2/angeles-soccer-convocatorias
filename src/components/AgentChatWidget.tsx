@@ -6,7 +6,7 @@ import { useUser } from "@/contexts/user-context";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import AgentAnswer from "@/components/AgentAnswer";
 import {
-  Bot, Send, Loader2, AlertCircle, Database, X, Minus, Trash2, Maximize2,
+  Bot, Send, Loader2, AlertCircle, X, Minus, Trash2, Maximize2,
 } from "lucide-react";
 
 /**
@@ -90,18 +90,7 @@ export default function AgentChatWidget() {
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[88%] min-w-0 ${m.role === "user" ? "" : "w-full"}`}>
-                  {m.role === "assistant" && (m.queries?.length ?? 0) > 0 && (
-                    <div className="mb-1.5 space-y-1">
-                      {m.queries!.map((q, qi) => (
-                        <details key={qi} className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
-                          <summary className="px-2 py-1 text-[9px] font-black text-slate-400 uppercase tracking-widest cursor-pointer flex items-center gap-1 hover:text-slate-200">
-                            <Database size={10} /> Consulta {qi + 1}
-                          </summary>
-                          <pre className="px-2 pb-1.5 text-[9px] text-emerald-300/90 whitespace-pre-wrap break-all font-mono">{q}</pre>
-                        </details>
-                      ))}
-                    </div>
-                  )}
+                  {/* El agente sigue consultando la base; el SQL no se muestra. */}
 
                   <div className={`rounded-2xl px-3 py-2 break-words ${
                     m.role === "user" ? "bg-blue-600 text-white text-xs leading-relaxed whitespace-pre-wrap" : "bg-white/5 border border-white/10"
