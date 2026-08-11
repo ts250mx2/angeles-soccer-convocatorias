@@ -27,6 +27,7 @@ import {
   QrCode,
   Bot,
   Ban,
+  BookOpen,
 } from "lucide-react";
 
 interface NavItem {
@@ -35,6 +36,144 @@ interface NavItem {
   icon: React.ReactNode;
   children?: NavItem[];
   adminOnly?: boolean;
+}
+
+/**
+ * Menú de la aplicación. Vive fuera del componente y se exporta porque el Manual de
+ * Operación arma sus secciones a partir de esta MISMA lista: así el manual nunca
+ * muestra un módulo que el usuario no tiene, ni se queda atrás cuando el menú cambia.
+ */
+export const NAV_ITEMS: NavItem[] = [
+  {
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: <LayoutDashboard size={18} />,
+    adminOnly: true,
+  },
+  {
+    label: "QR Accesos",
+    href: "/qr-accesos",
+    icon: <QrCode size={18} />,
+    adminOnly: true,
+  },
+  {
+    label: "Agente Inteligente",
+    href: "/agente",
+    icon: <Bot size={18} />,
+    adminOnly: true,
+  },
+  {
+    label: "Copas y Ligas",
+    icon: <Trophy size={18} />,
+    children: [
+      {
+        label: "Convocatorias",
+        href: "/",
+        icon: <ClipboardList size={16} />,
+      },
+      {
+        label: "Pagos de Copas y Ligas",
+        href: "/pagos-copas",
+        icon: <Trophy size={16} />,
+        adminOnly: true,
+      },
+    ],
+  },
+  {
+    label: "Caja",
+    icon: <Banknote size={18} />,
+    adminOnly: true,
+    children: [
+      {
+        label: "Control de Caja",
+        href: "/caja",
+        icon: <LayoutList size={16} />,
+        adminOnly: true,
+      },
+    ],
+  },
+  {
+    label: "Gastos",
+    icon: <Receipt size={18} />,
+    adminOnly: true,
+    children: [
+      {
+        label: "Egresos por Sede",
+        href: "/gastos/egresos",
+        icon: <MapPin size={16} />,
+        adminOnly: true,
+      },
+    ],
+  },
+  {
+    label: "Jugadores",
+    icon: <Users size={18} />,
+    children: [
+      {
+        label: "Inscripciones",
+        href: "/inscripciones",
+        icon: <UserCheck size={16} />,
+      },
+      {
+        label: "Adeudos por Sede",
+        href: "/adeudos/sede",
+        icon: <MapPin size={16} />,
+        adminOnly: true,
+      },
+    ],
+  },
+  {
+    label: "Ventas",
+    icon: <ShoppingCart size={18} />,
+    adminOnly: true,
+    children: [
+      {
+        label: "Historial de ventas",
+        href: "/ventas",
+        icon: <ShoppingCart size={16} />,
+      },
+      {
+        label: "Ventas por Producto",
+        href: "/ventas/por-producto",
+        icon: <Boxes size={16} />,
+      },
+      {
+        label: "Ventas por Día",
+        href: "/ventas/por-dia",
+        icon: <CalendarDays size={16} />,
+      },
+      {
+        label: "Ventas Canceladas",
+        href: "/ventas/canceladas",
+        icon: <Ban size={16} />,
+      },
+      {
+        label: "Cortes de Caja",
+        href: "/caja",
+        icon: <Receipt size={16} />,
+      },
+      {
+        label: "Cortes de Caja por Mes",
+        href: "/cortes-mensuales",
+        icon: <CalendarRange size={16} />,
+      },
+      {
+        label: "Ventas por Tipo de Producto",
+        href: "/ventas/por-tipo",
+        icon: <LayoutGrid size={16} />,
+      },
+    ],
+  },
+  {
+    label: "Manual de Operación",
+    href: "/manual",
+    icon: <BookOpen size={18} />,
+  },
+];
+
+/** Los módulos marcados adminOnly requieren AdminConvocatorias >= 2. */
+export function puedeVer(item: { adminOnly?: boolean }, user: { AdminConvocatorias?: number } | null): boolean {
+  return !item.adminOnly || (user?.AdminConvocatorias ?? 0) >= 2;
 }
 
 export default function Sidebar() {
@@ -49,128 +188,6 @@ export default function Sidebar() {
     Ventas: true,
   });
 
-  const navItems: NavItem[] = [
-    {
-      label: "Dashboard",
-      href: "/dashboard",
-      icon: <LayoutDashboard size={18} />,
-      adminOnly: true,
-    },
-    {
-      label: "QR Accesos",
-      href: "/qr-accesos",
-      icon: <QrCode size={18} />,
-      adminOnly: true,
-    },
-    {
-      label: "Agente Inteligente",
-      href: "/agente",
-      icon: <Bot size={18} />,
-      adminOnly: true,
-    },
-    {
-      label: "Copas y Ligas",
-      icon: <Trophy size={18} />,
-      children: [
-        {
-          label: "Convocatorias",
-          href: "/",
-          icon: <ClipboardList size={16} />,
-        },
-        {
-          label: "Pagos de Copas y Ligas",
-          href: "/pagos-copas",
-          icon: <Trophy size={16} />,
-          adminOnly: true,
-        },
-      ],
-    },
-    {
-      label: "Caja",
-      icon: <Banknote size={18} />,
-      adminOnly: true,
-      children: [
-        {
-          label: "Control de Caja",
-          href: "/caja",
-          icon: <LayoutList size={16} />,
-          adminOnly: true,
-        },
-      ],
-    },
-    {
-      label: "Gastos",
-      icon: <Receipt size={18} />,
-      adminOnly: true,
-      children: [
-        {
-          label: "Egresos por Sede",
-          href: "/gastos/egresos",
-          icon: <MapPin size={16} />,
-          adminOnly: true,
-        },
-      ],
-    },
-    {
-      label: "Jugadores",
-      icon: <Users size={18} />,
-      children: [
-        {
-          label: "Inscripciones",
-          href: "/inscripciones",
-          icon: <UserCheck size={16} />,
-        },
-        {
-          label: "Adeudos por Sede",
-          href: "/adeudos/sede",
-          icon: <MapPin size={16} />,
-          adminOnly: true,
-        },
-      ],
-    },
-    {
-      label: "Ventas",
-      icon: <ShoppingCart size={18} />,
-      adminOnly: true,
-      children: [
-        {
-          label: "Historial de ventas",
-          href: "/ventas",
-          icon: <ShoppingCart size={16} />,
-        },
-        {
-          label: "Ventas por Producto",
-          href: "/ventas/por-producto",
-          icon: <Boxes size={16} />,
-        },
-        {
-          label: "Ventas por Día",
-          href: "/ventas/por-dia",
-          icon: <CalendarDays size={16} />,
-        },
-        {
-          label: "Ventas Canceladas",
-          href: "/ventas/canceladas",
-          icon: <Ban size={16} />,
-        },
-        {
-          label: "Cortes de Caja",
-          href: "/caja",
-          icon: <Receipt size={16} />,
-        },
-        {
-          label: "Cortes de Caja por Mes",
-          href: "/cortes-mensuales",
-          icon: <CalendarRange size={16} />,
-        },
-        {
-          label: "Ventas por Tipo de Producto",
-          href: "/ventas/por-tipo",
-          icon: <LayoutGrid size={16} />,
-        },
-      ],
-    },
-  ];
 
   const toggleMenu = (label: string) => {
     if (collapsed) {
@@ -289,7 +306,7 @@ export default function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {navItems.map((item) => {
+          {NAV_ITEMS.map((item) => {
             // Skip admin-only top-level items
             if (item.adminOnly && (user?.AdminConvocatorias ?? 0) < 2)
               return null;
