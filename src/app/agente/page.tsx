@@ -145,7 +145,8 @@ export default function AgentePage() {
                   }`}>
                     {m.role === "user" ? m.content : (
                       m.content
-                        ? <AgentAnswer content={m.content} question={messages[i - 1]?.content ?? ""} />
+                        ? <AgentAnswer content={m.content} question={messages[i - 1]?.content ?? ""}
+                             onSugerencia={submit} sugerenciasActivas={!busy} />
                         : (busy && i === messages.length - 1 && !m.error
                             ? <span className="inline-flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={14} className="animate-spin" /> Pensando...</span>
                             : null)

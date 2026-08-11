@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { anthropic, openai, resolveModel, type ModelConfig } from '@/lib/anthropic';
 import { manualComoTexto } from '@/lib/manual-contenido';
+import { MARCA_SUGERENCIAS } from '@/lib/agent-sugerencias';
 import { assertReadOnly } from '@/lib/sql-sandbox';
 import { requireAdmin } from '@/lib/auth';
 import { pool } from '@/lib/db';
@@ -148,6 +149,20 @@ FORMATO DE RESPUESTA (importante — tus respuestas se renderizan como markdown)
   📅 fechas/temporadas · 🏆 copas y ligas · 👕 ropa/uniformes · 🧾 caja/cortes · 📈 crecimiento · 📉 caída.
 - Menciona SIEMPRE el alcance del dato: temporada, rango de fechas y/o sede considerados.
 - Sé conciso: sin relleno, sin repetir la pregunta, sin explicar el SQL salvo que te lo pidan.
+
+PREGUNTAS DE SEGUIMIENTO (obligatorio, va al final de TODA respuesta):
+Termina siempre con una última línea con este formato exacto, y NADA después:
+${MARCA_SUGERENCIAS} pregunta 1 || pregunta 2 || pregunta 3
+- Son 2 o 3 preguntas que el usuario querría hacer DESPUÉS de leer tu respuesta,
+  derivadas de lo que acabas de contestar y de los datos que viste: profundizar en
+  algo que llamó la atención, abrir por sede/categoría/mes, comparar contra otra
+  temporada, o revisar la causa de algo raro.
+- Escríbelas como las diría el usuario, en primera persona y listas para enviarse
+  tal cual. Concretas y cortas (máximo ~12 palabras).
+  Bien: "¿Cómo se reparte ese adeudo por categoría en GANTE?"
+  Mal: "Más información" / "¿Quieres ver el detalle?" / repetir la pregunta original.
+- No inventes preguntas sobre datos que no existen en el sistema.
+- Esa línea es para la interfaz: NO la anuncies, no la comentes y no la numeres.
 
 PREGUNTAS SOBRE CÓMO USAR EL SISTEMA:
 Abajo tienes el Manual de Operación completo. Cuando te pregunten cómo se hace algo, dónde está una

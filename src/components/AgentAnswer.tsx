@@ -6,7 +6,8 @@ import AgentBarChart from "@/components/AgentBarChart";
 import {
   parseMarkdownTables, toChartData, exportAnswerToPdf, exportTablesToExcel,
 } from "@/lib/agent-export";
-import { FileDown, FileSpreadsheet, BarChart3, Loader2 } from "lucide-react";
+import { FileDown, FileSpreadsheet, BarChart3, Loader2, CornerDownRight } from "lucide-react";
+import { separarSugerencias } from "@/lib/agent-sugerencias";
 
 /**
  * Respuesta del agente: markdown + gráfica automática (si los datos son
@@ -16,14 +17,24 @@ export default function AgentAnswer({
   content,
   question,
   compact = false,
+  onSugerencia,
+  sugerenciasActivas = true,
 }: {
   content: string;
   question: string;
   compact?: boolean;
+  /** Si se provee, las preguntas de seguimiento se muestran y son clicables. */
+  onSugerencia?: (pregunta: string) => void;
+  /** false mientras el agente responde, para no encadenar preguntas. */
+  sugerenciasActivas?: boolean;
 }) {
   const [downloading, setDownloading] = useState<null | "pdf" | "excel">(null);
 
-  const tables = useMemo(() => parseMarkdownTables(content), [content]);
+  /* Las sugerencias viajan dentro del texto; se separan antes de cualquier otra
+     cosa para que no lleguen ni al markdown ni a las exportaciones. */
+  const { texto, sugerencias } = useMemo(() => separarSugerencias(content), [content]);
+
+  const tables = useMemo(() => parseMarkdownTables(texto), [texto]);
   const chart = useMemo(() => {
     for (const t of tables) {
       const c = toChartData(t);
@@ -36,7 +47,7 @@ export default function AgentAnswer({
 
   const doPdf = () => {
     setDownloading("pdf");
-    try { exportAnswerToPdf(content, question); } finally { setDownloading(null); }
+    try { exportAnswerToPdf(texto, question); } finally { setDownloading(null); }
   };
 
   const doExcel = async () => {
@@ -50,7 +61,7 @@ export default function AgentAnswer({
 
   return (
     <div>
-      <AgentMarkdown content={content} compact={compact} />
+      <AgentMarkdown content={texto} compact={compact} />
 
       {chart && showChart && <AgentBarChart data={chart} compact={compact} />}
 
@@ -80,6 +91,35 @@ export default function AgentAnswer({
           </button>
         )}
       </div>
+
+      {/* Preguntas de seguimiento: se envían con un clic. */}
+      {onSugerencia && sugerencias.length > 0 && (
+        <div className={`${compact ? "mt-2" : "mt-3"} border-t border-white/5 ${compact ? "pt-2" : "pt-2.5"}`}>
+          <p className={`${compact ? "text-[8px]" : "text-[9px]"} font-black uppercase tracking-widest text-slate-500 mb-1.5`}>
+            Seguir preguntando
+          </p>
+          <div className="flex flex-col gap-1">
+            {sugerencias.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onSugerencia(s)}
+                disabled={!sugerenciasActivas}
+                title="Enviar esta pregunta"
+                className={`group flex items-start gap-1.5 text-left rounded-lg border border-white/10 bg-white/[0.03] hover:bg-blue-500/10 hover:border-blue-500/30 text-slate-300 hover:text-blue-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                  compact ? "px-2 py-1 text-[10px]" : "px-2.5 py-1.5 text-[11px]"
+                }`}
+              >
+                <CornerDownRight
+                  size={compact ? 10 : 11}
+                  className="flex-shrink-0 mt-[2px] text-slate-500 group-hover:text-blue-400 transition-colors"
+                />
+                <span>{s}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

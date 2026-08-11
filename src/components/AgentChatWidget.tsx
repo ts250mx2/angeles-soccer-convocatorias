@@ -97,7 +97,8 @@ export default function AgentChatWidget() {
                   }`}>
                     {m.role === "user" ? m.content : (
                       m.content
-                        ? <AgentAnswer content={m.content} question={messages[i - 1]?.content ?? ""} compact />
+                        ? <AgentAnswer content={m.content} question={messages[i - 1]?.content ?? ""} compact
+                            onSugerencia={(p) => { if (!busy) send(p); }} sugerenciasActivas={!busy} />
                         : (busy && i === messages.length - 1 && !m.error
                             ? <span className="inline-flex items-center gap-1.5 text-slate-400 text-xs"><Loader2 size={12} className="animate-spin" /> Pensando...</span>
                             : null)
