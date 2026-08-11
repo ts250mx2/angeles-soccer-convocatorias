@@ -6,8 +6,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *  entre el chat flotante y la página completa del agente. */
 const STORAGE_KEY = "agent-chat-messages";
 
-/** El agente corre siempre con Claude Sonnet 5. */
-export const AGENT_MODEL_LABEL = "Sonnet 5";
+/** Modelo elegido: se recuerda entre sesiones en este navegador. */
+const MODEL_KEY = "agent-chat-model";
+
+export interface ModeloDisponible {
+  key: string;
+  label: string;
+  descripcion: string;
+}
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -25,6 +31,36 @@ export function useAgentChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const hydrated = useRef(false);
+  const [modelos, setModelos] = useState<ModeloDisponible[]>([]);
+  const [modelo, setModeloState] = useState<string>("sonnet");
+  // El modelo viaja en cada petición; se lee del ref para no recrear `send`.
+  const modeloRef = useRef(modelo);
+  modeloRef.current = modelo;
+
+  /* Los modelos utilizables los decide el servidor (según qué llaves estén
+     configuradas), así que no se pueden fijar en el cliente. */
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/agent/modelos");
+        const json = await res.json();
+        if (!vivo || !json.success) return;
+        setModelos(json.modelos);
+        const guardado = localStorage.getItem(MODEL_KEY);
+        const valido = json.modelos.some((m: ModeloDisponible) => m.key === guardado);
+        setModeloState(valido && guardado ? guardado : json.porDefecto);
+      } catch {
+        /* sin lista: se usa el modelo por defecto del servidor */
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
+
+  const setModelo = useCallback((key: string) => {
+    setModeloState(key);
+    try { localStorage.setItem(MODEL_KEY, key); } catch { /* noop */ }
+  }, []);
 
   // Rehidrata la conversación previa (al maximizar desde el chat flotante)
   useEffect(() => {
@@ -76,7 +112,7 @@ export function useAgentChat() {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, history }),
+        body: JSON.stringify({ prompt, history, model: modeloRef.current }),
       });
 
       if (!res.ok || !res.body) {
@@ -115,5 +151,5 @@ export function useAgentChat() {
     }
   }, []);
 
-  return { messages, busy, send, clear };
+  return { messages, busy, send, clear, modelos, modelo, setModelo };
 }

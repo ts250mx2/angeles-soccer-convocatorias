@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { anthropic, resolveModel } from '@/lib/anthropic';
+import OpenAI from 'openai';
+import { anthropic, openai, resolveModel, type ModelConfig } from '@/lib/anthropic';
 import { manualComoTexto } from '@/lib/manual-contenido';
 import { assertReadOnly } from '@/lib/sql-sandbox';
 import { requireAdmin } from '@/lib/auth';
@@ -186,10 +187,32 @@ const TOOLS: Anthropic.Tool[] = [
     },
 ];
 
+/* La misma herramienta en el formato de la Responses API de OpenAI. Ahí el nombre y
+   los parámetros van al ras del objeto, no anidados bajo `function` como en
+   chat.completions. `strict` exige additionalProperties: false. */
+const TOOLS_OPENAI = TOOLS.map((t) => ({
+    type: 'function' as const,
+    name: t.name,
+    description: t.description,
+    parameters: { ...(t.input_schema as Record<string, unknown>), additionalProperties: false },
+    strict: true,
+}));
+
 interface IncomingTurn {
     role: 'user' | 'assistant';
     content: string;
 }
+
+/** Mensajes que la pantalla manda de vuelta, ya recortados. */
+function historialLimpio(raw: IncomingTurn[]): IncomingTurn[] {
+    return raw
+        .filter((t) => (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string' && t.content.trim())
+        .slice(-MAX_HISTORY_TURNS * 2)
+        .map((t) => ({ role: t.role, content: t.content.slice(0, 8000) }));
+}
+
+/** Lo que la pantalla consume del NDJSON; idéntico para ambos proveedores. */
+type Emitir = (obj: unknown) => void;
 
 async function runQuery(sql: string): Promise<{ ok: boolean; text: string }> {
     let clean: string;
@@ -211,18 +234,134 @@ async function runQuery(sql: string): Promise<{ ok: boolean; text: string }> {
     }
 }
 
+/** Bucle de herramientas con Anthropic (bloques tool_use / tool_result). */
+async function correrAnthropic(
+    send: Emitir, system: string, prompt: string, historial: IncomingTurn[], config: ModelConfig,
+) {
+    const messages: Anthropic.MessageParam[] = historial.map((t) => ({ role: t.role, content: t.content }));
+    messages.push({ role: 'user', content: prompt });
+
+    for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+        const mstream = anthropic.messages.stream({
+            model: config.id,
+            max_tokens: 16000,
+            system,
+            tools: TOOLS,
+            messages,
+            thinking: { type: 'adaptive' },
+            output_config: { effort: config.effort },
+        } as Anthropic.MessageCreateParamsStreaming);
+
+        for await (const event of mstream) {
+            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+                send({ type: 'text', text: event.delta.text });
+            }
+        }
+
+        const msg = await mstream.finalMessage();
+        // Preserva el contenido completo (incluye bloques de thinking firmados)
+        messages.push({ role: 'assistant', content: msg.content });
+
+        if (msg.stop_reason !== 'tool_use') break;
+
+        const toolUses = msg.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        for (const tu of toolUses) {
+            if (tu.name === 'query_database') {
+                const sql = (tu.input as { sql?: string })?.sql ?? '';
+                send({ type: 'tool', sql });
+                const result = await runQuery(sql);
+                toolResults.push({
+                    type: 'tool_result', tool_use_id: tu.id, content: result.text, is_error: !result.ok,
+                });
+            } else {
+                toolResults.push({
+                    type: 'tool_result', tool_use_id: tu.id,
+                    content: `Herramienta desconocida: ${tu.name}`, is_error: true,
+                });
+            }
+        }
+        messages.push({ role: 'user', content: toolResults });
+    }
+}
+
+/**
+ * Bucle de herramientas con OpenAI, sobre la Responses API.
+ *
+ * Se usa Responses y no chat.completions porque gpt-5.6-terra es un modelo de
+ * razonamiento: con herramientas, chat.completions exige reasoning_effort:'none'
+ * —es decir, apagar justo aquello por lo que se eligió el modelo—. Responses las
+ * admite conservando el razonamiento.
+ *
+ * El protocolo también difiere de Anthropic: la conversación es una lista de
+ * ITEMS (no de mensajes), la instrucción de sistema va en `instructions`, las
+ * llamadas llegan como items `function_call` con `call_id`, y cada resultado se
+ * devuelve como un item `function_call_output`. Los items de razonamiento deben
+ * reenviarse tal cual para no perder el hilo entre vueltas.
+ */
+async function correrOpenAI(
+    send: Emitir, system: string, prompt: string, historial: IncomingTurn[], config: ModelConfig,
+) {
+    const input: OpenAI.Responses.ResponseInputItem[] = [
+        ...historial.map((t) => ({ role: t.role, content: t.content })),
+        { role: 'user' as const, content: prompt },
+    ];
+
+    for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+        const stream = await openai.responses.create({
+            model: config.id,
+            instructions: system,
+            input,
+            tools: TOOLS_OPENAI,
+            stream: true,
+        });
+
+        let final: OpenAI.Responses.Response | null = null;
+        for await (const ev of stream) {
+            if (ev.type === 'response.output_text.delta') {
+                send({ type: 'text', text: ev.delta });
+            } else if (ev.type === 'response.completed') {
+                final = ev.response;
+            }
+        }
+        if (!final) break;
+
+        // Se reenvían todos los items (incluidos los de razonamiento) para la vuelta siguiente.
+        input.push(...(final.output as unknown as OpenAI.Responses.ResponseInputItem[]));
+
+        const llamadas = final.output.filter(
+            (o): o is OpenAI.Responses.ResponseFunctionToolCall => o.type === 'function_call',
+        );
+        if (llamadas.length === 0) break;
+
+        for (const c of llamadas) {
+            let salida: string;
+            if (c.name === 'query_database') {
+                let sql = '';
+                try {
+                    sql = (JSON.parse(c.arguments || '{}') as { sql?: string }).sql ?? '';
+                } catch {
+                    sql = '';
+                }
+                if (sql) {
+                    send({ type: 'tool', sql });
+                    salida = (await runQuery(sql)).text;
+                } else {
+                    salida = 'Faltó el parámetro sql o los argumentos no son JSON válido.';
+                }
+            } else {
+                salida = `Herramienta desconocida: ${c.name}`;
+            }
+            input.push({ type: 'function_call_output', call_id: c.call_id, output: salida });
+        }
+    }
+}
+
 export async function POST(req: Request) {
     // Autorización de servidor: valida la sesión firmada y relee el rol en la BD.
     const auth = await requireAdmin();
     if (!auth.ok) {
         return Response.json({ error: auth.message }, { status: auth.status });
-    }
-
-    if (!process.env.ANTHROPIC_API_KEY) {
-        return Response.json(
-            { error: 'Falta configurar ANTHROPIC_API_KEY en el archivo .env del servidor.' },
-            { status: 500 },
-        );
     }
 
     let body: any;
@@ -238,14 +377,16 @@ export async function POST(req: Request) {
     }
 
     const { config } = resolveModel(body?.model);
-    const rawHistory: IncomingTurn[] = Array.isArray(body?.history) ? body.history : [];
 
-    const messages: Anthropic.MessageParam[] = rawHistory
-        .filter((t) => (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string' && t.content.trim())
-        .slice(-MAX_HISTORY_TURNS * 2)
-        .map((t) => ({ role: t.role, content: t.content.slice(0, 8000) }));
-    messages.push({ role: 'user', content: prompt });
+    // La llave que hace falta depende del modelo elegido, no siempre la de Anthropic.
+    if (!process.env[config.envLlave]) {
+        return Response.json(
+            { error: `Falta configurar ${config.envLlave} en el archivo .env del servidor para usar ${config.label}.` },
+            { status: 500 },
+        );
+    }
 
+    const historial = historialLimpio(Array.isArray(body?.history) ? body.history : []);
     const system = buildSystemPrompt();
 
     const encoder = new TextEncoder();
@@ -260,67 +401,23 @@ export async function POST(req: Request) {
             };
 
             try {
-                for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-                    const mstream = anthropic.messages.stream({
-                        model: config.id,
-                        max_tokens: 16000,
-                        system,
-                        tools: TOOLS,
-                        messages,
-                        thinking: { type: 'adaptive' },
-                        output_config: { effort: config.effort },
-                    } as Anthropic.MessageCreateParamsStreaming);
-
-                    for await (const event of mstream) {
-                        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-                            send({ type: 'text', text: event.delta.text });
-                        }
-                    }
-
-                    const msg = await mstream.finalMessage();
-                    // Preserva el contenido completo (incluye bloques de thinking firmados)
-                    messages.push({ role: 'assistant', content: msg.content });
-
-                    if (msg.stop_reason !== 'tool_use') break;
-
-                    const toolUses = msg.content.filter(
-                        (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-                    );
-
-                    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-                    for (const tu of toolUses) {
-                        if (tu.name === 'query_database') {
-                            const sql = (tu.input as any)?.sql ?? '';
-                            send({ type: 'tool', sql });
-                            const result = await runQuery(sql);
-                            toolResults.push({
-                                type: 'tool_result',
-                                tool_use_id: tu.id,
-                                content: result.text,
-                                is_error: !result.ok,
-                            });
-                        } else {
-                            toolResults.push({
-                                type: 'tool_result',
-                                tool_use_id: tu.id,
-                                content: `Herramienta desconocida: ${tu.name}`,
-                                is_error: true,
-                            });
-                        }
-                    }
-
-                    messages.push({ role: 'user', content: toolResults });
+                if (config.proveedor === 'openai') {
+                    await correrOpenAI(send, system, prompt, historial, config);
+                } else {
+                    await correrAnthropic(send, system, prompt, historial, config);
                 }
-
                 send({ type: 'done' });
             } catch (e: any) {
                 console.error('[agent] error:', e);
-                const message =
-                    e instanceof Anthropic.AuthenticationError
-                        ? 'La llave de Anthropic (ANTHROPIC_API_KEY) es inválida o falta.'
-                        : e instanceof Anthropic.RateLimitError
-                            ? 'Demasiadas solicitudes. Intenta de nuevo en unos segundos.'
-                            : e?.message || 'Ocurrió un error inesperado.';
+                const autenticacion =
+                    e instanceof Anthropic.AuthenticationError || e instanceof OpenAI.AuthenticationError;
+                const limite =
+                    e instanceof Anthropic.RateLimitError || e instanceof OpenAI.RateLimitError;
+                const message = autenticacion
+                    ? `La llave ${config.envLlave} es inválida o falta.`
+                    : limite
+                        ? 'Demasiadas solicitudes. Intenta de nuevo en unos segundos.'
+                        : e?.message || 'Ocurrió un error inesperado.';
                 send({ type: 'error', message });
             } finally {
                 controller.close();
