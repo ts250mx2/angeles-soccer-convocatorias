@@ -449,3 +449,45 @@ export const SECCIONES: SeccionManual[] = [
 export const POR_CLAVE: Record<string, SeccionManual> = Object.fromEntries(
     SECCIONES.map((s) => [s.clave, s]),
 );
+
+/** Un bloque como texto plano, para alimentar al agente. */
+function bloqueATexto(b: Bloque): string {
+    switch (b.tipo) {
+        case 'subtitulo':
+            return `\n### ${b.texto}`;
+        case 'parrafo':
+            return b.texto;
+        case 'lista':
+            return b.items.map((i) => `- ${i}`).join('\n');
+        case 'pasos':
+            return b.items.map((i, n) => `${n + 1}. ${i}`).join('\n');
+        case 'formula':
+            return b.lineas.join('\n');
+        case 'nota':
+            return `[${b.titulo}] ${b.texto}`;
+        case 'tabla':
+            return [
+                `| ${b.encabezados.join(' | ')} |`,
+                `| ${b.encabezados.map(() => '---').join(' | ')} |`,
+                ...b.filas.map((f) => `| ${f.join(' | ')} |`),
+            ].join('\n');
+    }
+}
+
+/**
+ * El manual completo como texto, para inyectarlo en el prompt del agente.
+ *
+ * Se deriva de las MISMAS secciones que pinta la pantalla del manual, así que el
+ * agente y el documento nunca se contradicen: al editar el contenido, ambos cambian.
+ */
+export function manualComoTexto(): string {
+    const partes: string[] = [];
+    for (const s of [...INTRO, ...SECCIONES, ...CIERRE]) {
+        const ruta = s.clave.startsWith('/') ? ` (pantalla: ${s.clave})` : '';
+        partes.push(`## ${s.titulo}${ruta}`);
+        partes.push(s.bloques.map(bloqueATexto).join('\n'));
+        partes.push('');
+    }
+    // El manual se escribe con **negritas** de markdown; sobran en el prompt.
+    return partes.join('\n').replace(/\*\*/g, '').trim();
+}

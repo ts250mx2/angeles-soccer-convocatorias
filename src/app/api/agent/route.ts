@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { anthropic, resolveModel } from '@/lib/anthropic';
+import { manualComoTexto } from '@/lib/manual-contenido';
 import { assertReadOnly } from '@/lib/sql-sandbox';
 import { requireAdmin } from '@/lib/auth';
 import { pool } from '@/lib/db';
@@ -146,6 +147,20 @@ FORMATO DE RESPUESTA (importante — tus respuestas se renderizan como markdown)
   📅 fechas/temporadas · 🏆 copas y ligas · 👕 ropa/uniformes · 🧾 caja/cortes · 📈 crecimiento · 📉 caída.
 - Menciona SIEMPRE el alcance del dato: temporada, rango de fechas y/o sede considerados.
 - Sé conciso: sin relleno, sin repetir la pregunta, sin explicar el SQL salvo que te lo pidan.
+
+PREGUNTAS SOBRE CÓMO USAR EL SISTEMA:
+Abajo tienes el Manual de Operación completo. Cuando te pregunten cómo se hace algo, dónde está una
+pantalla, qué significa un indicador o por qué dos reportes no cuadran, responde CON EL MANUAL y NO
+consultes la base de datos: es una pregunta de uso, no de datos.
+- Di en qué pantalla se hace, con su ruta del menú (por ejemplo "Jugadores › Adeudos por Sede").
+- Si el manual trae una fórmula o una advertencia sobre ese dato, inclúyela: son justo los puntos
+  que más se malinterpretan.
+- Si la pregunta mezcla las dos cosas ("¿cómo veo los adeudos y cuántos hay?"), explica con el
+  manual Y consulta la base para la cifra.
+- Si algo no está en el manual, dilo en vez de suponerlo.
+
+MANUAL DE OPERACIÓN:
+${manualComoTexto()}
 
 Si la pregunta NO requiere datos (saludo, ayuda, explicación de un módulo), responde directamente sin consultar.
 
