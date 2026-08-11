@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 import { UserProvider } from "@/contexts/user-context";
+import { AgentChatProvider } from "@/hooks/use-agent-chat";
 
 
 export default function RootLayout({
@@ -31,8 +32,13 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <UserProvider>
-
-          {children}
+          {/* El agente vive por ENCIMA de las páginas: cada pantalla renderiza su
+              propio DashboardLayout, así que un proveedor puesto ahí quedaría por
+              debajo de quien lo consume. Aquí además la conversación sobrevive al
+              navegar entre pantallas. */}
+          <AgentChatProvider>
+            {children}
+          </AgentChatProvider>
         </UserProvider>
       </body>
     </html>
