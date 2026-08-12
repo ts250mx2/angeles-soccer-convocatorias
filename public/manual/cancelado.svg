@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 206" role="img"
+     aria-label="De tres ventas del día, una cancelada sigue guardada pero no suma: los totales cuentan mil trescientos cincuenta pesos y solo la pantalla de Ventas Canceladas muestra la que falta.">
+  <style>
+    text { font-family: "Segoe UI", Helvetica, Arial, sans-serif; }
+    .lbl   { font-size: 10px;   font-weight: 700; letter-spacing: 1.4px; fill: #64748b; }
+    .item  { font-size: 12.5px; fill: #cbd5e1; }
+    .monto { font-size: 12.5px; font-weight: 700; fill: #e2e8f0; }
+    .baja  { font-size: 12.5px; fill: #64748b; }
+    .tag   { font-size: 9px;    font-weight: 700; letter-spacing: .6px; fill: #fda4af; }
+    .okT   { font-size: 12px;   font-weight: 700; fill: #e2e8f0; }
+    .okS   { font-size: 10.5px; fill: #94a3b8; }
+    .roT   { font-size: 12px;   font-weight: 700; fill: #fecdd3; }
+    .roS   { font-size: 10.5px; fill: #fda4af; }
+    .caja  { fill: #131f36; stroke: #2b3a52; }
+    .flecha{ stroke: #475569; stroke-width: 2; fill: none; }
+  </style>
+
+  <rect x="0.5" y="0.5" width="759" height="205" rx="16" fill="#0f172a" stroke="#1e293b"/>
+
+  <!-- El listado tal como queda guardado -->
+  <rect class="caja" x="32" y="32" width="310" height="142" rx="12"/>
+  <text class="lbl" x="52" y="58">VENTAS DEL DÍA</text>
+
+  <text class="item"  x="52"  y="91">Playera talla M</text>
+  <text class="monto" x="322" y="91" text-anchor="end">$450.00</text>
+  <line x1="44" y1="100" x2="330" y2="100" stroke="#1e293b"/>
+
+  <text class="item"  x="52"  y="119">Mensualidad</text>
+  <text class="monto" x="322" y="119" text-anchor="end">$900.00</text>
+  <line x1="44" y1="128" x2="330" y2="128" stroke="#1e293b"/>
+
+  <text class="baja" x="52" y="147">Playera talla G</text>
+  <line x1="52" y1="143" x2="141" y2="143" stroke="#64748b" stroke-width="1.5"/>
+  <rect x="160" y="134" width="80" height="19" rx="5" fill="#2a1218" stroke="#f43f5e"/>
+  <text class="tag" x="169" y="147">CANCELADO</text>
+  <text class="baja" x="322" y="147" text-anchor="end">$450.00</text>
+  <line x1="286" y1="143" x2="322" y2="143" stroke="#64748b" stroke-width="1.5"/>
+
+  <path class="flecha" d="M352 103 H396 M396 63 V143 M396 63 H406 M396 143 H406"/>
+  <polygon points="406,58 414,63 406,68" fill="#475569"/>
+  <polygon points="406,138 414,143 406,148" fill="#475569"/>
+
+  <!-- Quién la cuenta y quién no -->
+  <rect class="caja" x="414" y="32" width="318" height="62" rx="12"/>
+  <text class="okT" x="434" y="57">Totales de ventas, caja y cortes</text>
+  <text class="okS" x="434" y="75">suman $1,350.00: la cancelada queda fuera</text>
+
+  <rect x="414" y="112" width="318" height="62" rx="12" fill="#2a1218" stroke="#f43f5e"/>
+  <text class="roT" x="434" y="137">Pantalla de Ventas Canceladas</text>
+  <text class="roS" x="434" y="155">la única que la muestra: $450.00</text>
+</svg>

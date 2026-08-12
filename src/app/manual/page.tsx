@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { BookOpen, Printer, Search, ExternalLink } from "lucide-react";
 import { useUser } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -81,6 +82,24 @@ function BloqueVista({ bloque }: { bloque: Bloque }) {
         </div>
       );
     }
+    case "imagen":
+      return (
+        <figure className="my-5 max-w-3xl">
+          <Image
+            src={bloque.src}
+            alt={bloque.alt}
+            width={bloque.ancho}
+            height={bloque.alto}
+            unoptimized
+            className="w-full h-auto rounded-2xl border border-white/10"
+          />
+          {bloque.pie && (
+            <figcaption className="mt-2 text-xs text-slate-400 leading-relaxed">
+              {conNegritas(bloque.pie)}
+            </figcaption>
+          )}
+        </figure>
+      );
     case "tabla":
       return (
         <div className="my-4 overflow-x-auto">

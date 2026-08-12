@@ -3,9 +3,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   MapPin, Receipt, CalendarRange, Search, X, Loader2, AlertCircle, Banknote, ChevronRight,
+  FileDown, FileSpreadsheet,
 } from "lucide-react";
 import { useUser } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  exportEgresosResumenToPdf, exportEgresosResumenToExcel,
+  exportEgresosDetalleToPdf, exportEgresosDetalleToExcel,
+  type SedeEgresos, type FormaPagoEgresos, type EgresoRow,
+} from "@/lib/gastos-export";
 
 type Periodo = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 
@@ -18,34 +24,10 @@ const PERIODOS: { key: Periodo; label: string }[] = [
   { key: "custom", label: "Fechas..." },
 ];
 
-interface SedeEgresos {
-  IdSede: number;
-  Sede: string;
-  Movimientos: number;
-  Total: number;
-  Efectivo: number;
-  Otros: number;
-}
-
-interface FormaPagoEgresos {
-  IdFormaPago: number;
-  FormaPago: string;
-  Movimientos: number;
-  Total: number;
-}
-
-interface EgresoRow {
-  IdEgreso: number;
-  IdSede: number;
-  Sede: string;
-  Fecha: string;
-  Concepto: string;
-  PagarA: string;
-  Factura: string;
-  Recibo: string;
-  FormaPago: string;
-  Total: number;
-}
+/** Botón de exportación; mismo estilo que el resto de la plataforma. */
+const EXP_BTN = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed";
+const EXP_PDF = `${EXP_BTN} bg-blue-600/15 hover:bg-blue-600/25 border-blue-500/30 text-blue-200`;
+const EXP_XLS = `${EXP_BTN} bg-emerald-600/15 hover:bg-emerald-600/25 border-emerald-500/30 text-emerald-200`;
 
 const money = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n);
@@ -72,6 +54,7 @@ export default function EgresosPage() {
 
   // Sede abierta en el panel de detalle. null = cerrado.
   const [detalleSede, setDetalleSede] = useState<SedeEgresos | null>(null);
+  const [exportando, setExportando] = useState(false);
 
   useEffect(() => {
     if (isInitialized && !user) router.push("/login");
@@ -131,6 +114,19 @@ export default function EgresosPage() {
 
   const maxSede = Math.max(...porSede.map((s) => s.Total), 1);
 
+  // Lo que ya está en pantalla; no hace falta volver a consultar para exportarlo.
+  const resumen = { porSede, porFormaPago, total, movimientos };
+  const puedeExportar = !isLoading && !error && porSede.length > 0;
+
+  const exportarExcel = async () => {
+    setExportando(true);
+    try {
+      await exportEgresosResumenToExcel(resumen, etiquetaPeriodo);
+    } finally {
+      setExportando(false);
+    }
+  };
+
   return (
     <DashboardLayout>
       <main className="overflow-y-auto flex-1 text-white p-6 md:p-8 relative">
@@ -141,25 +137,45 @@ export default function EgresosPage() {
               <h1 className="text-3xl font-black text-white mb-2">Egresos por Sede</h1>
               <p className="text-slate-400">Gastos registrados — {etiquetaPeriodo}</p>
             </div>
-            <div className="flex gap-2 bg-white/5 p-1 rounded-2xl border border-white/10 flex-wrap">
-              {PERIODOS.map((p) => (
+            <div className="flex flex-col items-start md:items-end gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  key={p.key}
-                  onClick={() => {
-                    if (p.key === "custom") { setMostrarFechas(true); return; }
-                    setPeriodo(p.key);
-                    setMostrarFechas(false);
-                  }}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    periodo === p.key
-                      ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
-                      : "text-slate-400 hover:text-white hover:bg-white/10"
-                  }`}
+                  onClick={() => exportEgresosResumenToPdf(resumen, etiquetaPeriodo)}
+                  disabled={!puedeExportar}
+                  title="Resumen por sede y por forma de pago en PDF"
+                  className={EXP_PDF}
                 >
-                  {p.key === "custom" && <CalendarRange size={13} />}
-                  {p.label}
+                  <FileDown size={13} /> PDF
                 </button>
-              ))}
+                <button
+                  onClick={exportarExcel}
+                  disabled={!puedeExportar || exportando}
+                  title="Resumen por sede y por forma de pago en Excel"
+                  className={EXP_XLS}
+                >
+                  {exportando ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} Excel
+                </button>
+              </div>
+              <div className="flex gap-2 bg-white/5 p-1 rounded-2xl border border-white/10 flex-wrap">
+                {PERIODOS.map((p) => (
+                  <button
+                    key={p.key}
+                    onClick={() => {
+                      if (p.key === "custom") { setMostrarFechas(true); return; }
+                      setPeriodo(p.key);
+                      setMostrarFechas(false);
+                    }}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      periodo === p.key
+                        ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
+                        : "text-slate-400 hover:text-white hover:bg-white/10"
+                    }`}
+                  >
+                    {p.key === "custom" && <CalendarRange size={13} />}
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -322,6 +338,7 @@ function DetalleEgresos({ sede, queryPeriodo, etiquetaPeriodo, onClose }: {
   const [error, setError] = useState<string | null>(null);
   const [truncado, setTruncado] = useState(false);
   const [query, setQuery] = useState("");
+  const [exportando, setExportando] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -362,23 +379,58 @@ function DetalleEgresos({ sede, queryPeriodo, etiquetaPeriodo, onClose }: {
     : filas;
   const totalVisible = filtradas.reduce((s, f) => s + f.Total, 0);
 
+  // Se exporta lo que está a la vista: si hay búsqueda activa, solo lo filtrado.
+  const tituloExport = `Egresos ${sede.Sede}`;
+  const subtituloExport = q ? `${etiquetaPeriodo} · Filtro: "${query.trim()}"` : etiquetaPeriodo;
+  const puedeExportar = !isLoading && !error && filtradas.length > 0;
+
+  const exportarExcel = async () => {
+    setExportando(true);
+    try {
+      await exportEgresosDetalleToExcel(filtradas, tituloExport, subtituloExport);
+    } finally {
+      setExportando(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[150] p-4" onClick={onClose}>
       <div
         className="bg-[#0f172a] border border-white/15 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-5 border-b border-white/10 bg-white/5 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="text-lg font-black text-white flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-rose-500" />
-              {sede.Sede}
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">Egresos · {etiquetaPeriodo}</p>
+        <div className="p-5 border-b border-white/10 bg-white/5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-lg font-black text-white flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-rose-500" />
+                {sede.Sede}
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">Egresos · {etiquetaPeriodo}</p>
+            </div>
+            <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all flex-shrink-0">
+              <X size={20} />
+            </button>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all flex-shrink-0">
-            <X size={20} />
-          </button>
+
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={() => exportEgresosDetalleToPdf(filtradas, tituloExport, subtituloExport)}
+              disabled={!puedeExportar}
+              title="Detalle de los movimientos a la vista en PDF"
+              className={EXP_PDF}
+            >
+              <FileDown size={13} /> PDF
+            </button>
+            <button
+              onClick={exportarExcel}
+              disabled={!puedeExportar || exportando}
+              title="Detalle de los movimientos a la vista en Excel"
+              className={EXP_XLS}
+            >
+              {exportando ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} Excel
+            </button>
+          </div>
         </div>
 
         {!isLoading && !error && filas.length > 0 && (

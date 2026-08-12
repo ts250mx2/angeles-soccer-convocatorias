@@ -19,7 +19,14 @@ export type Bloque =
     | { tipo: 'pasos'; items: string[] }
     | { tipo: 'tabla'; encabezados: string[]; filas: string[][] }
     | { tipo: 'formula'; lineas: string[] }
-    | { tipo: 'nota'; estilo: 'ojo' | 'calculo' | 'cuidado'; titulo: string; texto: string };
+    | { tipo: 'nota'; estilo: 'ojo' | 'calculo' | 'cuidado'; titulo: string; texto: string }
+    /**
+     * Imagen del manual. `src` es una ruta dentro de /public. El `alt` describe la
+     * figura para quien no la ve, y el `pie` es el texto que se imprime debajo; ambos
+     * son lo único que llega al agente, así que la figura nunca debe cargar sola con
+     * información que no esté también escrita.
+     */
+    | { tipo: 'imagen'; src: string; alt: string; ancho: number; alto: number; pie?: string };
 
 export interface SeccionManual {
     /** Clave del menú: href del módulo, o `grupo:<label>` para un grupo completo. */
@@ -31,6 +38,28 @@ export interface SeccionManual {
 
 /** Secciones que se muestran siempre, antes de los módulos. */
 export const INTRO: SeccionManual[] = [
+    {
+        clave: 'intro:acceso',
+        titulo: 'Entrar al sistema',
+        audiencia: ['operacion', 'direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'Se entra con usuario y contraseña. La cuenta define **qué menús aparecen**: quien no es administrador ve solo Convocatorias, Inscripciones y este manual. Si echas de menos una pantalla que alguien más sí tiene, es cuestión de permisos, no de que falle el sistema.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/login.JPG',
+                ancho: 950,
+                alto: 690,
+                alt: 'Pantalla de acceso con los campos Usuario y Contraseña y el botón Iniciar Sesión.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Ya dentro, el menú de la izquierda se colapsa con el botón de la esquina superior para ganar espacio, y arriba se ve siempre la temporada activa.',
+            },
+        ],
+    },
     {
         clave: 'intro:conceptos',
         titulo: 'Conceptos que se repiten',
@@ -46,6 +75,14 @@ export const INTRO: SeccionManual[] = [
                 texto: 'Cuando se captura un pago se le graba a qué temporada pertenece. Ese sello es un dato guardado en el recibo: **no se deduce de la fecha del cobro**. Por eso una inscripción cobrada en julio puede pertenecer a la temporada que arranca en agosto, y por eso un pago capturado con la temporada equivocada aparece en el reporte equivocado.',
             },
             {
+                tipo: 'imagen',
+                src: '/manual/temporada-sello.svg',
+                ancho: 760,
+                alto: 208,
+                alt: 'Una inscripción cobrada el 15 de julio de 2026 lleva sellada la temporada 2026-2027; por eso entra en el reporte de esa temporada y no en el de la anterior.',
+                pie: 'El mes del cobro y la temporada del recibo son datos distintos. Manda el sello.',
+            },
+            {
                 tipo: 'parrafo',
                 texto: 'Una sola temporada está marcada como activa. El Dashboard siempre trabaja con esa; Inscripciones y Adeudos permiten elegir cuál ver.',
             },
@@ -54,10 +91,26 @@ export const INTRO: SeccionManual[] = [
                 tipo: 'parrafo',
                 texto: 'Un jugador pertenece a una sede, pero puede pagar en otra. Los reportes distinguen ambas cosas, y por eso un mismo día puede verse distinto "por sede" según qué reporte abras.',
             },
+            {
+                tipo: 'imagen',
+                src: '/manual/sede-registro-cobro.svg',
+                ancho: 760,
+                alto: 208,
+                alt: 'Un jugador registrado en Matriz paga en San Nicolás: Inscripciones por Sede lo cuenta en Matriz, mientras que Caja y los cortes lo cuentan en San Nicolás.',
+                pie: 'Un mismo pago, dos sedes distintas según el reporte. Ninguno de los dos está mal: miden cosas diferentes.',
+            },
             { tipo: 'subtitulo', texto: 'Nada se borra: se cancela' },
             {
                 tipo: 'parrafo',
                 texto: 'Pagos, ventas y egresos cancelados siguen en la base pero quedan marcados. Todos los totales cuentan **solo lo vigente**. Por eso existe la pantalla de Ventas Canceladas: para ver justamente lo que los demás reportes excluyen.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/cancelado.svg',
+                ancho: 760,
+                alto: 206,
+                alt: 'De tres ventas del día, una cancelada sigue guardada pero no suma: los totales cuentan $1,350.00 y solo la pantalla de Ventas Canceladas muestra los $450.00 que faltan.',
+                pie: 'La venta cancelada no desaparece del sistema; desaparece de los totales.',
             },
             { tipo: 'subtitulo', texto: 'Tipos de producto y formas de pago' },
             {
@@ -127,6 +180,30 @@ export const SECCIONES: SeccionManual[] = [
                     'Al terminar, marca la convocatoria como **cerrada**.',
                 ],
             },
+            {
+                tipo: 'imagen',
+                src: '/manual/convocatorias.JPG',
+                ancho: 991,
+                alto: 505,
+                alt: 'Resumen de Convocatorias con el buscador, el interruptor Ver Cerradas, los botones Excel y PDF, el cambio entre vista de Tarjetas y Tabla, y el botón + Nueva Convocatoria.',
+                pie: 'La pantalla de arranque. El interruptor **Ver Cerradas** trae de vuelta las que ya se marcaron como terminadas.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/nuevaconvocatoria.JPG',
+                ancho: 398,
+                alto: 558,
+                alt: 'Formulario Nueva Convocatoria con liga o torneo, profesor, categoría, color distintivo, fechas de inicio y fin, y los costos de liga, profesor y árbitro.',
+                pie: 'Los tres costos de abajo son del torneo, no del jugador: sirven para saber qué deja la convocatoria.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/convocar.JPG',
+                ancho: 884,
+                alto: 871,
+                alt: 'Jugadores de la categoría 2011FC en vista de tarjetas, cada uno con su botón verde Convocar y un botón de precio.',
+                pie: 'Al abrir la convocatoria salen todos los jugadores de la categoría. Se convoca uno por uno con el botón verde.',
+            },
             { tipo: 'subtitulo', texto: 'Precios, pagos y saldo' },
             {
                 tipo: 'parrafo',
@@ -137,6 +214,14 @@ export const SECCIONES: SeccionManual[] = [
                 estilo: 'ojo',
                 titulo: 'Ojo',
                 texto: 'Esas tres cifras **solo aparecen en los jugadores convocados**. En los disponibles verás un guion, porque hasta que no están convocados no deben nada. El precio sigue siendo editable aunque no se muestre, por si quieres dejarlo listo de antemano.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/cambiarprecioconvocado.JPG',
+                ancho: 929,
+                alto: 923,
+                alt: 'Vista de tabla de la convocatoria: los jugadores convocados muestran precio, pago y CXC, los disponibles muestran guiones, y encima un cuadro de diálogo pide el nuevo precio para un jugador.',
+                pie: 'Compara los renglones: los **Convocados** traen sus tres cifras y los **Disponibles** un guion. El diálogo de arriba es el cambio de precio individual.',
             },
             { tipo: 'subtitulo', texto: 'Filtros y salidas' },
             {
@@ -164,6 +249,22 @@ export const SECCIONES: SeccionManual[] = [
                 tipo: 'parrafo',
                 texto: 'Concentra lo recaudado por concepto de torneos en la temporada: el total, el acumulado y el desglose por categoría. Sirve para responder "¿cuánto dejaron las copas este año y qué categorías aportaron más?".',
             },
+            {
+                tipo: 'imagen',
+                src: '/manual/pagoscopasligas.JPG',
+                ancho: 1893,
+                alto: 843,
+                alt: 'Tarjetas de cada copa o liga con lo recaudado, el número de pagos y cuántos jugadores participaron, y arriba a la derecha el total de la temporada.',
+                pie: 'Una tarjeta por torneo, ordenadas de mayor a menor recaudación. El recuadro verde de la esquina es el total de la temporada.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/detallepagoscopasligas.JPG',
+                ancho: 708,
+                alto: 837,
+                alt: 'Desglose por categoría de una liga: cada categoría con su recaudación, los pagos y los jugadores distintos que pagaron, y abajo el total del producto.',
+                pie: 'Al abrir un torneo se ve qué categorías lo sostienen. El número entre paréntesis son jugadores distintos, no pagos.',
+            },
         ],
     },
     {
@@ -174,6 +275,14 @@ export const SECCIONES: SeccionManual[] = [
             {
                 tipo: 'parrafo',
                 texto: 'Mide el avance de la inscripción de una temporada, sede por sede. Arriba eliges la temporada y todo lo demás se recalcula.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/inscripciones.JPG',
+                ancho: 1876,
+                alto: 812,
+                alt: 'Inscripciones por Sede: el selector de temporada arriba a la derecha, los bloques de Total Inscritos, Total Bajas y Sin Inscripción, y debajo una tarjeta por sede con inscritos, becados, bajas y jugadores con pagos sin inscripción.',
+                pie: 'Cada tarjeta de sede se abre en el detalle por categoría con **Ver categorías**.',
             },
             { tipo: 'subtitulo', texto: 'Los cuatro indicadores' },
             {
@@ -212,6 +321,14 @@ export const SECCIONES: SeccionManual[] = [
             {
                 tipo: 'parrafo',
                 texto: 'La pantalla de cobranza. Compara siempre dos ciclos: la **temporada anterior** (ya cerrada, cuentan todos sus meses) y **esta temporada** (solo los meses ya vencidos). Las reglas de las dos no son iguales, y esa es la parte que más confunde.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/adeudossede.JPG',
+                ancho: 1855,
+                alto: 829,
+                alt: 'Adeudos por Sede: los cuatro bloques superiores de Jugadores Activos, Jugadores Bajas, Adeudos temporada anterior y Adeudos esta temporada, este último con su tarjeta amarilla de Sin Inscripción, y debajo una tarjeta por sede.',
+                pie: 'Los dos bloques de la derecha son los ciclos que se comparan. El recuadro amarillo **Sin inscripción** solo existe en el ciclo en curso.',
             },
             { tipo: 'subtitulo', texto: 'Esta temporada: solo cuentan los inscritos' },
             {
@@ -263,6 +380,14 @@ export const SECCIONES: SeccionManual[] = [
                 tipo: 'parrafo',
                 texto: 'Cada jornada de cobro en una sede es una **apertura**. Se abre con un fondo de caja, se cobra durante el día y al final se captura lo que hay físicamente para cerrarla.',
             },
+            {
+                tipo: 'imagen',
+                src: '/manual/controlcaja.JPG',
+                ancho: 1895,
+                alto: 835,
+                alt: 'Control de Caja: totales del período arriba y debajo una fila por sede con la hora de apertura, el cajero, el fondo de caja, las ventas, los egresos y la hora de corte.',
+                pie: 'Una fila por apertura. A la derecha, **Cerrado** o **En curso**: las que siguen abiertas muestran "Sin Corte".',
+            },
             { tipo: 'subtitulo', texto: 'El corte, paso a paso' },
             {
                 tipo: 'pasos',
@@ -286,6 +411,14 @@ export const SECCIONES: SeccionManual[] = [
                 titulo: 'Cómo se calcula',
                 texto: 'Diferencia negativa es faltante; positiva, sobrante. Los **dólares se cuadran aparte**, contra las ventas cobradas en dólares, y no entran en la fórmula de pesos.',
             },
+            {
+                tipo: 'imagen',
+                src: '/manual/cortecaja.JPG',
+                ancho: 782,
+                alto: 431,
+                alt: 'Ventana del corte de caja en tres columnas: Datos de la apertura, Captura de lo que hay por cada forma de pago, y Efectivo con el fondo, las ventas, los gastos, el esperado, el capturado y la diferencia.',
+                pie: 'La columna de en medio es lo único que se captura a mano. La de la derecha calcula sola y termina en la **Diferencia**.',
+            },
             { tipo: 'subtitulo', texto: 'Qué ves en cada apertura' },
             {
                 tipo: 'lista',
@@ -295,6 +428,22 @@ export const SECCIONES: SeccionManual[] = [
                     'El detalle de movimientos que forman cada total.',
                     'Las aperturas sin cerrar quedan marcadas como Sin corte.',
                 ],
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/detalleventascontrolcaja.JPG',
+                ancho: 880,
+                alto: 361,
+                alt: 'Detalle de ventas de una apertura, con las membresías y los uniformes desglosados por forma de pago en tablas separadas y el total de ventas a la derecha.',
+                pie: 'Membresías y uniformes van en tablas aparte porque el corte los reporta por separado.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/detalleegresoscontrolcaja.JPG',
+                ancho: 688,
+                alto: 523,
+                alt: 'Detalle de egresos de una apertura: el resumen por forma de pago a la izquierda y a la derecha cada gasto con su hora, concepto, forma de pago e importe.',
+                pie: 'Estos son los gastos que salieron **de esa caja**. Los gastos de la sede que no pasaron por una caja abierta se ven en Egresos por Sede.',
             },
         ],
     },
@@ -306,6 +455,14 @@ export const SECCIONES: SeccionManual[] = [
             {
                 tipo: 'parrafo',
                 texto: 'La misma información del control de caja, consolidada por mes y con filtro por sede. Sirve para revisar un período completo sin abrir apertura por apertura, y para detectar sedes con diferencias recurrentes. Exporta a PDF.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/cortescajames.JPG',
+                ancho: 1903,
+                alto: 858,
+                alt: 'Cortes de Caja por Mes: selector de año, filtro por sede con el acumulado de cada una, totales del año y una tarjeta por mes con ventas, egresos y neto.',
+                pie: 'El neto de un mes puede salir **en rojo** cuando los egresos superan a las ventas de ese período.',
             },
         ],
     },
@@ -330,6 +487,46 @@ export const SECCIONES: SeccionManual[] = [
                 ],
             },
             { tipo: 'parrafo', texto: 'Todas permiten buscar y exportar a Excel y PDF.' },
+            {
+                tipo: 'imagen',
+                src: '/manual/historialventas.JPG',
+                ancho: 1879,
+                alto: 837,
+                alt: 'Historial de Ventas: totales por forma de pago arriba, buscador por comprador, filtro de sede y período, y una tabla con fecha, comprador, concepto, sede, forma de pago, recibo e importe.',
+                pie: 'La vista más fina: un renglón por concepto cobrado. Un mismo recibo puede ocupar varios renglones.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/ventasdia.JPG',
+                ancho: 1904,
+                alto: 774,
+                alt: 'Ventas por Día: totales de ventas, gastos y neto, y una tabla con un renglón por día que muestra número de ventas, importe vendido, número de gastos, importe gastado y neto.',
+                pie: 'Es la única vista de Ventas que resta los gastos. Al hacer clic en un día se abre su detalle.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/ventasproducto.JPG',
+                ancho: 1894,
+                alto: 827,
+                alt: 'Ventas por Producto: mapa de rectángulos donde el tamaño de cada bloque es su peso en la venta, y a la derecha la lista de productos ordenada por importe con su cantidad y porcentaje.',
+                pie: 'El tamaño del rectángulo es proporcional a lo vendido: de un vistazo se ve qué concepto sostiene el mes.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/ventastipoproducto.JPG',
+                ancho: 1912,
+                alto: 796,
+                alt: 'Ventas por Tipo de Producto: el mismo mapa de rectángulos pero agrupado en familias como mensualidad, liga, ropa, inscripción y reinscripción, copa y comisión.',
+                pie: 'La misma venta del reporte anterior, agrupada por familia en vez de por artículo suelto.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/ventascanceladas.JPG',
+                ancho: 1898,
+                alto: 850,
+                alt: 'Ventas Canceladas: total cancelado desglosado por forma de pago, filtro por sede y período, y la tabla de cancelaciones con su etiqueta roja CANCELADA.',
+                pie: 'Todo lo que sale aquí está **excluido** de los demás reportes. Varios renglones seguidos del mismo comprador suelen ser un recibo completo cancelado.',
+            },
         ],
     },
     {
@@ -350,6 +547,22 @@ export const SECCIONES: SeccionManual[] = [
                 ],
             },
             {
+                tipo: 'imagen',
+                src: '/manual/egresossede.JPG',
+                ancho: 1882,
+                alto: 787,
+                alt: 'Egresos por Sede: los botones PDF y Excel arriba a la izquierda, el selector de período a la derecha, los tres recuadros de total, formas de pago y sedes con gasto, y una tarjeta por sede con su barra comparativa.',
+                pie: 'Los botones **PDF** y **Excel** de arriba bajan el resumen completo: el desglose por sede y el de formas de pago.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/detalleegresossede.JPG',
+                ancho: 681,
+                alto: 454,
+                alt: 'Detalle de egresos de una sede con su propio PDF y Excel, un buscador, y cada movimiento con fecha, proveedor, forma de pago, factura e importe, más el total abajo.',
+                pie: 'El detalle trae sus propios PDF y Excel, y **respetan el buscador**: si filtras, el archivo sale filtrado.',
+            },
+            {
                 tipo: 'nota',
                 estilo: 'ojo',
                 titulo: 'Ojo',
@@ -366,6 +579,14 @@ export const SECCIONES: SeccionManual[] = [
             {
                 tipo: 'parrafo',
                 texto: 'La foto financiera de la temporada activa. **Todo el tablero está acotado a esa temporada**, y casi todo responde además al selector de período de arriba.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/dashboard.JPG',
+                ancho: 1903,
+                alto: 849,
+                alt: 'Dashboard: selector de período arriba a la derecha, los cuatro indicadores de recaudado, pagos, jugadores pagantes y promedio, la gráfica de tendencia de pagos por día, y abajo los cortes por sede, por liga y la tarjeta de Acumulado de la temporada.',
+                pie: 'La tarjeta de la esquina inferior derecha lleva la etiqueta **Toda la temporada**: es la única que ignora el selector de período de arriba.',
             },
             { tipo: 'subtitulo', texto: 'Los cuatro indicadores del período' },
             {
@@ -411,6 +632,14 @@ export const SECCIONES: SeccionManual[] = [
             {
                 tipo: 'parrafo',
                 texto: 'Un asistente al que le preguntas en español sobre cualquier módulo —cobranza, inscripciones, ventas, egresos— y responde consultando los datos reales. Útil para preguntas que no tienen pantalla propia: cruces entre sedes, comparaciones entre períodos o rankings específicos.',
+            },
+            {
+                tipo: 'imagen',
+                src: '/manual/agenteinteligente.JPG',
+                ancho: 1904,
+                alto: 787,
+                alt: 'Agente Inteligente con cuatro preguntas de ejemplo listas para pulsar y, arriba a la derecha, el selector del modelo que responde.',
+                pie: 'Las cuatro tarjetas del centro son ejemplos para arrancar. Arriba a la derecha se elige el modelo que contesta. También está disponible como chat flotante desde cualquier pantalla.',
             },
             {
                 tipo: 'nota',
@@ -465,6 +694,9 @@ function bloqueATexto(b: Bloque): string {
             return b.lineas.join('\n');
         case 'nota':
             return `[${b.titulo}] ${b.texto}`;
+        // El agente no ve la figura; recibe su descripción para poder explicarla.
+        case 'imagen':
+            return `[Figura: ${b.alt}${b.pie ? ` — ${b.pie}` : ''}]`;
         case 'tabla':
             return [
                 `| ${b.encabezados.join(' | ')} |`,
