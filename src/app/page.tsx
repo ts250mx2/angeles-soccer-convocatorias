@@ -9,6 +9,7 @@ import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import DashboardLayout from '@/components/DashboardLayout';
+import { ELIMINATORIAS, etiquetaJornadas } from '@/lib/convocatoria-opciones';
 
 interface ConvocatoriaSummary {
   IdTemporada: number;
@@ -28,6 +29,8 @@ interface ConvocatoriaSummary {
   CostoLiga?: number;
   CostoProfesor?: number;
   CostoArbitro?: number;
+  CantidadJornadas?: number | null;
+  Eliminatoria?: string | null;
 }
 
 export default function Home() {
@@ -62,7 +65,9 @@ export default function Home() {
     color: '',
     costoLiga: 0,
     costoProfesor: 0,
-    costoArbitro: 0
+    costoArbitro: 0,
+    cantidadJornadas: '',
+    eliminatoria: ''
   });
   const [dbCategories, setDbCategories] = useState<string[]>([]);
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
@@ -87,7 +92,9 @@ export default function Home() {
     idProfesor: '' as string | number,
     costoLiga: 0,
     costoProfesor: 0,
-    costoArbitro: 0
+    costoArbitro: 0,
+    cantidadJornadas: '',
+    eliminatoria: ''
   });
 
   // Players Modal State
@@ -297,7 +304,9 @@ export default function Home() {
           idProfesor: newConvocatoria.idProfesor,
           costoLiga: newConvocatoria.costoLiga,
           costoProfesor: newConvocatoria.costoProfesor,
-          costoArbitro: newConvocatoria.costoArbitro
+          costoArbitro: newConvocatoria.costoArbitro,
+          cantidadJornadas: newConvocatoria.cantidadJornadas,
+          eliminatoria: newConvocatoria.eliminatoria
         })
       });
 
@@ -314,7 +323,9 @@ export default function Home() {
           color: '',
           costoLiga: 0,
           costoProfesor: 0,
-          costoArbitro: 0
+          costoArbitro: 0,
+          cantidadJornadas: '',
+          eliminatoria: ''
         });
         // Refresh the list
         const refreshResponse = await fetch('/api/convocatorias/summary');
@@ -341,7 +352,9 @@ export default function Home() {
       idProfesor: item.IdProfesor || '',
       costoLiga: item.CostoLiga || 0,
       costoProfesor: item.CostoProfesor || 0,
-      costoArbitro: item.CostoArbitro || 0
+      costoArbitro: item.CostoArbitro || 0,
+      cantidadJornadas: item.CantidadJornadas ? String(item.CantidadJornadas) : '',
+      eliminatoria: item.Eliminatoria || ''
     });
     setIsEditModalOpen(true);
   };
@@ -368,7 +381,9 @@ export default function Home() {
           idProfesor: editConvocatoria.idProfesor,
           costoLiga: editConvocatoria.costoLiga,
           costoProfesor: editConvocatoria.costoProfesor,
-          costoArbitro: editConvocatoria.costoArbitro
+          costoArbitro: editConvocatoria.costoArbitro,
+          cantidadJornadas: editConvocatoria.cantidadJornadas,
+          eliminatoria: editConvocatoria.eliminatoria
         })
       });
 
@@ -1404,6 +1419,22 @@ export default function Home() {
                         {item.Color && (
                           <div className="text-[10px] md:text-[9px] text-slate-400 mt-0.5 italic">Color: {item.Color}</div>
                         )}
+                        {/* Formato del torneo. Las convocatorias anteriores a este campo
+                            no traen el dato, así que la fila entera no se pinta. */}
+                        {(etiquetaJornadas(item.CantidadJornadas) || item.Eliminatoria) && (
+                          <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                            {etiquetaJornadas(item.CantidadJornadas) && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                                {etiquetaJornadas(item.CantidadJornadas)}
+                              </span>
+                            )}
+                            {item.Eliminatoria && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
+                                {item.Eliminatoria}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {(user?.AdminConvocatorias ?? 0) >= 2 && (
@@ -1542,7 +1573,9 @@ export default function Home() {
                   color: '',
                   costoLiga: 0,
                   costoProfesor: 0,
-                  costoArbitro: 0
+                  costoArbitro: 0,
+                  cantidadJornadas: '',
+                  eliminatoria: ''
                 });
               }}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
@@ -1797,6 +1830,32 @@ export default function Home() {
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cantidad de Jornadas</label>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={newConvocatoria.cantidadJornadas}
+                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, cantidadJornadas: e.target.value }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    placeholder="Ej. 10"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Eliminatoria</label>
+                  <select
+                    value={newConvocatoria.eliminatoria}
+                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, eliminatoria: e.target.value }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                  >
+                    <option value="">Sin eliminatoria</option>
+                    {ELIMINATORIAS.map((e) => <option key={e} value={e}>{e}</option>)}
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 mt-6">
@@ -1812,7 +1871,9 @@ export default function Home() {
                     color: '',
                     costoLiga: 0,
                     costoProfesor: 0,
-                    costoArbitro: 0
+                    costoArbitro: 0,
+                    cantidadJornadas: '',
+                    eliminatoria: ''
                   });
                 }}
                 className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded transition-colors"
@@ -1924,6 +1985,32 @@ export default function Home() {
                     className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cantidad de Jornadas</label>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={editConvocatoria.cantidadJornadas}
+                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, cantidadJornadas: e.target.value }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    placeholder="Ej. 10"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Eliminatoria</label>
+                  <select
+                    value={editConvocatoria.eliminatoria}
+                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, eliminatoria: e.target.value }))}
+                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                  >
+                    <option value="">Sin eliminatoria</option>
+                    {ELIMINATORIAS.map((e) => <option key={e} value={e}>{e}</option>)}
+                  </select>
                 </div>
               </div>
             </div>

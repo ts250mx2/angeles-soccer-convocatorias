@@ -45,6 +45,8 @@ export async function GET(request: Request) {
                 A.CostoLiga,
                 A.CostoProfesor,
                 A.CostoArbitro,
+                A.CantidadJornadas,
+                A.Eliminatoria,
                 COALESCE(SUM(D.EsConvocado), 0) AS JugadoresConvocados,
                 COALESCE(SUM(CASE WHEN D.EsConvocado = 1 THEN D.Precio ELSE 0 END), 0) AS Total,
                 COALESCE(PAGOS.TotalPagos, 0) AS Pagos,
@@ -70,7 +72,8 @@ export async function GET(request: Request) {
                 AND A.Color = PAGOS.Color
             WHERE A.IdTemporada = ? AND A.Status = 0 ${filterClause}
             GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, A.Color, A.IdProfesor, U.Usuario, B.Temporada, C.Liga, 
-                     A.FechaInicio, A.FechaFin, A.Cerrada, A.CostoLiga, A.CostoProfesor, A.CostoArbitro, PAGOS.TotalPagos
+                     A.FechaInicio, A.FechaFin, A.Cerrada, A.CostoLiga, A.CostoProfesor, A.CostoArbitro,
+                     A.CantidadJornadas, A.Eliminatoria, PAGOS.TotalPagos
             ORDER BY C.Liga ASC, A.Categoria ASC
         `;
 

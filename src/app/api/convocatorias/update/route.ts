@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { normalizarEliminatoria, normalizarJornadas } from '@/lib/convocatoria-opciones';
 
 export async function POST(request: Request) {
     try {
-        const { seasonId, leagueId, oldCategoria, oldColor, newColor, fechaInicio, fechaFin, idProfesor, costoLiga, costoProfesor, costoArbitro } = await request.json();
+        const { seasonId, leagueId, oldCategoria, oldColor, newColor, fechaInicio, fechaFin, idProfesor, costoLiga, costoProfesor, costoArbitro, cantidadJornadas, eliminatoria } = await request.json();
 
         if (!seasonId || !leagueId || !oldCategoria || oldColor === undefined || newColor === undefined || !fechaInicio || !fechaFin) {
             return NextResponse.json(
@@ -32,10 +33,16 @@ export async function POST(request: Request) {
 
             // 1. Update tblConvocatorias
             await connection.query(
-                `UPDATE tblConvocatorias 
-                 SET Color = ?, FechaInicio = ?, FechaFin = ?, IdProfesor = ?, CostoLiga = ?, CostoProfesor = ?, CostoArbitro = ?
+                `UPDATE tblConvocatorias
+                 SET Color = ?, FechaInicio = ?, FechaFin = ?, IdProfesor = ?, CostoLiga = ?, CostoProfesor = ?, CostoArbitro = ?,
+                     CantidadJornadas = ?, Eliminatoria = ?
                  WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?`,
-                [newColor, fechaInicio, fechaFin, idProfesor, costoLiga || 0, costoProfesor || 0, costoArbitro || 0, seasonId, leagueId, oldCategoria, oldColor]
+                [
+                    newColor, fechaInicio, fechaFin, idProfesor,
+                    costoLiga || 0, costoProfesor || 0, costoArbitro || 0,
+                    normalizarJornadas(cantidadJornadas), normalizarEliminatoria(eliminatoria),
+                    seasonId, leagueId, oldCategoria, oldColor,
+                ]
             );
 
             // 2. Update tblDetalleConvocatorias (since Color is part of the identity/PK)
