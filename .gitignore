@@ -43,4 +43,6 @@ next-env.d.ts
 # scripts locales de diagnóstico (contienen credenciales; nunca versionar)
 scratch/
 .tmp-manual/
+.tmp-css/
+
 

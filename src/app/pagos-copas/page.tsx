@@ -68,6 +68,43 @@ interface PaymentDetail {
   Categoria: string;
 }
 
+/**
+ * Liga y Copa se distinguen por color de fondo, no solo por la etiqueta: en una
+ * cuadrícula de 97 tarjetas leer el texto de cada una para saber qué es resulta lento.
+ *
+ * El tinte va sobre una base slate-950 y no directamente sobre la página. El fondo de
+ * la app es un degradado que pasa por blue-900, y un tinte translúcido puesto encima
+ * se lo comía: en la zona azul la tarjeta de Copa quedaba casi igual que el fondo.
+ * Con la base oscura las dos se separan del fondo y entre sí en toda la pantalla.
+ *
+ * Ámbar y violeta se eligieron porque no chocan con el verde de lo recaudado ni con
+ * el rojo de la alerta de cobranza.
+ */
+const ESTILO_TIPO = {
+  liga: {
+    borde: "border-amber-500/30 hover:border-amber-500/60",
+    tinte: "bg-amber-500/[0.12] group-hover:bg-amber-500/[0.18]",
+    halo: "bg-amber-500/10",
+    icono: "bg-amber-500/15 border-amber-500/25 text-amber-400",
+    chip: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    titulo: "group-hover:text-amber-200",
+    barra: "from-amber-600 to-amber-400",
+  },
+  copa: {
+    borde: "border-violet-500/30 hover:border-violet-500/60",
+    tinte: "bg-violet-500/[0.12] group-hover:bg-violet-500/[0.18]",
+    halo: "bg-violet-500/10",
+    icono: "bg-violet-500/15 border-violet-500/25 text-violet-400",
+    chip: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+    titulo: "group-hover:text-violet-200",
+    barra: "from-violet-600 to-violet-400",
+  },
+} as const;
+
+/** IdTipoProducto 3 = Liga, 4 = Copa. */
+const estiloDe = (idTipoProducto: number) =>
+  idTipoProducto === 3 ? ESTILO_TIPO.liga : ESTILO_TIPO.copa;
+
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n);
 const fmtC = (n: number) =>
@@ -278,6 +315,28 @@ export default function PagosCopasPage() {
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Temporada</p>
                 <p className="text-lg font-black text-emerald-400">{fmtC(products.reduce((acc, p) => acc + p.TotalRecaudado, 0))}</p>
               </div>
+              {/* Leyenda: además de contar, enseña qué color es cada tipo. Lleva la
+                  misma base oscura que las tarjetas para que el tinte no se lave. */}
+              <div className="flex gap-2">
+                <div className="relative bg-slate-950/70 border border-amber-500/30 px-3 py-2 rounded-xl overflow-hidden">
+                  <div className="absolute inset-0 bg-amber-500/[0.12] pointer-events-none" />
+                  <div className="relative">
+                    <p className="text-[10px] font-black text-amber-400/80 uppercase tracking-widest">Ligas</p>
+                    <p className="text-lg font-black text-amber-300 leading-none mt-0.5">
+                      {products.filter((p) => p.IdTipoProducto === 3).length}
+                    </p>
+                  </div>
+                </div>
+                <div className="relative bg-slate-950/70 border border-violet-500/30 px-3 py-2 rounded-xl overflow-hidden">
+                  <div className="absolute inset-0 bg-violet-500/[0.12] pointer-events-none" />
+                  <div className="relative">
+                    <p className="text-[10px] font-black text-violet-400/80 uppercase tracking-widest">Copas</p>
+                    <p className="text-lg font-black text-violet-300 leading-none mt-0.5">
+                      {products.filter((p) => p.IdTipoProducto === 4).length}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -287,20 +346,23 @@ export default function PagosCopasPage() {
             <button
               type="button"
               onClick={() => setDeudoresAbiertos({ titulo: "Pagaron un torneo y tienen adeudo", lista: alerta.deudores })}
-              className="w-full text-left flex items-start gap-3 bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/30 rounded-2xl px-5 py-4 transition-all"
+              className="group relative w-full text-left flex items-start gap-3 bg-slate-950/70 border border-red-500/40 hover:border-red-500/70 rounded-2xl px-5 py-4 transition-all overflow-hidden"
             >
-              <div className="bg-amber-500/20 p-2 rounded-xl border border-amber-500/20 flex-shrink-0">
-                <AlertTriangle size={18} className="text-amber-400" />
+              {/* Misma base oscura que las tarjetas: sobre la zona azul del degradado,
+                  un rojo translúcido a secas se veía lavanda en vez de rojo. */}
+              <div className="absolute inset-0 bg-red-500/[0.12] group-hover:bg-red-500/[0.18] transition-colors pointer-events-none" />
+              <div className="relative bg-red-500/20 p-2 rounded-xl border border-red-500/25 flex-shrink-0">
+                <AlertTriangle size={18} className="text-red-400" />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-black text-amber-200">
+              <div className="relative min-w-0 flex-1">
+                <p className="text-sm font-black text-red-200">
                   {alerta.jugadores} jugador{alerta.jugadores === 1 ? "" : "es"} pagó copas o ligas y tiene adeudo
                 </p>
-                <p className="text-xs text-amber-300/70 mt-0.5">
+                <p className="text-xs text-red-300/80 mt-0.5">
                   Adeudo medido contra {temporadaAdeudos || "la temporada en curso"}: mensualidades vencidas sin pagar o inscripción pendiente. Toca para ver la lista.
                 </p>
               </div>
-              <ChevronRight size={18} className="text-amber-400/60 flex-shrink-0 mt-1" />
+              <ChevronRight size={18} className="text-red-400/60 flex-shrink-0 mt-1" />
             </button>
           )}
 
@@ -311,25 +373,29 @@ export default function PagosCopasPage() {
             </div>
           ) : filteredProducts.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {filteredProducts.map((p) => (
-                <div 
+              {filteredProducts.map((p) => {
+                const estilo = estiloDe(p.IdTipoProducto);
+                return (
+                <div
                   key={p.IdProducto}
                   onClick={() => fetchCategories(p)}
-                  className="group relative bg-white/5 hover:bg-white/[0.08] border border-white/10 hover:border-blue-500/30 rounded-2xl p-6 transition-all duration-300 cursor-pointer overflow-hidden shadow-lg hover:-translate-y-1"
+                  className={`group relative bg-slate-950/70 border rounded-2xl p-6 transition-all duration-300 cursor-pointer overflow-hidden shadow-lg hover:-translate-y-1 ${estilo.borde}`}
                 >
-                  <div className="absolute -inset-24 bg-blue-600/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                  
+                  {/* El tinte del tipo, encima de la base oscura y debajo del contenido. */}
+                  <div className={`absolute inset-0 transition-colors pointer-events-none ${estilo.tinte}`} />
+                  <div className={`absolute -inset-24 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none ${estilo.halo}`} />
+
                   <div className="relative z-10">
                     <div className="flex justify-between items-start mb-4">
-                      <div className={`p-2.5 rounded-xl border shadow-sm ${p.IdTipoProducto === 3 ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'}`}>
+                      <div className={`p-2.5 rounded-xl border shadow-sm ${estilo.icono}`}>
                         <Trophy size={20} />
                       </div>
-                      <span className="text-[9px] font-black uppercase tracking-[0.15em] bg-white/5 px-2 py-1 rounded-md border border-white/10 text-slate-400">
+                      <span className={`text-[9px] font-black uppercase tracking-[0.15em] px-2 py-1 rounded-md border ${estilo.chip}`}>
                         {p.TipoProducto}
                       </span>
                     </div>
 
-                    <h3 className="text-base font-black text-white mb-4 line-clamp-2 leading-tight group-hover:text-blue-300 transition-colors">
+                    <h3 className={`text-base font-black text-white mb-4 line-clamp-2 leading-tight transition-colors ${estilo.titulo}`}>
                       {p.Producto}
                     </h3>
 
@@ -344,8 +410,8 @@ export default function PagosCopasPage() {
                           <p className="text-sm font-black text-white">{p.CantidadPagos}</p>
                         </div>
                       </div>
-                      <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-blue-600 to-blue-400 w-full" />
+                      <div className="h-1 bg-black/20 rounded-full overflow-hidden">
+                        <div className={`h-full bg-gradient-to-r w-full ${estilo.barra}`} />
                       </div>
                       <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold">
                         <span>{p.CantidadJugadores} Jugadores</span>
@@ -366,10 +432,10 @@ export default function PagosCopasPage() {
                             setDeudoresAbiertos({ titulo: p.Producto, lista: p.Deudores });
                           }}
                           title="Ver quiénes son"
-                          className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg px-2 py-1.5 transition-all"
+                          className="flex items-center gap-1.5 bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 rounded-lg px-2 py-1.5 transition-all"
                         >
-                          <AlertTriangle size={12} className="text-amber-400 flex-shrink-0" />
-                          <span className="text-[10px] font-black text-amber-200">
+                          <AlertTriangle size={12} className="text-red-400 flex-shrink-0" />
+                          <span className="text-[10px] font-black text-red-200">
                             {p.JugadoresConAdeudo} con adeudo
                           </span>
                         </div>
@@ -377,7 +443,8 @@ export default function PagosCopasPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-20 bg-white/5 rounded-3xl border border-dashed border-white/10">
@@ -485,16 +552,16 @@ export default function PagosCopasPage() {
         {deudoresAbiertos && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[120] p-4" onClick={() => setDeudoresAbiertos(null)}>
             <div
-              className="bg-[#0f172a] border border-amber-500/25 rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden"
+              className="bg-[#0f172a] border border-red-500/30 rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-5 border-b border-white/10 bg-amber-500/10 flex items-start justify-between gap-3">
+              <div className="p-5 border-b border-white/10 bg-red-500/10 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h3 className="text-base font-black text-white flex items-center gap-2">
-                    <AlertTriangle size={16} className="text-amber-400 flex-shrink-0" />
+                    <AlertTriangle size={16} className="text-red-400 flex-shrink-0" />
                     <span className="truncate">{deudoresAbiertos.titulo}</span>
                   </h3>
-                  <p className="text-[11px] text-amber-300/70 mt-0.5">
+                  <p className="text-[11px] text-red-300/80 mt-0.5">
                     {deudoresAbiertos.lista.length} jugador{deudoresAbiertos.lista.length === 1 ? "" : "es"} con adeudo en {temporadaAdeudos || "la temporada en curso"}
                   </p>
                 </div>
@@ -561,12 +628,14 @@ export default function PagosCopasPage() {
             <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95">
               <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
                 <div className="flex items-center gap-4">
-                  <div className="bg-blue-600/20 p-3 rounded-2xl border border-blue-500/20">
-                    <TrendingUp size={24} className="text-blue-400" />
+                  <div className={`p-3 rounded-2xl border ${estiloDe(selectedProduct.IdTipoProducto).icono}`}>
+                    <TrendingUp size={24} />
                   </div>
                   <div>
                     <h3 className="text-xl font-black text-white">{selectedProduct.Producto}</h3>
-                    <p className="text-xs text-slate-400 uppercase font-bold tracking-widest">Desglose por Categoría</p>
+                    <p className="text-xs text-slate-400 uppercase font-bold tracking-widest">
+                      {selectedProduct.TipoProducto} · Desglose por Categoría
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => setSelectedProduct(null)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
@@ -607,10 +676,10 @@ export default function PagosCopasPage() {
                             <p className="text-sm font-black text-white">{c.Pagos} <span className="text-slate-500 text-[10px]">({c.Jugadores})</span></p>
                           </div>
                         </div>
-                        <div className="mt-4 h-1 bg-white/5 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-gradient-to-r from-blue-600 to-blue-400" 
-                            style={{ width: `${(c.Total / Math.max(...categories.map(cat => cat.Total))) * 100}%` }} 
+                        <div className="mt-4 h-1 bg-black/20 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full bg-gradient-to-r ${estiloDe(selectedProduct.IdTipoProducto).barra}`}
+                            style={{ width: `${(c.Total / Math.max(...categories.map(cat => cat.Total))) * 100}%` }}
                           />
                         </div>
                       </div>
