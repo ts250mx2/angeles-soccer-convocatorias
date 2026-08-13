@@ -2,11 +2,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, MapPin, ChevronRight, ChevronDown, UserCheck, Users, CalendarRange, AlertTriangle } from 'lucide-react';
+import { Search, MapPin, ChevronRight, ChevronDown, UserCheck, Users, CalendarRange, AlertTriangle, GraduationCap } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
 import PlayersModal, { type PlayersModalConfig } from '@/components/PlayersModal';
 import Meter from '@/components/Meter';
+import BecasDonut, {
+  SIN_BECA_COLOR, BECA_RAMPA, OTRAS_BECAS_COLOR, MAX_NIVELES, type Rebanada,
+} from '@/components/BecasDonut';
 
 interface SedeSummary {
   IdSede: number;
@@ -35,30 +38,39 @@ interface SedeSummary {
   /** Pagaron mensualidad de los meses de la temporada pero no la inscripción */
   SinInscripcion: number;
   BecasDetail: string | null;
+  /** Las mismas becas de BecasDetail, partidas por tipo de inscripción. */
+  BecasNuevasDetail: string | null;
+  BecasReinscDetail: string | null;
 }
 
-function formatBecasDetail(becasDetail: string | null): string {
-  if (!becasDetail) return '';
-  const list = becasDetail.split(',');
+/** Cuántos becados hay de cada porcentaje, ordenado de mayor a menor porcentaje. */
+function becasPorPorcentaje(becasDetail: string | null): Array<[string, number]> {
+  if (!becasDetail) return [];
   const counts: Record<string, number> = {};
-  list.forEach(b => {
+  becasDetail.split(',').forEach(b => {
     const trimmed = b.trim();
     if (trimmed) {
       const pct = /^\d+$/.test(trimmed) ? `${trimmed}%` : trimmed;
       counts[pct] = (counts[pct] || 0) + 1;
     }
   });
+  return Object.entries(counts).sort((a, b) => (parseInt(b[0]) || 0) - (parseInt(a[0]) || 0));
+}
 
-  const entries = Object.entries(counts);
-  if (entries.length === 0) return '';
+const textoBecas = (entradas: Array<[string, number]>) =>
+  entradas.map(([porcentaje, cantidad]) => `${cantidad} de ${porcentaje}`).join(', ');
 
-  const sorted = entries.sort((a, b) => {
-    const valA = parseInt(a[0]) || 0;
-    const valB = parseInt(b[0]) || 0;
-    return valB - valA;
-  });
+function formatBecasDetail(becasDetail: string | null): string {
+  return textoBecas(becasPorPorcentaje(becasDetail));
+}
 
-  return sorted.map(([percentage, count]) => `${count} de ${percentage}`).join(', ');
+/**
+ * Junta el mismo desglose de becas de varias sedes en una sola cadena, para poder
+ * formatearlo con formatBecasDetail. Cada sede devuelve su propio GROUP_CONCAT.
+ */
+function unirBecas(sedes: SedeSummary[], pick: (s: SedeSummary) => string | null): string | null {
+  const partes = sedes.map(pick).filter((x): x is string => !!x && x.trim() !== '');
+  return partes.length ? partes.join(',') : null;
 }
 
 interface Temporada {
@@ -84,6 +96,156 @@ function idUltimaTemporada(temporadas: Temporada[]): number | null {
     }
   }
   return ultima ? ultima.IdTemporada : null;
+}
+
+/**
+ * Qué color le toca a cada nivel de beca.
+ *
+ * Se decide UNA vez con el desglose completo y se reutiliza en las tres donas. Si
+ * cada una eligiera sus niveles por su cuenta, el color saldría de la posición en su
+ * propia lista y el mismo "Beca 50%" podría verse claro en una y oscuro en otra.
+ *
+ * Solo se nombran los MAX_NIVELES niveles más numerosos, porque de un solo tono
+ * únicamente se distinguen tres escalones; el resto comparte el color de "Otras becas".
+ */
+function coloresPorNivel(becasDetail: string | null): Map<string, string> {
+  const niveles = becasPorPorcentaje(becasDetail);
+  const masNumerosos = [...niveles].sort((a, b) => b[1] - a[1]).slice(0, MAX_NIVELES);
+  // Ya elegidos por cantidad, la rampa se reparte de mayor a menor porcentaje de beca,
+  // que es el orden que el color representa.
+  const nombrados = niveles.filter((e) => masNumerosos.includes(e));
+  return new Map(nombrados.map(([porcentaje], i) => [porcentaje, BECA_RAMPA[i]]));
+}
+
+/**
+ * Arma las rebanadas de una dona: el resto sin beca más los niveles, agrupando en
+ * "Otras becas" todo lo que no tenga color propio en el mapa.
+ */
+function rebanadasBecas(
+  becasDetail: string | null, inscritos: number, colores: Map<string, string>,
+): Rebanada[] {
+  const niveles = becasPorPorcentaje(becasDetail);
+  const totalBecados = niveles.reduce((s, [, n]) => s + n, 0);
+
+  const nombrados = niveles.filter(([p]) => colores.has(p));
+  const otras = totalBecados - nombrados.reduce((s, [, n]) => s + n, 0);
+
+  return [
+    { etiqueta: 'Sin beca', cantidad: Math.max(0, inscritos - totalBecados), color: SIN_BECA_COLOR },
+    ...nombrados.map(([porcentaje, cantidad]) => ({
+      etiqueta: `Beca ${porcentaje}`,
+      cantidad,
+      color: colores.get(porcentaje) as string,
+    })),
+    ...(otras > 0 ? [{ etiqueta: 'Otras becas', cantidad: otras, color: OTRAS_BECAS_COLOR }] : []),
+  ];
+}
+
+/**
+ * KPI de becados: la dona con el reparto y, al lado, la lista con número y
+ * porcentaje de cada rebanada.
+ *
+ * La lista no es decoración: en una dona los ángulos parecidos no se comparan bien,
+ * así que el valor exacto va escrito y el color solo acompaña. También es lo que
+ * mantiene legible el gráfico para quien no distingue los tonos.
+ */
+function BecadosKpi({
+  rebanadas, inscritos, nuevas, reinsc, detalleCompleto, onRebanada, onNuevas, onReinsc,
+}: {
+  rebanadas: Rebanada[];
+  inscritos: number;
+  /** Reparto de los inscritos NUEVOS, con los mismos colores que la dona grande. */
+  nuevas: { rebanadas: Rebanada[]; inscritos: number };
+  /** Reparto de los REINSCRITOS. */
+  reinsc: { rebanadas: Rebanada[]; inscritos: number };
+  detalleCompleto: string | null;
+  onRebanada: (etiqueta: string) => void;
+  onNuevas: () => void;
+  onReinsc: () => void;
+}) {
+  const sumaBecados = (r: Rebanada[]) =>
+    r.filter((x) => x.etiqueta !== 'Sin beca').reduce((s, x) => s + x.cantidad, 0);
+  const becados = sumaBecados(rebanadas);
+  const pct = (n: number, base = inscritos) => (base > 0 ? Math.round((n / base) * 100) : 0);
+
+  /**
+   * Dona chica de un subgrupo. No lleva leyenda propia: los colores significan lo
+   * mismo que arriba, así que la de la dona grande sirve para las tres.
+   */
+  const subgrupo = (
+    etiqueta: string, grupo: { rebanadas: Rebanada[]; inscritos: number },
+    titulo: string, onClick: () => void,
+  ) => {
+    const becadosGrupo = sumaBecados(grupo.rebanadas);
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={`${titulo}: ${becadosGrupo} becados de ${grupo.inscritos} (${pct(becadosGrupo, grupo.inscritos)}%)`}
+        className="flex items-center gap-2 bg-white/5 hover:bg-white/15 border border-white/10 rounded px-1.5 py-1 text-left transition-all"
+      >
+        <div className="relative flex-shrink-0">
+          <BecasDonut rebanadas={grupo.rebanadas} total={grupo.inscritos} tamano={38} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[7px] uppercase font-black text-slate-400 tracking-wider leading-none">{etiqueta}</p>
+          <p className="text-sm font-black text-purple-200 leading-tight">{becadosGrupo}</p>
+          <p className="text-[7px] font-bold text-slate-500 leading-none">
+            {pct(becadosGrupo, grupo.inscritos)}% de {grupo.inscritos}
+          </p>
+        </div>
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex-1 md:flex-none bg-purple-500/10 border border-purple-500/20 px-4 py-2 rounded-xl min-w-[260px]">
+      <div className="flex items-center gap-2 mb-1.5">
+        <div className="bg-purple-500/20 p-1.5 rounded-lg">
+          <GraduationCap size={16} className="text-purple-300" />
+        </div>
+        <p className="text-[10px] uppercase tracking-wider text-purple-300 font-bold">Becados</p>
+        <span className="text-[9px] text-slate-500 italic">sobre inscritos</span>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="relative flex-shrink-0">
+          <BecasDonut rebanadas={rebanadas} total={inscritos} tamano={84} />
+          {/* El número vive en el hueco: es el dato que la dona está contando. */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="text-base font-black text-purple-200 leading-none">{becados}</span>
+            <span className="text-[8px] font-bold text-slate-400 leading-none mt-0.5">{pct(becados)}%</span>
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1 space-y-0.5">
+          {rebanadas.filter((r) => r.cantidad > 0).map((r) => (
+            <button
+              key={r.etiqueta}
+              type="button"
+              onClick={() => onRebanada(r.etiqueta)}
+              title={r.etiqueta === 'Otras becas' && detalleCompleto
+                ? `Otras becas · ${formatBecasDetail(detalleCompleto)}`
+                : `${r.etiqueta}: ${r.cantidad} de ${inscritos} inscritos`}
+              className="w-full flex items-center gap-1.5 text-left rounded px-1 py-0.5 hover:bg-white/10 transition-colors"
+            >
+              <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: r.color }} />
+              <span className="text-[9px] font-bold text-slate-300 truncate flex-1">{r.etiqueta}</span>
+              <span className="text-[9px] font-black text-white tabular-nums">{r.cantidad}</span>
+              <span className="text-[9px] text-slate-500 tabular-nums w-7 text-right">{pct(r.cantidad)}%</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1 mt-2 pt-2 border-t border-white/10">
+        {subgrupo('Nuevas', nuevas,
+          'Becados cuya inscripción de esta temporada es su primera inscripción histórica', onNuevas)}
+        {subgrupo('Reinsc.', reinsc,
+          'Becados que ya tenían inscripción en una temporada anterior', onReinsc)}
+      </div>
+    </div>
+  );
 }
 
 /** Celda de un área de inscritos con el total y su desglose Nuevas / Reinscripciones. */
@@ -230,7 +392,19 @@ export default function InscripcionesSedesPage() {
   const reinscritosKeepers = sumaPorTipo(0, s => s.ReinscritosKeepers);
   const reinscritosFutsal = sumaPorTipo(0, s => s.ReinscritosFutsal);
   const reinscritosClinicsFutsal = sumTodos(s => s.ReinscritosClinicsFutsal);
-  const reinscritosNormal = sumaPorTipo(0, s => s.Reinscritos) - reinscritosKeepers - reinscritosFutsal - reinscritosClinicsFutsal;
+  const reinscritosSedes = sumaPorTipo(0, s => s.Reinscritos);
+  const reinscritosNormal = reinscritosSedes - reinscritosKeepers - reinscritosFutsal - reinscritosClinicsFutsal;
+  /* Becas del KPI: se juntan solo las de sedes normales, que es de donde salen las
+     tres áreas de arriba. Incluir clinics metería becados que el KPI no está contando.
+     El denominador del porcentaje es ese mismo universo (inscritosSedes), no el de un
+     área suelta, para que becados y base cuenten a la misma gente. */
+  const sedesNormales = sedes.filter(s => (s.EsClinics || 0) === 0);
+  const becasTotal = unirBecas(sedesNormales, s => s.BecasDetail);
+  const becasNuevas = unirBecas(sedesNormales, s => s.BecasNuevasDetail);
+  const becasReinsc = unirBecas(sedesNormales, s => s.BecasReinscDetail);
+  /* Los colores salen del desglose COMPLETO y se pasan a las tres donas, para que un
+     mismo nivel de beca se vea igual en todas. */
+  const coloresBeca = coloresPorNivel(becasTotal);
   // Base del avance: plantilla elegible (no-clinics, sin venta pública) = normal + keepers + futsal.
   const activosElegibles = activosSedes + activosKeepers + activosFutsal;
   // Bajas separando keepers, futsal y clinics futsal.
@@ -368,6 +542,27 @@ export default function InscripcionesSedesPage() {
                   />
                 </div>
               </div>
+              <BecadosKpi
+                rebanadas={rebanadasBecas(becasTotal, inscritosSedes, coloresBeca)}
+                inscritos={inscritosSedes}
+                nuevas={{
+                  rebanadas: rebanadasBecas(becasNuevas, inscritosSedes - reinscritosSedes, coloresBeca),
+                  inscritos: inscritosSedes - reinscritosSedes,
+                }}
+                reinsc={{
+                  rebanadas: rebanadasBecas(becasReinsc, reinscritosSedes, coloresBeca),
+                  inscritos: reinscritosSedes,
+                }}
+                detalleCompleto={becasTotal}
+                onRebanada={(etiqueta) => setModal({
+                  title: etiqueta === 'Sin beca' ? 'Inscritos sin beca' : `Becados · ${etiqueta}`,
+                  subtitle: temporadaNombre,
+                  filtro: etiqueta === 'Sin beca' ? 'inscritos' : 'becados',
+                  clinics: 0,
+                })}
+                onNuevas={() => setModal({ title: 'Becados · Inscripciones Nuevas', subtitle: temporadaNombre, filtro: 'becados', clinics: 0, tipoInscripcion: 'nueva' })}
+                onReinsc={() => setModal({ title: 'Becados · Reinscripciones', subtitle: temporadaNombre, filtro: 'becados', clinics: 0, tipoInscripcion: 'reinscripcion' })}
+              />
               <div className="flex-1 md:flex-none bg-rose-500/10 border border-rose-500/20 px-4 py-2 rounded-xl">
                 <div className="flex items-center gap-2 mb-1.5">
                   <div className="bg-rose-500/20 p-1.5 rounded-lg">

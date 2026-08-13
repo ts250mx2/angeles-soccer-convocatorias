@@ -57,7 +57,10 @@ export async function GET(request: Request) {
                     COUNT(CASE WHEN J.Status = 2 AND ${FUTSAL_NETO} THEN 1 END) as BajasFutsal,
                     COUNT(CASE WHEN J.Status = 2 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as BajasClinicsFutsal,
                     0 as SinInscripcion,
-                    GROUP_CONCAT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != '' THEN J.Beca END) as BecasDetail
+                    GROUP_CONCAT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != '' THEN J.Beca END) as BecasDetail,
+                    -- Sin temporada no existe el corte nueva/reinscripción.
+                    NULL as BecasNuevasDetail,
+                    NULL as BecasReinscDetail
                 FROM tblSedes S
                 LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
                 GROUP BY S.IdSede, S.Sede, S.EsClinics
@@ -106,7 +109,22 @@ export async function GET(request: Request) {
                     CASE WHEN J.Status = 0 AND ${INSCRITO} AND NOT ${ES_VENTA_PUBLICO}
                           AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != ''
                     THEN J.Beca END
-                ) as BecasDetail
+                ) as BecasDetail,
+                -- Las mismas becas, partidas por tipo de inscripción. "Nueva" es la
+                -- ausencia de inscripción previa (REINS), igual que el conteo de arriba,
+                -- para que becados nuevas + becados reinsc. den siempre el total.
+                GROUP_CONCAT(
+                    CASE WHEN J.Status = 0 AND ${INSCRITO} AND NOT ${ES_VENTA_PUBLICO}
+                          AND REINS.IdJugador IS NULL
+                          AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != ''
+                    THEN J.Beca END
+                ) as BecasNuevasDetail,
+                GROUP_CONCAT(
+                    CASE WHEN J.Status = 0 AND ${INSCRITO} AND NOT ${ES_VENTA_PUBLICO}
+                          AND REINS.IdJugador IS NOT NULL
+                          AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != ''
+                    THEN J.Beca END
+                ) as BecasReinscDetail
             FROM tblSedes S
             LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
             LEFT JOIN (
