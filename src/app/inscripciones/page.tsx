@@ -41,6 +41,13 @@ interface SedeSummary {
   /** Las mismas becas de BecasDetail, partidas por tipo de inscripción. */
   BecasNuevasDetail: string | null;
   BecasReinscDetail: string | null;
+  /** Becados de cada tipo de inscripción por grupo; "sedes" se deduce restando. */
+  BecadosNuevasKeepers: number;
+  BecadosNuevasFutsal: number;
+  BecadosNuevasClinicsFutsal: number;
+  BecadosReinscKeepers: number;
+  BecadosReinscFutsal: number;
+  BecadosReinscClinicsFutsal: number;
 }
 
 /** Cuántos becados hay de cada porcentaje, ordenado de mayor a menor porcentaje. */
@@ -142,6 +149,42 @@ function rebanadasBecas(
 }
 
 /**
+ * Arma un tipo de inscripción con su reparto y sus grupos.
+ *
+ * "Sedes" no viene de la base: se deduce restando keepers, futsal y clinics futsal
+ * del total de becados, que es la misma aritmética con la que el KPI de arriba saca
+ * los inscritos del grupo normal. Así las dos cifras no pueden discrepar.
+ */
+function grupoBecados(
+  becasDetail: string | null,
+  inscritos: number,
+  colores: Map<string, string>,
+  aparte: { keepers: number; futsal: number; clinicsFutsal: number },
+): GrupoBecados {
+  const rebanadas = rebanadasBecas(becasDetail, inscritos, colores);
+  const total = rebanadas
+    .filter((r) => r.etiqueta !== 'Sin beca')
+    .reduce((s, r) => s + r.cantidad, 0);
+  return {
+    rebanadas,
+    inscritos,
+    sedes: Math.max(0, total - aparte.keepers - aparte.futsal - aparte.clinicsFutsal),
+    keepers: aparte.keepers,
+    futsal: aparte.futsal,
+  };
+}
+
+/** Un tipo de inscripción (nuevas o reinscripciones) con su reparto y sus grupos. */
+interface GrupoBecados {
+  rebanadas: Rebanada[];
+  inscritos: number;
+  /** Becados del grupo normal: los que no son keeper, futsal ni clinics futsal. */
+  sedes: number;
+  keepers: number;
+  futsal: number;
+}
+
+/**
  * KPI de becados: la dona con el reparto y, al lado, la lista con número y
  * porcentaje de cada rebanada.
  *
@@ -155,9 +198,9 @@ function BecadosKpi({
   rebanadas: Rebanada[];
   inscritos: number;
   /** Reparto de los inscritos NUEVOS, con los mismos colores que la dona grande. */
-  nuevas: { rebanadas: Rebanada[]; inscritos: number };
+  nuevas: GrupoBecados;
   /** Reparto de los REINSCRITOS. */
-  reinsc: { rebanadas: Rebanada[]; inscritos: number };
+  reinsc: GrupoBecados;
   detalleCompleto: string | null;
   onRebanada: (etiqueta: string) => void;
   onNuevas: () => void;
@@ -173,8 +216,7 @@ function BecadosKpi({
    * mismo que arriba, así que la de la dona grande sirve para las tres.
    */
   const subgrupo = (
-    etiqueta: string, grupo: { rebanadas: Rebanada[]; inscritos: number },
-    titulo: string, onClick: () => void,
+    etiqueta: string, grupo: GrupoBecados, titulo: string, onClick: () => void,
   ) => {
     const becadosGrupo = sumaBecados(grupo.rebanadas);
     return (
@@ -197,6 +239,21 @@ function BecadosKpi({
       </button>
     );
   };
+
+  /**
+   * Los becados de cada tipo de inscripción, repartidos por grupo.
+   *
+   * Va como tabla de dos columnas y no como dos bloques aparte porque la pregunta
+   * real es comparativa: si el futsal trae más beca al reinscribirse que al entrar,
+   * eso solo se ve con las dos cifras en el mismo renglón.
+   */
+  const filaGrupo = (etiqueta: string, tono: string, nuevo: number, reinscrito: number) => (
+    <div className="flex items-center gap-2 px-1">
+      <span className={`text-[9px] font-bold flex-1 ${tono}`}>{etiqueta}</span>
+      <span className="text-[9px] font-black text-white tabular-nums w-8 text-right">{nuevo}</span>
+      <span className="text-[9px] font-black text-white tabular-nums w-8 text-right">{reinscrito}</span>
+    </div>
+  );
 
   return (
     <div className="flex-1 md:flex-none bg-purple-500/10 border border-purple-500/20 px-4 py-2 rounded-xl min-w-[260px]">
@@ -243,6 +300,17 @@ function BecadosKpi({
           'Becados cuya inscripción de esta temporada es su primera inscripción histórica', onNuevas)}
         {subgrupo('Reinsc.', reinsc,
           'Becados que ya tenían inscripción en una temporada anterior', onReinsc)}
+      </div>
+
+      <div className="mt-1.5 pt-1.5 border-t border-white/5 space-y-0.5">
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider flex-1">Becados por grupo</span>
+          <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider w-8 text-right">Nuev.</span>
+          <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider w-8 text-right">Reins.</span>
+        </div>
+        {filaGrupo('Sedes', 'text-emerald-300', nuevas.sedes, reinsc.sedes)}
+        {filaGrupo('Keepers', 'text-cyan-300', nuevas.keepers, reinsc.keepers)}
+        {filaGrupo('Futsal', 'text-fuchsia-300', nuevas.futsal, reinsc.futsal)}
       </div>
     </div>
   );
@@ -405,6 +473,13 @@ export default function InscripcionesSedesPage() {
   /* Los colores salen del desglose COMPLETO y se pasan a las tres donas, para que un
      mismo nivel de beca se vea igual en todas. */
   const coloresBeca = coloresPorNivel(becasTotal);
+  // Becados por grupo, con el mismo alcance que las becas: solo sedes no-clinics.
+  const becadosNuevasKeepers = sumaPorTipo(0, s => s.BecadosNuevasKeepers);
+  const becadosNuevasFutsal = sumaPorTipo(0, s => s.BecadosNuevasFutsal);
+  const becadosNuevasClinicsFutsal = sumaPorTipo(0, s => s.BecadosNuevasClinicsFutsal);
+  const becadosReinscKeepers = sumaPorTipo(0, s => s.BecadosReinscKeepers);
+  const becadosReinscFutsal = sumaPorTipo(0, s => s.BecadosReinscFutsal);
+  const becadosReinscClinicsFutsal = sumaPorTipo(0, s => s.BecadosReinscClinicsFutsal);
   // Base del avance: plantilla elegible (no-clinics, sin venta pública) = normal + keepers + futsal.
   const activosElegibles = activosSedes + activosKeepers + activosFutsal;
   // Bajas separando keepers, futsal y clinics futsal.
@@ -545,14 +620,16 @@ export default function InscripcionesSedesPage() {
               <BecadosKpi
                 rebanadas={rebanadasBecas(becasTotal, inscritosSedes, coloresBeca)}
                 inscritos={inscritosSedes}
-                nuevas={{
-                  rebanadas: rebanadasBecas(becasNuevas, inscritosSedes - reinscritosSedes, coloresBeca),
-                  inscritos: inscritosSedes - reinscritosSedes,
-                }}
-                reinsc={{
-                  rebanadas: rebanadasBecas(becasReinsc, reinscritosSedes, coloresBeca),
-                  inscritos: reinscritosSedes,
-                }}
+                nuevas={grupoBecados(becasNuevas, inscritosSedes - reinscritosSedes, coloresBeca, {
+                  keepers: becadosNuevasKeepers,
+                  futsal: becadosNuevasFutsal,
+                  clinicsFutsal: becadosNuevasClinicsFutsal,
+                })}
+                reinsc={grupoBecados(becasReinsc, reinscritosSedes, coloresBeca, {
+                  keepers: becadosReinscKeepers,
+                  futsal: becadosReinscFutsal,
+                  clinicsFutsal: becadosReinscClinicsFutsal,
+                })}
                 detalleCompleto={becasTotal}
                 onRebanada={(etiqueta) => setModal({
                   title: etiqueta === 'Sin beca' ? 'Inscritos sin beca' : `Becados · ${etiqueta}`,

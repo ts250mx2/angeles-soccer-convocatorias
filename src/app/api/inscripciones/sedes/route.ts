@@ -60,7 +60,13 @@ export async function GET(request: Request) {
                     GROUP_CONCAT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != '' THEN J.Beca END) as BecasDetail,
                     -- Sin temporada no existe el corte nueva/reinscripción.
                     NULL as BecasNuevasDetail,
-                    NULL as BecasReinscDetail
+                    NULL as BecasReinscDetail,
+                    0 as BecadosNuevasKeepers,
+                    0 as BecadosNuevasFutsal,
+                    0 as BecadosNuevasClinicsFutsal,
+                    0 as BecadosReinscKeepers,
+                    0 as BecadosReinscFutsal,
+                    0 as BecadosReinscClinicsFutsal
                 FROM tblSedes S
                 LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
                 GROUP BY S.IdSede, S.Sede, S.EsClinics
@@ -76,6 +82,8 @@ export async function GET(request: Request) {
         const ES_FUTSAL = esFutsal('S');
         const ES_CLINICS_FUTSAL = esClinicsFutsal('S');
         const INSCRITO = `(INS.IdJugador IS NOT NULL OR (${ES_KEEPER} AND KINS.IdJugador IS NOT NULL))`;
+        /** Tiene beca: mismo criterio que el GROUP_CONCAT de becas, en un solo lugar. */
+        const BECADO = `(J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != '')`;
         // Futsal, excluyendo keeper, clinics futsal y venta pública (grupos disjuntos).
         const FUTSAL_NETO = `${ES_FUTSAL} AND NOT ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO}`;
         const query = `
@@ -124,7 +132,31 @@ export async function GET(request: Request) {
                           AND REINS.IdJugador IS NOT NULL
                           AND J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != ''
                     THEN J.Beca END
-                ) as BecasReinscDetail
+                ) as BecasReinscDetail,
+                -- Becados de cada tipo de inscripción partidos por grupo. Van como
+                -- conteo y no como GROUP_CONCAT porque aquí solo se necesita el número:
+                -- así no cuentan de menos si un día una sede pasa el tope del concat.
+                -- "Sedes" no se consulta: se deduce restando, igual que Inscritos.
+                COUNT(CASE WHEN J.Status = 0 AND ${BECADO} AND REINS.IdJugador IS NULL
+                            AND ${ES_KEEPER} AND KINS.IdJugador IS NOT NULL
+                            AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL}
+                      THEN 1 END) as BecadosNuevasKeepers,
+                COUNT(CASE WHEN J.Status = 0 AND ${BECADO} AND REINS.IdJugador IS NULL
+                            AND ${INSCRITO} AND ${FUTSAL_NETO}
+                      THEN 1 END) as BecadosNuevasFutsal,
+                COUNT(CASE WHEN J.Status = 0 AND ${BECADO} AND REINS.IdJugador IS NULL
+                            AND ${INSCRITO} AND ${ES_CLINICS_FUTSAL}
+                      THEN 1 END) as BecadosNuevasClinicsFutsal,
+                COUNT(CASE WHEN J.Status = 0 AND ${BECADO} AND REINS.IdJugador IS NOT NULL
+                            AND ${ES_KEEPER} AND KINS.IdJugador IS NOT NULL
+                            AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL}
+                      THEN 1 END) as BecadosReinscKeepers,
+                COUNT(CASE WHEN J.Status = 0 AND ${BECADO} AND REINS.IdJugador IS NOT NULL
+                            AND ${INSCRITO} AND ${FUTSAL_NETO}
+                      THEN 1 END) as BecadosReinscFutsal,
+                COUNT(CASE WHEN J.Status = 0 AND ${BECADO} AND REINS.IdJugador IS NOT NULL
+                            AND ${INSCRITO} AND ${ES_CLINICS_FUTSAL}
+                      THEN 1 END) as BecadosReinscClinicsFutsal
             FROM tblSedes S
             LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
             LEFT JOIN (
