@@ -11,9 +11,14 @@ export async function GET(request: Request) {
             return NextResponse.json({ success: false, message: 'ID de producto y categoría requeridos' }, { status: 400 });
         }
 
+        // La temporada la manda el filtro de la pantalla; sin ella, la activa.
+        const temporadaParam = searchParams.get('temporada');
         const [seasonRows] = await pool.query(
-            'SELECT IdTemporada FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1'
-        ) as any[];
+            temporadaParam
+                ? 'SELECT IdTemporada FROM tblTemporadas WHERE IdTemporada = ? LIMIT 1'
+                : 'SELECT IdTemporada FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1',
+            temporadaParam ? [temporadaParam] : []
+        ) as unknown as [Array<{ IdTemporada: number }>, unknown];
 
         if (seasonRows.length === 0) {
             return NextResponse.json({ success: false, message: 'No hay temporada activa' }, { status: 404 });

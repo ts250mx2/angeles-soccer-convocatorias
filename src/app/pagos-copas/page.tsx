@@ -6,10 +6,38 @@ import { useUser } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   Trophy, Search, Users, ChevronRight, X, CreditCard,
-  Target, Calendar, RefreshCw, BarChart3, TrendingUp, User, FileDown
+  Target, Calendar, RefreshCw, BarChart3, TrendingUp, User, FileDown, AlertTriangle
 } from "lucide-react";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+
+interface Deudor {
+  IdJugador: number;
+  Jugador: string;
+  Categoria: string;
+  Sede: string;
+  MesesDebe: number;
+  Inscrito: boolean;
+  /** Torneos que pagó en la temporada del filtro. */
+  Torneos: string[];
+}
+
+interface PagoTorneo {
+  IdPago: number;
+  Producto: string;
+  TipoProducto: string;
+  Fecha: string;
+  Recibo: string;
+  FormaPago: string;
+  Sede: string;
+  Pago: number;
+}
+
+interface Temporada {
+  IdTemporada: number;
+  Temporada: string;
+  EsActiva: boolean;
+}
 
 interface ProductSummary {
   IdProducto: number;
@@ -19,6 +47,9 @@ interface ProductSummary {
   TotalRecaudado: number;
   CantidadPagos: number;
   CantidadJugadores: number;
+  /** Pagaron este torneo y hoy deben algo en la temporada en curso. */
+  JugadoresConAdeudo: number;
+  Deudores: Deudor[];
 }
 
 interface CategoryBreakdown {
@@ -46,6 +77,16 @@ export default function PagosCopasPage() {
   const router = useRouter();
   const { user, isInitialized, season } = useUser();
   const [products, setProducts] = useState<ProductSummary[]>([]);
+  const [temporadas, setTemporadas] = useState<Temporada[]>([]);
+  const [temporadaId, setTemporadaId] = useState<number | null>(null);
+  const [alerta, setAlerta] = useState<{ jugadores: number; deudores: Deudor[] }>({ jugadores: 0, deudores: [] });
+  const [temporadaAdeudos, setTemporadaAdeudos] = useState<string>("");
+  // Lista de deudores abierta: la global o la de un torneo.
+  const [deudoresAbiertos, setDeudoresAbiertos] = useState<{ titulo: string; lista: Deudor[] } | null>(null);
+  // Deudor cuyo detalle de pago se está viendo.
+  const [pagoDeudor, setPagoDeudor] = useState<Deudor | null>(null);
+  const [pagosDeudor, setPagosDeudor] = useState<PagoTorneo[]>([]);
+  const [isLoadingPagos, setIsLoadingPagos] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -64,29 +105,47 @@ export default function PagosCopasPage() {
     if (isInitialized && !user) router.push("/login");
   }, [user, isInitialized, router]);
 
+  // Catálogo de temporadas para el filtro; se comparte con Inscripciones.
+  useEffect(() => {
+    if (!isInitialized || !user) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/inscripciones/temporadas");
+        const json = await res.json();
+        if (json.success) {
+          setTemporadas(json.data);
+          setTemporadaId((prev) => prev ?? json.temporadaActiva ?? null);
+        }
+      } catch (e) { console.error(e); }
+    })();
+  }, [isInitialized, user]);
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/pagos-copas/summary");
+      const qs = temporadaId ? `?temporada=${temporadaId}` : "";
+      const res = await fetch(`/api/pagos-copas/summary${qs}`, { cache: "no-store" });
       const json = await res.json();
       if (json.success) {
         setProducts(json.data);
+        setAlerta(json.alerta ?? { jugadores: 0, deudores: [] });
+        setTemporadaAdeudos(json.temporadaAdeudos?.Temporada ?? "");
         setLastUpdated(new Date());
       }
     } catch (e) { console.error(e); }
     finally { setIsLoading(false); }
-  }, []);
+  }, [temporadaId]);
 
   useEffect(() => {
-    if (isInitialized && user) fetchData();
-  }, [isInitialized, user, fetchData]);
+    if (isInitialized && user && temporadaId !== null) fetchData();
+  }, [isInitialized, user, temporadaId, fetchData]);
 
   const fetchCategories = async (product: ProductSummary) => {
     setSelectedProduct(product);
     setIsLoadingCategories(true);
     setCategories([]);
     try {
-      const res = await fetch(`/api/pagos-copas/categories?idProducto=${product.IdProducto}`);
+      const res = await fetch(`/api/pagos-copas/categories?idProducto=${product.IdProducto}&temporada=${temporadaId ?? ""}`);
       const json = await res.json();
       if (json.success) setCategories(json.data);
     } catch (e) { console.error(e); }
@@ -99,12 +158,32 @@ export default function PagosCopasPage() {
     setIsLoadingDetails(true);
     setDetails([]);
     try {
-      const res = await fetch(`/api/pagos-copas/details?idProducto=${selectedProduct.IdProducto}&categoria=${encodeURIComponent(categoria)}`);
+      const res = await fetch(`/api/pagos-copas/details?idProducto=${selectedProduct.IdProducto}&categoria=${encodeURIComponent(categoria)}&temporada=${temporadaId ?? ""}`);
       const json = await res.json();
       if (json.success) setDetails(json.data);
     } catch (e) { console.error(e); }
     finally { setIsLoadingDetails(false); }
   };
+
+  // Detalle de lo que ese jugador pagó de copas y ligas en la temporada del filtro.
+  useEffect(() => {
+    if (!pagoDeudor) return;
+    let vivo = true;
+    setIsLoadingPagos(true);
+    setPagosDeudor([]);
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/pagos-copas/jugador?idJugador=${pagoDeudor.IdJugador}&temporada=${temporadaId ?? ""}`,
+          { cache: "no-store" },
+        );
+        const json = await res.json();
+        if (vivo && json.success) setPagosDeudor(json.data);
+      } catch (e) { console.error(e); }
+      finally { if (vivo) setIsLoadingPagos(false); }
+    })();
+    return () => { vivo = false; };
+  }, [pagoDeudor, temporadaId]);
 
   const handleExportDetailsPDF = () => {
     if (!selectedProduct || !selectedCategory || details.length === 0) return;
@@ -180,13 +259,50 @@ export default function PagosCopasPage() {
                 className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 outline-none focus:bg-white/10 focus:border-blue-500/50 transition-all text-white placeholder-slate-400"
               />
             </div>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4 items-center">
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Temporada</label>
+                <select
+                  value={temporadaId ?? ""}
+                  onChange={(e) => setTemporadaId(Number(e.target.value))}
+                  className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-sm font-bold outline-none focus:border-blue-500/60 cursor-pointer hover:bg-white/10 transition-all [color-scheme:dark]"
+                >
+                  {temporadas.map((t) => (
+                    <option key={t.IdTemporada} value={t.IdTemporada} className="bg-slate-900">
+                      {t.Temporada}{t.EsActiva ? " · activa" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-xl">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Temporada</p>
                 <p className="text-lg font-black text-emerald-400">{fmtC(products.reduce((acc, p) => acc + p.TotalRecaudado, 0))}</p>
               </div>
             </div>
           </div>
+
+          {/* Alerta de cobranza. El adeudo se mide contra la temporada EN CURSO aunque
+              estés viendo una temporada pasada: la pregunta es a quién cobrarle hoy. */}
+          {!isLoading && alerta.jugadores > 0 && (
+            <button
+              type="button"
+              onClick={() => setDeudoresAbiertos({ titulo: "Pagaron un torneo y tienen adeudo", lista: alerta.deudores })}
+              className="w-full text-left flex items-start gap-3 bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/30 rounded-2xl px-5 py-4 transition-all"
+            >
+              <div className="bg-amber-500/20 p-2 rounded-xl border border-amber-500/20 flex-shrink-0">
+                <AlertTriangle size={18} className="text-amber-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black text-amber-200">
+                  {alerta.jugadores} jugador{alerta.jugadores === 1 ? "" : "es"} pagó copas o ligas y tiene adeudo
+                </p>
+                <p className="text-xs text-amber-300/70 mt-0.5">
+                  Adeudo medido contra {temporadaAdeudos || "la temporada en curso"}: mensualidades vencidas sin pagar o inscripción pendiente. Toca para ver la lista.
+                </p>
+              </div>
+              <ChevronRight size={18} className="text-amber-400/60 flex-shrink-0 mt-1" />
+            </button>
+          )}
 
           {/* Cards Grid */}
           {isLoading ? (
@@ -235,6 +351,29 @@ export default function PagosCopasPage() {
                         <span>{p.CantidadJugadores} Jugadores</span>
                         <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
                       </div>
+                      {p.JugadoresConAdeudo > 0 && (
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeudoresAbiertos({ titulo: p.Producto, lista: p.Deudores });
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDeudoresAbiertos({ titulo: p.Producto, lista: p.Deudores });
+                          }}
+                          title="Ver quiénes son"
+                          className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg px-2 py-1.5 transition-all"
+                        >
+                          <AlertTriangle size={12} className="text-amber-400 flex-shrink-0" />
+                          <span className="text-[10px] font-black text-amber-200">
+                            {p.JugadoresConAdeudo} con adeudo
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -248,6 +387,173 @@ export default function PagosCopasPage() {
             </div>
           )}
         </div>
+
+        {/* Detalle de los pagos de torneo de un deudor */}
+        {pagoDeudor && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[130] p-4" onClick={() => setPagoDeudor(null)}>
+            <div
+              className="bg-[#0f172a] border border-white/15 rounded-3xl w-full max-w-xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-5 border-b border-white/10 bg-white/5 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-base font-black text-white truncate">{pagoDeudor.Jugador}</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {pagoDeudor.Categoria || "—"} · {pagoDeudor.Sede || "—"}
+                  </p>
+                  <p className="text-[11px] mt-1.5">
+                    {pagoDeudor.Inscrito ? (
+                      <span className="text-rose-300 font-bold">
+                        Debe {pagoDeudor.MesesDebe} mes{pagoDeudor.MesesDebe === 1 ? "" : "es"} en {temporadaAdeudos || "la temporada en curso"}
+                      </span>
+                    ) : (
+                      <span className="text-amber-300 font-bold">
+                        Sin inscripción en {temporadaAdeudos || "la temporada en curso"}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <button onClick={() => setPagoDeudor(null)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all flex-shrink-0">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5">
+                {isLoadingPagos ? (
+                  <div className="h-32 flex flex-col items-center justify-center gap-3 text-slate-400">
+                    <RefreshCw size={22} className="animate-spin text-blue-500" />
+                    <p className="text-xs font-bold">Cargando pagos...</p>
+                  </div>
+                ) : pagosDeudor.length === 0 ? (
+                  <div className="h-32 flex flex-col items-center justify-center gap-2 text-slate-500">
+                    <CreditCard size={32} className="opacity-20" />
+                    <p className="text-sm font-bold">Sin pagos de torneo en esta temporada</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {pagosDeudor.map((pg) => (
+                      <div key={pg.IdPago} className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-white leading-tight">{pg.Producto}</p>
+                            <span className="inline-block mt-1 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md bg-white/5 text-slate-400 border border-white/10">
+                              {pg.TipoProducto}
+                            </span>
+                          </div>
+                          <p className="text-base font-black text-emerald-400 whitespace-nowrap flex-shrink-0">{fmt(pg.Pago)}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-3 pt-3 border-t border-white/5">
+                          <div>
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Fecha</p>
+                            <p className="text-[11px] text-slate-300">{pg.Fecha}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Recibo</p>
+                            <p className="text-[11px] text-slate-300">{pg.Recibo}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Forma de pago</p>
+                            <p className="text-[11px] text-slate-300">{pg.FormaPago}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sede</p>
+                            <p className="text-[11px] text-slate-300">{pg.Sede}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 px-5 bg-white/5 border-t border-white/10 flex items-center justify-between gap-3">
+                <p className="text-[11px] text-slate-500">
+                  {isLoadingPagos ? "—" : `${pagosDeudor.length} pago(s) de torneo`}
+                </p>
+                <div className="text-right">
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Total pagado</p>
+                  <p className="text-lg font-black text-emerald-400">
+                    {fmt(pagosDeudor.reduce((s, pg) => s + pg.Pago, 0))}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Lista de deudores: la global de la alerta o la de un torneo */}
+        {deudoresAbiertos && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[120] p-4" onClick={() => setDeudoresAbiertos(null)}>
+            <div
+              className="bg-[#0f172a] border border-amber-500/25 rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-5 border-b border-white/10 bg-amber-500/10 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-base font-black text-white flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-amber-400 flex-shrink-0" />
+                    <span className="truncate">{deudoresAbiertos.titulo}</span>
+                  </h3>
+                  <p className="text-[11px] text-amber-300/70 mt-0.5">
+                    {deudoresAbiertos.lista.length} jugador{deudoresAbiertos.lista.length === 1 ? "" : "es"} con adeudo en {temporadaAdeudos || "la temporada en curso"}
+                  </p>
+                </div>
+                <button onClick={() => setDeudoresAbiertos(null)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all flex-shrink-0">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5">
+                <div className="bg-white/5 border border-white/10 rounded-2xl divide-y divide-white/5 overflow-hidden">
+                  {deudoresAbiertos.lista.map((d) => (
+                    <button
+                      key={d.IdJugador}
+                      type="button"
+                      onClick={() => setPagoDeudor(d)}
+                      title="Ver el detalle de lo que pagó"
+                      className="w-full text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.06] transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-200 truncate">{d.Jugador}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {d.Categoria || "—"} · {d.Sede || "—"}
+                        </p>
+                        {/* Qué torneo pagó: es lo que conecta la deuda con esta pantalla. */}
+                        {d.Torneos.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {d.Torneos.map((t) => (
+                              <span key={t} className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {d.Inscrito ? (
+                          <span className="text-[10px] font-black px-2 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/25 whitespace-nowrap">
+                            {d.MesesDebe} mes{d.MesesDebe === 1 ? "" : "es"}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-black px-2 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/25 whitespace-nowrap">
+                            Sin inscripción
+                          </span>
+                        )}
+                        <ChevronRight size={14} className="text-slate-600" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-4 px-5 bg-white/5 border-t border-white/10 flex justify-end">
+                <button onClick={() => setDeudoresAbiertos(null)} className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-white text-xs font-black border border-white/10 transition-all">
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Categories Modal */}
         {selectedProduct && (
