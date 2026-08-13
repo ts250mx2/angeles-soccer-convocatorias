@@ -90,7 +90,11 @@ function BloqueVista({ bloque }: { bloque: Bloque }) {
             alt={bloque.alt}
             width={bloque.ancho}
             height={bloque.alto}
-            unoptimized
+            // Las capturas sí pasan por el optimizador (se sirven en WebP y del tamaño
+            // que toca); los diagramas SVG lo saltan, porque optimizar SVG exigiría
+            // habilitar dangerouslyAllowSVG y no gana nada: ya pesan 2 KB.
+            unoptimized={bloque.src.endsWith(".svg")}
+            sizes="(max-width: 768px) 100vw, 768px"
             className="w-full h-auto rounded-2xl border border-white/10"
           />
           {bloque.pie && (

@@ -667,6 +667,14 @@ export const SECCIONES: SeccionManual[] = [
                 ],
             },
             {
+                tipo: 'imagen',
+                src: '/manual/qraccesos.JPG',
+                ancho: 1907,
+                alto: 847,
+                alt: 'QR Accesos: una tarjeta por sede con su código QR, la ciudad, el enlace de preregistro y los botones Copiar, PNG y abrir en una pestaña nueva.',
+                pie: 'Cada sede tiene su propio código y su propio enlace. **Copiar** sirve para mandarlo por mensaje y **PNG** para descargar el código e imprimirlo.',
+            },
+            {
                 tipo: 'parrafo',
                 texto: 'El formulario ayuda con el domicilio a partir del código postal, para evitar errores de captura.',
             },
@@ -694,9 +702,11 @@ function bloqueATexto(b: Bloque): string {
             return b.lineas.join('\n');
         case 'nota':
             return `[${b.titulo}] ${b.texto}`;
-        // El agente no ve la figura; recibe su descripción para poder explicarla.
+        // El agente no ve la figura. Le mandamos el pie, que es donde va la idea; el alt
+        // describe la disposición en pantalla para quien no ve la imagen y para el agente
+        // es sobre todo relleno, así que solo se usa cuando no hay pie.
         case 'imagen':
-            return `[Figura: ${b.alt}${b.pie ? ` — ${b.pie}` : ''}]`;
+            return `[Figura: ${b.pie ?? b.alt}]`;
         case 'tabla':
             return [
                 `| ${b.encabezados.join(' | ')} |`,
