@@ -16,7 +16,9 @@ import { exportMovimientosToExcel } from "@/lib/inscripciones-export";
 export type AdeudosFilter =
   | "activos" | "bajas" | "pendiente-inscripcion" | "pendiente-mensualidad"
   | "al-corriente" | "keepers" | "keepers-debe" | "keepers-corriente" | "futsal-corriente" | "becado-sin-inscripcion" | "posible-baja" | "debe" | "futsal-debe"
-  | "futsal-sin-pagos" | "futsal-1-mes" | "futsal-2-meses" | "futsal-3-mas" | "debe-mes" | "todos";
+  | "futsal-sin-pagos" | "futsal-1-mes" | "futsal-2-meses" | "futsal-3-mas" | "debe-mes"
+  // Error de captura: en una sede de keepers, quien no es portero.
+  | "fuera-de-lugar" | "todos";
 
 export interface AdeudosModalConfig {
   title: string;
@@ -62,6 +64,7 @@ const ACCENT: Record<AdeudosFilter, string> = {
   "futsal-2-meses": "bg-fuchsia-500",
   "futsal-3-mas": "bg-fuchsia-400",
   "debe-mes": "bg-orange-500",
+  "fuera-de-lugar": "bg-red-500",
   todos: "bg-blue-500",
 };
 

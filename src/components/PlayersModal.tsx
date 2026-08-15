@@ -13,7 +13,7 @@ import {
   fecha, MESES_CORTOS, esBeca100, parseMesesPagados, MESES_ANTICIPO_SOSPECHOSO,
 } from "@/lib/inscripciones-export";
 
-export type PlayersFilter = "activos" | "inscritos" | "becados" | "bajas" | "sin-inscripcion" | "todos";
+export type PlayersFilter = "activos" | "inscritos" | "becados" | "bajas" | "sin-inscripcion" | "fuera-de-lugar" | "todos";
 
 export interface PlayersModalConfig {
   title: string;
@@ -38,6 +38,8 @@ const ACCENT: Record<PlayersFilter, { dot: string; text: string; chip: string }>
   becados: { dot: "bg-purple-500", text: "text-purple-400", chip: "bg-purple-500/10 border-purple-500/20 text-purple-300" },
   bajas: { dot: "bg-rose-500", text: "text-rose-400", chip: "bg-rose-500/10 border-rose-500/20 text-rose-300" },
   "sin-inscripcion": { dot: "bg-amber-500", text: "text-amber-400", chip: "bg-amber-500/10 border-amber-500/20 text-amber-300" },
+  // Error de captura, no un corte de negocio: por eso va en rojo, como una alerta.
+  "fuera-de-lugar": { dot: "bg-red-500", text: "text-red-400", chip: "bg-red-500/10 border-red-500/25 text-red-300" },
   todos: { dot: "bg-blue-500", text: "text-blue-400", chip: "bg-blue-500/10 border-blue-500/20 text-blue-300" },
 };
 

@@ -8,7 +8,7 @@ import {
     TIPO_PRODUCTO_INSCRIPCION,
     TIPO_PRODUCTO_MENSUALIDAD,
 } from '@/lib/temporada';
-import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal } from '@/lib/jugador-filtros';
+import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal, esFueraDeLugarKeeper } from '@/lib/jugador-filtros';
 
 /** Jugadores con al menos un pago de inscripción de CUALQUIER temporada (regla keeper). */
 const CUALQUIER_INSCRIPCION_SQL = `
@@ -138,6 +138,11 @@ export async function GET(request: Request) {
                 );
                 params.push(temporadaId);
             }
+        } else if (filtro === 'fuera-de-lugar') {
+            /* Activos dados de alta en una sede de keepers cuya categoría no es de
+               portero. No salen en ningún otro conteo: es la lista de la advertencia. */
+            where.push('J.Status = 0');
+            where.push(esFueraDeLugarKeeper('S'));
         } else if (filtro === 'bajas') {
             where.push('J.Status = 2');
             if (temporadaId) {

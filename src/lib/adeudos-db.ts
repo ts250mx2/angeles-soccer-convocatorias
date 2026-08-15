@@ -1,6 +1,6 @@
 import { pool } from '@/lib/db';
 import { resolveSeasonMonths, type SeasonMonths, type SeasonRow } from '@/lib/adeudos-season';
-import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal } from '@/lib/jugador-filtros';
+import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal, esFueraDeLugarKeeper } from '@/lib/jugador-filtros';
 export { ES_FUTSAL_CATEGORIA } from '@/lib/jugador-filtros';
 
 const SEASON_COLS = 'IdTemporada, Temporada, FechaInicio, FechaFin';
@@ -31,6 +31,13 @@ export const SIN_CLINICS =
  * de jugadores J.
  */
 export const ES_KEEPER_O_PORTERO = esKeeperOPortero('SD');
+
+/**
+ * Jugador de una sede de keepers que no es portero: error de captura, no un caso
+ * de negocio. Se saca del cálculo de adeudo de esa sede (donde de otro modo entraría
+ * como keeper, porque la sede lo es) y se reporta aparte como advertencia.
+ */
+export const ES_FUERA_DE_LUGAR_KEEPER = esFueraDeLugarKeeper('SD');
 
 /**
  * "Está inscrito" para el cálculo de adeudos.
@@ -363,6 +370,8 @@ export async function countsByGroup(
          ) PT ON PT.IdJugador = J.IdJugador
          ${promoJoin}
          WHERE ${SIN_CLINICS}
+           -- Una sede de keepers solo cuenta porteros; el resto sale como advertencia.
+           AND NOT ${ES_FUERA_DE_LUGAR_KEEPER}
            -- Un jugador entra al adeudo de la temporada solo si estuvo en ella o antes:
            -- tiene algún pago en una temporada <= ésta, o (si nunca ha pagado) su alta
            -- es <= ésta. Quien solo tiene pagos de temporadas POSTERIORES queda fuera.

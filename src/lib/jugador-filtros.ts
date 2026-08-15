@@ -27,6 +27,18 @@ export const esKeeperOPortero = (sedeAlias: string) =>
     `(COALESCE(${sedeAlias}.EsKeeper, 0) = 1 OR ${ES_CATEGORIA_PORTERO})`;
 
 /**
+ * Jugador FUERA DE LUGAR en una sede de keepers: está dado de alta en una sede
+ * marcada como keeper pero su categoría no es de portero.
+ *
+ * Una sede de keepers solo debería tener porteros, así que esto es un error de
+ * captura, no un caso de negocio. Se saca de los conteos de esa sede (que de otro
+ * modo lo contarían como keeper, porque la sede lo es) y se reporta aparte para que
+ * alguien lo corrija. `sedeAlias` es el alias de la tabla de sedes en esa consulta.
+ */
+export const esFueraDeLugarKeeper = (sedeAlias: string) =>
+    `(COALESCE(${sedeAlias}.EsKeeper, 0) = 1 AND NOT ${ES_CATEGORIA_PORTERO})`;
+
+/**
  * Categoría de futsal: cualquier categoría cuyo nombre contenga FUTSAL. Requiere J.
  */
 export const ES_FUTSAL_CATEGORIA = `UPPER(J.Categoria) LIKE '%FUTSAL%'`;

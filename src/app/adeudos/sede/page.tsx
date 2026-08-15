@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Search, MapPin, UserCheck, UserMinus, ChevronRight, ChevronDown, CalendarRange, History, CalendarClock, Brain,
+  AlertTriangle,
 } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -33,6 +34,8 @@ interface SedeSummary {
   BajasFutsal: number;
   BajasExcluido: number;
   BajasClinicsFutsal: number;
+  /** Activos de una sede keeper que NO son de categoría portero: error de captura. */
+  FueraDeLugar: number;
   ActualDebe: number;
   ActualAlCorriente: number;
   ActualKeepers: number;
@@ -780,6 +783,23 @@ function SedeCard({ sede, temporadaId, actual, anterior, descartarPB, onOpenPlay
             <p className="text-base font-black text-rose-400/80">{sede.Bajas}</p>
           </button>
         </div>
+
+        {/* Solo sale si hay algo mal capturado. Estos quedan fuera de los conteos y del
+            cálculo de adeudo, así que sin el aviso no aparecerían en ningún lado. */}
+        {(sede.FueraDeLugar || 0) > 0 && (
+          <button
+            type="button"
+            onClick={() => open({ ...base, title: 'No son porteros', filtro: 'fuera-de-lugar' })}
+            title="Están en esta sede de keepers pero su categoría no es de portero. No entran en ningún conteo ni en el cálculo de adeudo."
+            className="mt-2 w-full flex items-center justify-between gap-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 rounded-lg px-2 py-1.5 transition-all"
+          >
+            <span className="flex items-center gap-1.5 min-w-0">
+              <AlertTriangle size={12} className="text-red-400 flex-shrink-0" />
+              <span className="text-[9px] uppercase font-black text-red-300 tracking-wider truncate">No son porteros</span>
+            </span>
+            <span className="text-sm font-black text-red-400">{sede.FueraDeLugar}</span>
+          </button>
+        )}
 
         {/* Temporada anterior */}
         <p className="mt-3 mb-1 text-[8px] uppercase font-black text-amber-400/70 tracking-wider flex items-center gap-1">

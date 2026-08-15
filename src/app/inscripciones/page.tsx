@@ -37,6 +37,8 @@ interface SedeSummary {
   BajasClinicsFutsal: number;
   /** Pagaron mensualidad de los meses de la temporada pero no la inscripción */
   SinInscripcion: number;
+  /** Activos de una sede keeper que NO son de categoría portero: error de captura. */
+  FueraDeLugar: number;
   BecasDetail: string | null;
   /** Las mismas becas de BecasDetail, partidas por tipo de inscripción. */
   BecasNuevasDetail: string | null;
@@ -884,6 +886,26 @@ function SedeCard({
               <span className="text-xl font-black text-amber-400">{sinInscripcion}</span>
             </div>
           </button>
+
+          {/* Solo aparece si hay algo mal capturado: una sede de keepers no debería
+              tener a nadie que no sea portero. Estos quedan fuera de los conteos de
+              arriba, así que sin este aviso serían invisibles. */}
+          {(sede.FueraDeLugar || 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => open('fuera-de-lugar', 'No son porteros')}
+              title="Están dados de alta en esta sede de keepers pero su categoría no es de portero. No se cuentan en ningún indicador de la sede."
+              className={`${rowClass} ring-1 ring-red-500/40 bg-red-500/10`}
+            >
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-red-300 flex items-center gap-2 font-medium uppercase tracking-wider">
+                  <AlertTriangle size={13} className="text-red-400 flex-shrink-0" />
+                  No son porteros
+                </span>
+                <span className="text-xl font-black text-red-400">{sede.FueraDeLugar}</span>
+              </div>
+            </button>
+          )}
         </div>
 
         <Link

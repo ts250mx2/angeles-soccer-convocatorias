@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { loadSeasonAndPrevious, countsByGroup, SIN_ADEUDOS } from '@/lib/adeudos-db';
-import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal } from '@/lib/jugador-filtros';
+import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal, esFueraDeLugarKeeper } from '@/lib/jugador-filtros';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,24 +34,29 @@ export async function GET(request: Request) {
         const ES_EXCLUIDO = `(COALESCE(S.EsClinics, 0) = 1)`;
         const ES_CLINICS_FUTSAL = esClinicsFutsal('S');
         const noEspeciales = `NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_KEEPER} AND NOT ${ES_CLINICS_FUTSAL}`;
+        /* Una sede de keepers solo debe mostrar porteros: quien no lo sea sale de los
+           conteos de la sede y se reporta aparte. Misma regla que en adeudos-db. */
+        const FUERA_LUGAR = esFueraDeLugarKeeper('S');
         const [baseRows] = await pool.query(
             `SELECT
                 S.IdSede,
                 S.Sede,
                 COALESCE(S.EsClinics, 0) as EsClinics,
-                COUNT(CASE WHEN J.Status = 0 THEN 1 END) as Activos,
-                COUNT(CASE WHEN J.Status = 0 AND ${noEspeciales} AND NOT ${ES_FUTSAL} THEN 1 END) as ActivosNormal,
-                COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_CLINICS_FUTSAL} AND ${ES_KEEPER} THEN 1 END) as ActivosKeepers,
-                COUNT(CASE WHEN J.Status = 0 AND ${noEspeciales} AND ${ES_FUTSAL} THEN 1 END) as ActivosFutsal,
-                COUNT(CASE WHEN J.Status = 0 AND ${ES_VENTA_PUBLICO} THEN 1 END) as ActivosVentaPublico,
-                COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND ${ES_EXCLUIDO} THEN 1 END) as ActivosExcluido,
-                COUNT(CASE WHEN J.Status = 0 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as ActivosClinicsFutsal,
-                COUNT(CASE WHEN J.Status = 2 THEN 1 END) as Bajas,
-                COUNT(CASE WHEN J.Status = 2 AND ${noEspeciales} AND NOT ${ES_FUTSAL} THEN 1 END) as BajasNormal,
-                COUNT(CASE WHEN J.Status = 2 AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_CLINICS_FUTSAL} AND ${ES_KEEPER} THEN 1 END) as BajasKeepers,
-                COUNT(CASE WHEN J.Status = 2 AND ${noEspeciales} AND ${ES_FUTSAL} THEN 1 END) as BajasFutsal,
-                COUNT(CASE WHEN J.Status = 2 AND NOT ${ES_VENTA_PUBLICO} AND ${ES_EXCLUIDO} THEN 1 END) as BajasExcluido,
-                COUNT(CASE WHEN J.Status = 2 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as BajasClinicsFutsal
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} THEN 1 END) as Activos,
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${noEspeciales} AND NOT ${ES_FUTSAL} THEN 1 END) as ActivosNormal,
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_CLINICS_FUTSAL} AND ${ES_KEEPER} THEN 1 END) as ActivosKeepers,
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${noEspeciales} AND ${ES_FUTSAL} THEN 1 END) as ActivosFutsal,
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${ES_VENTA_PUBLICO} THEN 1 END) as ActivosVentaPublico,
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND NOT ${ES_VENTA_PUBLICO} AND ${ES_EXCLUIDO} THEN 1 END) as ActivosExcluido,
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${ES_CLINICS_FUTSAL} THEN 1 END) as ActivosClinicsFutsal,
+                COUNT(CASE WHEN J.Status = 2 AND NOT ${FUERA_LUGAR} THEN 1 END) as Bajas,
+                COUNT(CASE WHEN J.Status = 2 AND NOT ${FUERA_LUGAR} AND ${noEspeciales} AND NOT ${ES_FUTSAL} THEN 1 END) as BajasNormal,
+                COUNT(CASE WHEN J.Status = 2 AND NOT ${FUERA_LUGAR} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_EXCLUIDO} AND NOT ${ES_CLINICS_FUTSAL} AND ${ES_KEEPER} THEN 1 END) as BajasKeepers,
+                COUNT(CASE WHEN J.Status = 2 AND NOT ${FUERA_LUGAR} AND ${noEspeciales} AND ${ES_FUTSAL} THEN 1 END) as BajasFutsal,
+                COUNT(CASE WHEN J.Status = 2 AND NOT ${FUERA_LUGAR} AND NOT ${ES_VENTA_PUBLICO} AND ${ES_EXCLUIDO} THEN 1 END) as BajasExcluido,
+                COUNT(CASE WHEN J.Status = 2 AND NOT ${FUERA_LUGAR} AND ${ES_CLINICS_FUTSAL} THEN 1 END) as BajasClinicsFutsal,
+                -- Advertencia: activos de esta sede keeper que no son de categoría portero.
+                COUNT(CASE WHEN J.Status = 0 AND ${FUERA_LUGAR} THEN 1 END) as FueraDeLugar
              FROM tblSedes S
              LEFT JOIN tblJugadores J ON S.IdSede = J.IdSede
              GROUP BY S.IdSede, S.Sede, S.EsClinics
@@ -90,6 +95,9 @@ export async function GET(request: Request) {
                 BajasFutsal: Number(r.BajasFutsal) || 0,
                 BajasExcluido: Number(r.BajasExcluido) || 0,
                 BajasClinicsFutsal: Number(r.BajasClinicsFutsal) || 0,
+                /* Activos de una sede keeper que no son porteros: no entran en ningún
+                   conteo de arriba ni en el adeudo, solo se avisan para corregirlos. */
+                FueraDeLugar: Number(r.FueraDeLugar) || 0,
                 ActualDebe: a.debe,
                 ActualAlCorriente: a.alCorriente,
                 ActualKeepers: a.keepers,

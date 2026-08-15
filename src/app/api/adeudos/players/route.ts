@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { loadSeasonAndPrevious } from '@/lib/adeudos-db';
-import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal } from '@/lib/jugador-filtros';
+import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal, esFueraDeLugarKeeper } from '@/lib/jugador-filtros';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,6 +70,17 @@ export async function GET(request: Request) {
         const where: string[] = ['1 = 1'];
         const whereParams: any[] = [];
         if (sedeId) { where.push('J.IdSede = ?'); whereParams.push(sedeId); }
+
+        /* Una sede de keepers solo lista porteros. Quien no lo sea queda fuera de todos
+           los cortes —igual que en las tarjetas— salvo en el corte que existe justo para
+           enseñarlos. Sin esto, el modal mostraría gente que la tarjeta no contó. */
+        const FUERA_LUGAR = esFueraDeLugarKeeper('S');
+        if (filtro === 'fuera-de-lugar') {
+            where.push('J.Status = 0');
+            where.push(FUERA_LUGAR);
+        } else {
+            where.push(`NOT ${FUERA_LUGAR}`);
+        }
 
         /* Las sedes de clinics y los registros de venta al público no manejan
            inscripción/mensualidad como el resto, así que quedan fuera de todo corte de
@@ -438,6 +449,10 @@ export async function GET(request: Request) {
                         .split(',').map((x: string) => parseInt(x.trim())).filter((x: number) => !isNaN(x));
                     return !pagados.includes(mesFiltro);
                 }
+                /* Ya vienen acotados por el WHERE; aquí no hay nada más que filtrar.
+                   Se listan tal cual para que se vean todos, no solo los que además
+                   cumplirían algún corte de adeudo. */
+                case 'fuera-de-lugar': return true;
                 case 'todos': return true;
                 case 'activos':
                 default: return p.Status === 0;
