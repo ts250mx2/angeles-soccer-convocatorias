@@ -11,6 +11,21 @@ import autoTable from 'jspdf-autotable';
 import DashboardLayout from '@/components/DashboardLayout';
 import { ELIMINATORIAS, etiquetaJornadas } from '@/lib/convocatoria-opciones';
 
+/**
+ * Porcentaje de beca del jugador, normalizado a 0-100. La columna guarda texto
+ * ('', '0', '50', '100'), así que cualquier cosa no numérica cuenta como sin beca.
+ */
+function becaPct(beca: unknown): number {
+  const n = parseFloat(String(beca ?? '').trim());
+  return isNaN(n) ? 0 : Math.max(0, Math.min(100, n));
+}
+
+/** Etiqueta corta de la beca; null cuando no tiene. */
+function etiquetaBeca(beca: unknown): string | null {
+  const pct = becaPct(beca);
+  return pct > 0 ? `Beca ${pct}%` : null;
+}
+
 interface ConvocatoriaSummary {
   IdTemporada: number;
   IdLiga: number;
@@ -126,6 +141,7 @@ export default function Home() {
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [showClosed, setShowClosed] = useState(false);
   const [showOnlyConvocados, setShowOnlyConvocados] = useState(true);
+  const [showOnlyBecados, setShowOnlyBecados] = useState(false);
   const [showOnlyDebts, setShowOnlyDebts] = useState(false);
   const [summarySearchQuery, setSummarySearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
@@ -549,6 +565,7 @@ export default function Home() {
       { key: 'id', width: 10 },
       { key: 'jugador', width: 35 },
       { key: 'categoria', width: 25 },
+      { key: 'beca', width: 12 },
       { header: '', key: 'precio', width: 15, style: { numFmt: '"$"#,##0.00' } },
       { header: '', key: 'pago', width: 15, style: { numFmt: '"$"#,##0.00' } },
       { header: '', key: 'cxc', width: 15, style: { numFmt: '"$"#,##0.00' } },
@@ -557,7 +574,7 @@ export default function Home() {
 
     // Encabezados (Fila 5)
     const headerRow = worksheet.getRow(5);
-    headerRow.values = ['ID', 'Jugador', 'Categoría', 'Precio', 'Pago', 'CXC', 'Estado'];
+    headerRow.values = ['ID', 'Jugador', 'Categoría', 'Beca', 'Precio', 'Pago', 'CXC', 'Estado'];
     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     headerRow.eachCell((cell) => {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
@@ -571,6 +588,7 @@ export default function Home() {
         player.IdJugador,
         player.Jugador,
         player.Categoria,
+        etiquetaBeca(player.Beca) ?? '—',
         player.Precio,
         player.PagoJugador,
         player.CXC,
@@ -585,6 +603,7 @@ export default function Home() {
     const totalRow = worksheet.addRow([
       '',
       'TOTALES',
+      '',
       '',
       sortedPlayers.reduce((sum, p) => sum + (p.Precio || 0), 0),
       sortedPlayers.reduce((sum, p) => sum + (p.PagoJugador || 0), 0),
@@ -632,6 +651,7 @@ export default function Home() {
       player.IdJugador,
       player.Jugador,
       player.Categoria,
+      etiquetaBeca(player.Beca) ?? '\u2014',
       new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio).replace(/\u00a0/g, ' '),
       new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.PagoJugador).replace(/\u00a0/g, ' '),
       new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.CXC).replace(/\u00a0/g, ' '),
@@ -642,6 +662,7 @@ export default function Home() {
       '',
       'TOTALES',
       '',
+      '',
       new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrecio).replace(/\u00a0/g, ' '),
       new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPago).replace(/\u00a0/g, ' '),
       new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC).replace(/\u00a0/g, ' '),
@@ -649,7 +670,7 @@ export default function Home() {
     ]);
 
     autoTable(doc, {
-      head: [['ID', 'Jugador', 'Categoría', 'Precio', 'Pago', 'CXC', 'Estado']],
+      head: [['ID', 'Jugador', 'Categoría', 'Beca', 'Precio', 'Pago', 'CXC', 'Estado']],
       body: tableData,
       startY: 40,
       theme: 'grid',
@@ -823,6 +844,9 @@ export default function Home() {
 
     // Filter by debts if toggle is on
     if (showOnlyDebts && (player.Precio - (player.PagoJugador || 0)) <= 0) return false;
+
+    // Solo becados: cualquier porcentaje de beca mayor que cero.
+    if (showOnlyBecados && becaPct(player.Beca) === 0) return false;
 
     return (
       (player.IdJugador?.toString() ?? '').includes(playerFilters.idJugador) &&
@@ -2113,6 +2137,17 @@ export default function Home() {
                     <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                     <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-600 whitespace-nowrap">Ver adeudos</span>
                   </label>
+
+                  <label className="relative inline-flex items-center cursor-pointer group" title="Deja solo a los jugadores con algún porcentaje de beca">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={showOnlyBecados}
+                      onChange={(e) => setShowOnlyBecados(e.target.checked)}
+                    />
+                    <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-600 whitespace-nowrap">Solo becados</span>
+                  </label>
                 </div>
 
                 <div className="flex gap-2 w-full lg:w-auto">
@@ -2340,6 +2375,14 @@ export default function Home() {
                                 ⚠️ Invitado
                               </span>
                             )}
+                            {etiquetaBeca(player.Beca) && (
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-purple-200 text-purple-800"
+                                title={`Jugador con ${etiquetaBeca(player.Beca)}`}
+                              >
+                                🎓 {etiquetaBeca(player.Beca)}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="py-3 px-4 text-sm">{player.Categoria}</td>
@@ -2435,7 +2478,16 @@ export default function Home() {
                                 <h5 className={`text-sm font-black text-slate-900 ${player.EsConvocado ? '' : 'line-clamp-2'} leading-tight tracking-tight`}>
                                   {player.Jugador}
                                 </h5>
-                                <div className="text-[10px] text-slate-500">{player.Categoria}</div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] text-slate-500">{player.Categoria}</span>
+                                  {/* La beca va junto a la categoría y no en la columna de estado:
+                                      es una condición del jugador, no del estado en la convocatoria. */}
+                                  {etiquetaBeca(player.Beca) && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                                      🎓 {etiquetaBeca(player.Beca)}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <div className="text-right flex flex-col items-end gap-1">
                                 {player.EsInvitado === 1 && (
