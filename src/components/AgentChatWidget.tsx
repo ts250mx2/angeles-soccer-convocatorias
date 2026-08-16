@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import AgentAnswer from "@/components/AgentAnswer";
 import {
@@ -11,10 +11,12 @@ import {
 
 /**
  * Chat flotante del agente (esquina inferior derecha).
- * Solo se muestra a administradores y se oculta en la página completa del agente.
+ * Solo se muestra a quien tiene concedido el módulo del agente, y se oculta en la
+ * página completa del agente.
  */
 export default function AgentChatWidget() {
   const { user, isInitialized } = useUser();
+  const puedeVerAgente = usePuedeVer("/agente");
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -29,9 +31,9 @@ export default function AgentChatWidget() {
     }
   }, [messages, busy, open]);
 
-  const isAdmin = (user?.AdminConvocatorias ?? 0) >= 2;
-  // No lo mostramos si no hay sesión, no es admin, o ya está la página completa abierta.
-  if (!isInitialized || !user || !isAdmin || pathname === "/agente") return null;
+  // No lo mostramos si no hay sesión, si el perfil no tiene el agente, o si ya está
+  // abierta la página completa.
+  if (!isInitialized || !user || !puedeVerAgente || pathname === "/agente") return null;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { estadoEnTemporada, motivoNoConvocable } from '@/lib/convocatoria-elegibilidad';
 
 export async function POST(request: Request) {
     try {
@@ -7,6 +8,14 @@ export async function POST(request: Request) {
 
         if (!seasonId || !leagueId || !playerId || !categoria) {
             return NextResponse.json({ success: false, message: 'Missing required parameters' }, { status: 400 });
+        }
+
+        /* La reja de verdad: el botón deshabilitado en pantalla es comodidad, pero el
+           que decide si un jugador puede entrar a la convocatoria es el servidor. */
+        const estados = await estadoEnTemporada(Number(seasonId), [Number(playerId)]);
+        const motivo = motivoNoConvocable(estados.get(Number(playerId)));
+        if (motivo) {
+            return NextResponse.json({ success: false, message: motivo }, { status: 409 });
         }
 
         // Get price from tblProductos

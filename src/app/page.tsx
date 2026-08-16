@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from 'next/navigation';
-import { Search, ChevronDown, LayoutGrid, List } from 'lucide-react';
+import { Search, ChevronDown, History, Info, LayoutGrid, List } from 'lucide-react';
 import { useRef } from 'react';
 import { useUser } from '@/contexts/user-context';
 import { useEffect, useState } from 'react';
@@ -9,6 +9,8 @@ import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import DashboardLayout from '@/components/DashboardLayout';
+import PlayerPagosModal, { type PagosTarget } from '@/components/PlayerPagosModal';
+import ConvocatoriaPlayersTable from '@/components/ConvocatoriaPlayersTable';
 import { ELIMINATORIAS, etiquetaJornadas } from '@/lib/convocatoria-opciones';
 
 /**
@@ -55,19 +57,6 @@ export default function Home() {
   const [leagues, setLeagues] = useState<any[]>([]);
   const [profesores, setProfesores] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [filters, setFilters] = useState({
-    liga: '',
-    profesor: '',
-    categoria: '',
-    color: '',
-    fechaInicio: '',
-    fechaFin: '',
-    cerrada: '',
-    jugadoresConvocados: '',
-    total: '',
-    pagos: ''
-  });
-
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const today = new Date().toISOString().split('T')[0];
@@ -121,15 +110,10 @@ export default function Home() {
   const [totalCXC, setTotalCXC] = useState<number>(0);
   const [recordCount, setRecordCount] = useState<number>(0);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
-  const [playerFilters, setPlayerFilters] = useState({
-    idJugador: '',
-    jugador: '',
-    categoria: '',
-    precio: '',
-    estado: '',
-    pago: '',
-    cxc: ''
-  });
+  const [busquedaJugador, setBusquedaJugador] = useState('');
+  /* Jugadores que la API dejó fuera por no estar inscritos en la temporada. Se informa
+     en pantalla: si el entrenador no ve a alguien, tiene que saber por qué. */
+  const [ocultosNoInscritos, setOcultosNoInscritos] = useState(0);
   const [playerSortConfig, setPlayerSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   // Invite Modal State
@@ -142,14 +126,18 @@ export default function Home() {
   const [showClosed, setShowClosed] = useState(false);
   const [showOnlyConvocados, setShowOnlyConvocados] = useState(true);
   const [showOnlyBecados, setShowOnlyBecados] = useState(false);
-  const [showOnlyDebts, setShowOnlyDebts] = useState(false);
   const [summarySearchQuery, setSummarySearchQuery] = useState('');
+  /* Tarjetas por defecto: es como se leía esta pantalla y la tabla queda de apoyo
+     para comparar cifras entre convocatorias. */
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
-  const [playerViewMode, setPlayerViewMode] = useState<'table' | 'cards'>('cards');
   const [playerPayments, setPlayerPayments] = useState<any[]>([]);
   const [isPaymentDetailsModalOpen, setIsPaymentDetailsModalOpen] = useState(false);
   const [isLoadingPayments, setIsLoadingPayments] = useState(false);
-  const [selectedPlayerName, setSelectedPlayerName] = useState('');
+  const [jugadorPagosConvocatoria, setJugadorPagosConvocatoria] = useState<PagosTarget | null>(null);
+  /* Historial de pagos del jugador (todos sus pagos: inscripción, mensualidades,
+     copas…), no solo lo que abonó a esta convocatoria. Reutiliza el mismo modal
+     que Inscripciones y Adeudos para no tener dos vistas del mismo dato. */
+  const [pagosTarget, setPagosTarget] = useState<PagosTarget | null>(null);
 
   // Check if user is logged in, redirect to login if not
   useEffect(() => {
@@ -254,17 +242,13 @@ export default function Home() {
     // Filter by closed status if toggle is off
     if (!showClosed && item.Cerrada === 1) return false;
 
+    const q = summarySearchQuery.trim().toLowerCase();
+    if (!q) return true;
     return (
-      item.Liga.toLowerCase().includes(filters.liga.toLowerCase()) &&
-      (item.Profesor?.toLowerCase() ?? '').includes(filters.profesor.toLowerCase()) &&
-      item.Categoria.toLowerCase().includes(filters.categoria.toLowerCase()) &&
-      (item.Color?.toLowerCase() ?? '').includes(filters.color.toLowerCase()) &&
-      (filters.fechaInicio === '' || item.FechaInicio?.includes(filters.fechaInicio)) &&
-      (filters.fechaFin === '' || item.FechaFin?.includes(filters.fechaFin)) &&
-      (filters.cerrada === '' || (item.Cerrada ? 'sí' : 'no').includes(filters.cerrada.toLowerCase())) &&
-      (item.JugadoresConvocados?.toString() ?? '0').includes(filters.jugadoresConvocados) &&
-      (item.Total?.toString() ?? '0').includes(filters.total) &&
-      (item.Pagos?.toString() ?? '0').includes(filters.pagos)
+      item.Liga.toLowerCase().includes(q) ||
+      item.Categoria.toLowerCase().includes(q) ||
+      (item.Profesor ?? '').toLowerCase().includes(q) ||
+      (item.Color ?? '').toLowerCase().includes(q)
     );
   });
 
@@ -719,7 +703,7 @@ export default function Home() {
     setSelectedConvocatoria(item);
     setIsPlayersModalOpen(true);
     setIsLoadingPlayers(true);
-    setShowOnlyDebts(false);
+    setBusquedaJugador('');
     setShowOnlyConvocados(item.JugadoresConvocados > 0);
 
     try {
@@ -733,6 +717,7 @@ export default function Home() {
         setRecordCount(data.count || 0);
         setTotalPagos(data.totalPagos || 0);
         setTotalCXC(data.totalCXC || 0);
+        setOcultosNoInscritos(data.ocultosNoInscritos || 0);
       } else {
         alert('Error al cargar jugadores: ' + data.message);
       }
@@ -763,6 +748,11 @@ export default function Home() {
       const data = await response.json();
       if (data.success) {
         // Refresh players list
+        await handleNavigateToConvocatoria(selectedConvocatoria);
+      } else if (response.status === 409) {
+        /* Regla de negocio (no inscrito o con adeudo), no una falla: el mensaje del
+           servidor ya explica qué hacer, así que se muestra tal cual. */
+        alert(`${player.Jugador}\n\n${data.message}`);
         await handleNavigateToConvocatoria(selectedConvocatoria);
       } else {
         alert('Error al convocar: ' + data.message);
@@ -839,27 +829,17 @@ export default function Home() {
 
   // Filter and sort players
   const filteredPlayers = players.filter((player) => {
-    // Filter by convocado status if toggle is on
     if (showOnlyConvocados && !player.EsConvocado) return false;
-
-    // Filter by debts if toggle is on
-    if (showOnlyDebts && (player.Precio - (player.PagoJugador || 0)) <= 0) return false;
 
     // Solo becados: cualquier porcentaje de beca mayor que cero.
     if (showOnlyBecados && becaPct(player.Beca) === 0) return false;
 
+    const q = busquedaJugador.trim().toLowerCase();
+    if (!q) return true;
     return (
-      (player.IdJugador?.toString() ?? '').includes(playerFilters.idJugador) &&
-      player.Jugador.toLowerCase().includes(playerFilters.jugador.toLowerCase()) &&
-      player.Categoria.toLowerCase().includes(playerFilters.categoria.toLowerCase()) &&
-      (player.Precio?.toString() ?? '0').includes(playerFilters.precio) &&
-      (player.PagoJugador?.toString() ?? '0').includes(playerFilters.pago) &&
-      ((player.Precio - (player.PagoJugador || 0))?.toString() ?? '0').includes(playerFilters.cxc) &&
-      (playerFilters.estado === '' ||
-        (playerFilters.estado.toLowerCase() === 'convocado' && player.EsConvocado) ||
-        (playerFilters.estado.toLowerCase() === 'eliminado' && player.EsEliminado) ||
-        (playerFilters.estado.toLowerCase() === 'disponible' && !player.EsConvocado && !player.EsEliminado)
-      )
+      String(player.Jugador ?? '').toLowerCase().includes(q) ||
+      String(player.IdJugador ?? '').includes(q) ||
+      String(player.Categoria ?? '').toLowerCase().includes(q)
     );
   });
 
@@ -935,11 +915,25 @@ export default function Home() {
     }
   };
 
+  /** Abre el historial completo de pagos del jugador. */
+  const abrirHistorialPagos = (player: { IdJugador: number; Jugador: string }) => {
+    setPagosTarget({ idJugador: player.IdJugador, jugador: player.Jugador });
+  };
+
+  /* El historial arranca acotado a la temporada de la convocatoria abierta. El nombre
+     solo se pone cuando la temporada seleccionada arriba es esa misma; si no coinciden
+     es preferible el rótulo genérico del modal a etiquetar mal los importes. */
+  const temporadaDeLaLista = selectedConvocatoria?.IdTemporada ?? (seasonId ? Number(seasonId) : null);
+  const nombreTemporadaDeLaLista =
+    temporadaDeLaLista !== null && Number(seasonId) === temporadaDeLaLista
+      ? season ?? undefined
+      : undefined;
+
   const fetchPlayerPayments = async (player: any) => {
     if (!selectedConvocatoria) return;
     
     setIsLoadingPayments(true);
-    setSelectedPlayerName(player.Jugador);
+    setJugadorPagosConvocatoria({ idJugador: player.IdJugador, jugador: player.Jugador });
     setIsPaymentDetailsModalOpen(true);
     
     try {
@@ -979,9 +973,23 @@ export default function Home() {
     }
   };
 
+  /* Etiqueta corta para el listado de invitables: el motivo completo va en el title. */
+  const etiquetaNoInvitable = (player: any): string => {
+    if (player.Inscrito === 0 && player.Exento === 0) return 'Sin inscripción';
+    return player.MesesDebe === 1 ? 'Adeudo: 1 mes' : `Adeudo: ${player.MesesDebe} meses`;
+  };
+
   const handleInvitePlayer = async () => {
     if (!selectedConvocatoria || !selectedPlayerId) {
       alert('Por favor seleccione un jugador');
+      return;
+    }
+
+    /* Cinturón además de los tirantes: la opción ya viene deshabilitada, pero si algo
+       la dejó seleccionable, aquí se corta antes de llamar al servidor. */
+    const jugador = availablePlayers.find(p => String(p.IdJugador) === String(selectedPlayerId));
+    if (jugador?.Motivo) {
+      alert('No se puede invitar: ' + jugador.Motivo);
       return;
     }
 
@@ -1018,9 +1026,9 @@ export default function Home() {
     <DashboardLayout>
       <main className="p-4 md:p-8 overflow-y-auto flex-1">
         <div className="max-w-7xl mx-auto">
-          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl p-4 md:p-8 border border-white/20">
+          <div className="bg-[#0f172a] backdrop-blur-sm rounded-xl shadow-2xl p-4 md:p-8 border border-white/20">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
-              <h2 className="text-2xl md:text-3xl font-bold text-slate-800">Resumen de Convocatorias</h2>
+              <h2 className="text-2xl md:text-3xl font-bold text-white">Resumen de Convocatorias</h2>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
                 <label className="relative inline-flex items-center cursor-pointer group">
                   <input
@@ -1029,8 +1037,8 @@ export default function Home() {
                     checked={showClosed}
                     onChange={(e) => setShowClosed(e.target.checked)}
                   />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  <span className="ml-3 text-sm font-semibold text-slate-600 group-hover:text-slate-800 transition-colors">
+                  <div className="w-11 h-6 bg-white/15 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-white/20 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  <span className="ml-3 text-sm font-semibold text-slate-300 group-hover:text-white transition-colors">
                     Ver Cerradas
                   </span>
                 </label>
@@ -1056,22 +1064,6 @@ export default function Home() {
                     </button>
                   </div>
                 )}
-                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg w-full sm:w-auto justify-center">
-                  <button
-                    onClick={() => setViewMode('cards')}
-                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-1.5 rounded-md transition-all ${viewMode === 'cards' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'}`}
-                  >
-                    <LayoutGrid size={18} />
-                    <span className="text-xs">Tarjetas</span>
-                  </button>
-                  <button
-                    onClick={() => setViewMode('table')}
-                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-1.5 rounded-md transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-600'}`}
-                  >
-                    <List size={18} />
-                    <span className="text-xs">Tabla</span>
-                  </button>
-                </div>
                 <button
                   onClick={() => setIsCreateModalOpen(true)}
                   disabled={!user || (user.AdminConvocatorias ?? 0) < 2}
@@ -1085,9 +1077,42 @@ export default function Home() {
 
 
 
-              {/* Desktop View Mode Container */}
-              <div className={`${viewMode === 'table' ? 'hidden lg:block' : 'hidden'} overflow-x-auto shadow-xl rounded-xl border border-slate-200`}>
-                <table className="min-w-full bg-white">
+              <div className="mb-3 flex justify-end">
+                <div className="flex bg-white/5 border border-white/10 p-1 rounded-lg">
+                  <button
+                    onClick={() => setViewMode('cards')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-all ${viewMode === 'cards' ? 'bg-white/15 text-white' : 'text-slate-500 hover:text-white'}`}
+                  >
+                    <LayoutGrid size={14} />
+                    <span className="text-xs font-bold">Tarjetas</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('table')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-all ${viewMode === 'table' ? 'bg-white/15 text-white' : 'text-slate-500 hover:text-white'}`}
+                  >
+                    <List size={14} />
+                    <span className="text-xs font-bold">Tabla</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-3 bg-white/5 p-3 rounded-lg border border-white/10 shadow-sm">
+                <div className="flex items-center gap-2 mb-2 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
+                  <Search size={14} />
+                  Buscar Convocatoria
+                </div>
+                <input
+                  type="text"
+                  value={summarySearchQuery}
+                  onChange={(e) => setSummarySearchQuery(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:bg-white/5 focus:border-blue-500 outline-none transition-all"
+                  placeholder="Liga, categoría, profesor o color..."
+                />
+              </div>
+
+              {/* En pantallas chicas la tabla se desplaza en horizontal. */}
+              <div className={`${viewMode === 'table' ? 'block' : 'hidden'} overflow-x-auto shadow-xl rounded-xl border border-white/10`}>
+                <table className="min-w-full bg-white/5">
                   <thead>
                     <tr className="bg-gradient-to-r from-slate-700 to-slate-800 text-white">
                       <th
@@ -1133,6 +1158,11 @@ export default function Home() {
                             <span className="text-blue-300">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                           )}
                         </div>
+                      </th>
+                      {/* Jornadas y eliminatoria: vivían solo en las tarjetas, que ya
+                          no existen, así que la tabla tiene que mostrarlas. */}
+                      <th className="py-3 px-4 text-left font-semibold text-xs uppercase tracking-wider">
+                        Torneo
                       </th>
                       <th
                         className="py-3 px-4 text-left font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
@@ -1191,6 +1221,9 @@ export default function Home() {
                               )}
                             </div>
                           </th>
+                          <th className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider">
+                            Utilidad
+                          </th>
                           <th
                             className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
                             onClick={() => handleSort('CXC')}
@@ -1206,77 +1239,13 @@ export default function Home() {
                       )}
                       <th className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider">Acciones</th>
                     </tr>
-                    {/* Filter Row */}
-                    <tr className="bg-slate-100 border-b-2 border-slate-300">
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={filters.liga}
-                          onChange={(e) => setFilters(prev => ({ ...prev, liga: e.target.value }))}
-                          className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
-                          placeholder="Filtro..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={filters.profesor}
-                          onChange={(e) => setFilters(prev => ({ ...prev, profesor: e.target.value }))}
-                          className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
-                          placeholder="Filtro..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={filters.categoria}
-                          onChange={(e) => setFilters(prev => ({ ...prev, categoria: e.target.value }))}
-                          className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
-                          placeholder="Filtro..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={filters.color}
-                          onChange={(e) => setFilters(prev => ({ ...prev, color: e.target.value }))}
-                          className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
-                          placeholder="Filtro..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={filters.fechaInicio}
-                          onChange={(e) => setFilters(prev => ({ ...prev, fechaInicio: e.target.value }))}
-                          className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
-                          placeholder="Filtro..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={filters.cerrada}
-                          onChange={(e) => setFilters(prev => ({ ...prev, cerrada: e.target.value }))}
-                          className="w-full text-xs border-2 border-slate-300 rounded-lg px-2 py-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
-                          placeholder="Sí/No"
-                        />
-                      </th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                      <th className="p-2"></th>
-                    </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {isLoading ? (
                       <tr>
-                        <td colSpan={10} className="py-12 text-center text-slate-500">
+                        <td colSpan={12} className="py-12 text-center text-slate-400">
                           <div className="flex items-center justify-center gap-2">
-                            <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <svg className="animate-spin h-5 w-5 text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
@@ -1288,40 +1257,71 @@ export default function Home() {
                       sortedConvocatorias.map((item, index) => (
                         <tr
                           key={`${item.IdTemporada}-${item.IdLiga}-${item.Categoria}-${index}`}
-                          className="hover:bg-slate-50 hover:shadow-sm transition-all duration-200"
+                          className="hover:bg-white/5 hover:shadow-sm transition-all duration-200"
                         >
                           <td className="py-2 px-4 text-xs font-medium">{item.Liga}</td>
-                          <td className="py-2 px-4 text-xs font-medium text-slate-600">{item.Profesor || '-'}</td>
+                          <td className="py-2 px-4 text-xs font-medium text-slate-300">{item.Profesor || '-'}</td>
                           <td className="py-2 px-4 text-xs font-semibold">{item.Categoria}</td>
-                          <td className="py-2 px-4 text-xs font-medium text-slate-600 italic">
+                          <td className="py-2 px-4 text-xs font-medium text-slate-300 italic">
                             {item.Color || '-'}
                           </td>
-                          <td className="py-2 px-4 text-xs">
+                          <td className="py-2 px-4">
+                            <div className="flex flex-wrap gap-1">
+                              {etiquetaJornadas(item.CantidadJornadas) && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-white/10 text-slate-200 border border-white/10 whitespace-nowrap">
+                                  {etiquetaJornadas(item.CantidadJornadas)}
+                                </span>
+                              )}
+                              {item.Eliminatoria && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
+                                  {item.Eliminatoria}
+                                </span>
+                              )}
+                              {!etiquetaJornadas(item.CantidadJornadas) && !item.Eliminatoria && (
+                                <span className="text-xs text-slate-600">—</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-4 text-xs whitespace-nowrap">
                             {formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}
                           </td>
                           <td className="py-2 px-4 text-center text-xs">
                             {item.Cerrada ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-red-800">
                                 ✓ Sí
                               </span>
                             ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-800">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-green-800">
                                 No
                               </span>
                             )}
                           </td>
                           {(user?.AdminConvocatorias ?? 0) >= 2 && (
                             <>
-                              <td className="py-2 px-4 text-center text-xs font-bold text-blue-700">
+                              <td className="py-2 px-4 text-center text-xs font-bold text-blue-300">
                                 {item.JugadoresConvocados}
                               </td>
-                              <td className="py-2 px-4 text-center text-xs font-bold text-green-700">
+                              <td className="py-2 px-4 text-center text-xs font-bold text-emerald-300">
                                 {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total || 0)}
                               </td>
-                              <td className="py-2 px-4 text-center text-xs font-bold text-green-700">
+                              <td className="py-2 px-4 text-center text-xs font-bold text-emerald-300">
                                 {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos || 0)}
                               </td>
-                              <td className="py-2 px-4 text-center text-xs font-bold text-red-700 bg-red-50/30">
+                              {/* Utilidad recaudada: lo cobrado menos los tres costos del
+                                  torneo. Misma fórmula que la exportación. */}
+                              <td
+                                className={`py-2 px-4 text-center text-xs font-bold ${
+                                  (item.Pagos || 0) - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)) >= 0
+                                    ? 'text-emerald-300'
+                                    : 'text-rose-300'
+                                }`}
+                                title={`Costos — liga: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoLiga || 0)} · profesor: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoProfesor || 0)} · árbitro: ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoArbitro || 0)}`}
+                              >
+                                {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(
+                                  (item.Pagos || 0) - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))
+                                )}
+                              </td>
+                              <td className="py-2 px-4 text-center text-xs font-bold text-rose-300 bg-red-50/30">
                                 {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CXC || 0)}
                               </td>
                             </>
@@ -1354,7 +1354,7 @@ export default function Home() {
                                   )}
                                 </>
                               ) : (
-                                <span className="text-slate-400 text-xs font-medium px-2">Cerrada</span>
+                                <span className="text-slate-500 text-xs font-medium px-2">Cerrada</span>
                               )}
                               {(user?.AdminConvocatorias ?? 0) >= 2 && (
                                 <button
@@ -1370,7 +1370,7 @@ export default function Home() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={10} className="py-12 text-center text-slate-500">
+                        <td colSpan={10} className="py-12 text-center text-slate-400">
                           No se encontraron convocatorias.
                         </td>
                       </tr>
@@ -1379,29 +1379,12 @@ export default function Home() {
                 </table>
               </div>
 
-              {/* Cards View (Mobile default, Desktop optional) */}
-              <div className={`${viewMode === 'cards' ? 'block' : 'lg:hidden'} mb-2`}>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                  <div className="flex items-center gap-2 mb-2 text-slate-500 font-bold text-[10px] uppercase tracking-wider">
-                    <Search size={14} />
-                    Buscar Convocatoria
-                  </div>
-                  <input 
-                    type="text" 
-                    value={summarySearchQuery}
-                    onChange={(e) => setSummarySearchQuery(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:bg-white focus:border-blue-500 outline-none transition-all"
-                    placeholder="Liga, categoría o profesor..."
-                  />
-                </div>
-              </div>
-
               <div className={`${viewMode === 'cards' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4' : 'lg:hidden space-y-4'}`}>
 
                 {isLoading ? (
-                  <div className="py-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200 shadow-sm">
+                  <div className="py-12 text-center text-slate-400 bg-white/5 rounded-xl border border-white/10 shadow-sm">
                     <div className="flex flex-col items-center justify-center gap-3">
-                      <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin h-8 w-8 text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
@@ -1422,7 +1405,7 @@ export default function Home() {
                     .map((item, index) => (
                     <div
                       key={`${item.IdTemporada}-${item.IdLiga}-${item.Categoria}-${index}`}
-                      className="bg-white rounded-xl border border-slate-200 shadow-md p-4 md:p-3 relative overflow-hidden"
+                      className="bg-white/5 rounded-xl border border-white/10 shadow-md p-4 md:p-3 relative overflow-hidden"
                     >
                       {item.Cerrada ? (
                         <div className="absolute top-0 right-0 bg-red-500 text-white text-[9px] font-bold px-2.5 py-0.5 rounded-bl-lg uppercase tracking-wider">
@@ -1435,25 +1418,25 @@ export default function Home() {
                       )}
                       
                       <div className="mb-3">
-                        <div className="text-[9px] md:text-[8px] font-bold text-blue-600 uppercase mb-0.5">{item.Liga}</div>
-                        <h4 className="text-base md:text-sm font-bold text-slate-800 leading-tight">{item.Categoria}</h4>
-                        <div className="text-xs md:text-[11px] text-slate-500 flex items-center gap-1 mt-1">
+                        <div className="text-[9px] md:text-[8px] font-bold text-blue-300 uppercase mb-0.5">{item.Liga}</div>
+                        <h4 className="text-base md:text-sm font-bold text-white leading-tight">{item.Categoria}</h4>
+                        <div className="text-xs md:text-[11px] text-slate-400 flex items-center gap-1 mt-1">
                           <span className="font-medium">Profesor:</span> {item.Profesor || '-'}
                         </div>
                         {item.Color && (
-                          <div className="text-[10px] md:text-[9px] text-slate-400 mt-0.5 italic">Color: {item.Color}</div>
+                          <div className="text-[10px] md:text-[9px] text-slate-500 mt-0.5 italic">Color: {item.Color}</div>
                         )}
                         {/* Formato del torneo. Las convocatorias anteriores a este campo
                             no traen el dato, así que la fila entera no se pinta. */}
                         {(etiquetaJornadas(item.CantidadJornadas) || item.Eliminatoria) && (
                           <div className="flex flex-wrap items-center gap-1 mt-1.5">
                             {etiquetaJornadas(item.CantidadJornadas) && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-white/10 text-slate-300 border border-white/10">
                                 {etiquetaJornadas(item.CantidadJornadas)}
                               </span>
                             )}
                             {item.Eliminatoria && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 border border-amber-200">
                                 {item.Eliminatoria}
                               </span>
                             )}
@@ -1462,70 +1445,70 @@ export default function Home() {
                       </div>
 
                       {(user?.AdminConvocatorias ?? 0) >= 2 && (
-                        <div className="grid grid-cols-2 gap-2 mb-3 p-2 bg-slate-50 rounded-lg">
-                          <div className="col-span-2 grid grid-cols-3 gap-1 mb-2 pb-2 border-b border-slate-200">
+                        <div className="grid grid-cols-2 gap-2 mb-3 p-2 bg-white/5 rounded-lg">
+                          <div className="col-span-2 grid grid-cols-3 gap-1 mb-2 pb-2 border-b border-white/10">
                             <div>
-                              <div className="text-[8px] text-slate-400 uppercase font-bold">Liga</div>
-                              <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoLiga || 0)}</div>
+                              <div className="text-[8px] text-slate-500 uppercase font-bold">Liga</div>
+                              <div className="text-[10px] font-bold text-slate-200">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoLiga || 0)}</div>
                             </div>
                             <div>
-                              <div className="text-[8px] text-slate-400 uppercase font-bold">Prof.</div>
-                              <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoProfesor || 0)}</div>
+                              <div className="text-[8px] text-slate-500 uppercase font-bold">Prof.</div>
+                              <div className="text-[10px] font-bold text-slate-200">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoProfesor || 0)}</div>
                             </div>
                             <div>
-                              <div className="text-[8px] text-slate-400 uppercase font-bold">Arb.</div>
-                              <div className="text-[10px] font-bold text-slate-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoArbitro || 0)}</div>
+                              <div className="text-[8px] text-slate-500 uppercase font-bold">Arb.</div>
+                              <div className="text-[10px] font-bold text-slate-200">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.CostoArbitro || 0)}</div>
                             </div>
                           </div>
 
                           <div>
-                            <div className="text-[9px] text-slate-400 uppercase font-bold">Costo Total</div>
-                            <div className="text-xs font-bold text-slate-900">
+                            <div className="text-[9px] text-slate-500 uppercase font-bold">Costo Total</div>
+                            <div className="text-xs font-bold text-white">
                               {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))}
                             </div>
                           </div>
                           <div>
-                            <div className="text-[9px] text-slate-400 uppercase font-bold">Jugadores</div>
-                            <div className="text-xs font-bold text-blue-700">{item.JugadoresConvocados}</div>
+                            <div className="text-[9px] text-slate-500 uppercase font-bold">Jugadores</div>
+                            <div className="text-xs font-bold text-blue-300">{item.JugadoresConvocados}</div>
                           </div>
 
-                          <div className="pt-1 border-t border-slate-200">
-                            <div className="text-[9px] text-slate-400 uppercase font-bold">Total Esperado</div>
-                            <div className="text-xs font-bold text-green-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total || 0)}</div>
+                          <div className="pt-1 border-t border-white/10">
+                            <div className="text-[9px] text-slate-500 uppercase font-bold">Total Esperado</div>
+                            <div className="text-xs font-bold text-emerald-300">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total || 0)}</div>
                           </div>
-                          <div className="pt-1 border-t border-slate-200">
-                            <div className="text-[9px] text-slate-400 uppercase font-bold">Total Recaudado</div>
-                            <div className="text-xs font-bold text-blue-700">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos || 0)}</div>
+                          <div className="pt-1 border-t border-white/10">
+                            <div className="text-[9px] text-slate-500 uppercase font-bold">Total Recaudado</div>
+                            <div className="text-xs font-bold text-blue-300">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos || 0)}</div>
                           </div>
 
-                          <div className="pt-1 border-t border-slate-200">
-                            <div className="text-[9px] text-slate-400 uppercase font-bold">Utilidad Esp.</div>
-                            <div className={`text-xs font-bold ${(item.Total - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                          <div className="pt-1 border-t border-white/10">
+                            <div className="text-[9px] text-slate-500 uppercase font-bold">Utilidad Esp.</div>
+                            <div className={`text-xs font-bold ${(item.Total - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                               {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Total - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)))}
                             </div>
                           </div>
-                          <div className="pt-1 border-t border-slate-200">
-                            <div className="text-[9px] text-slate-400 uppercase font-bold">Utilidad Rec.</div>
-                            <div className={`text-xs font-bold ${(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                          <div className="pt-1 border-t border-white/10">
+                            <div className="text-[9px] text-slate-500 uppercase font-bold">Utilidad Rec.</div>
+                            <div className={`text-xs font-bold ${(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0))) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                               {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.Pagos - ((item.CostoLiga || 0) + (item.CostoProfesor || 0) + (item.CostoArbitro || 0)))}
                             </div>
                           </div>
 
-                          <div className="col-span-2 pt-1 border-t border-slate-200">
-                            <div className="text-[9px] text-slate-400 uppercase font-bold">Periodo</div>
-                            <div className="text-[10px] text-slate-600">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
+                          <div className="col-span-2 pt-1 border-t border-white/10">
+                            <div className="text-[9px] text-slate-500 uppercase font-bold">Periodo</div>
+                            <div className="text-[10px] text-slate-300">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
                           </div>
                         </div>
                       )}
 
                       {(!user || (user.AdminConvocatorias ?? 0) < 2) && (
-                        <div className="mb-3 p-2 bg-slate-50 rounded-lg">
-                           <div className="text-[9px] text-slate-400 uppercase font-bold">Periodo</div>
-                           <div className="text-[10px] text-slate-600 font-bold">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
+                        <div className="mb-3 p-2 bg-white/5 rounded-lg">
+                           <div className="text-[9px] text-slate-500 uppercase font-bold">Periodo</div>
+                           <div className="text-[10px] text-slate-300 font-bold">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
                         </div>
                       )}
 
-                      <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+                      <div className="flex flex-wrap gap-1.5 pt-2 border-t border-white/10">
                         {item.Cerrada === 0 ? (
                           <>
                             <button
@@ -1552,12 +1535,12 @@ export default function Home() {
                             )}
                           </>
                         ) : (
-                          <div className="w-full text-center py-2 text-slate-400 font-medium text-xs">Esta convocatoria está cerrada</div>
+                          <div className="w-full text-center py-2 text-slate-500 font-medium text-xs">Esta convocatoria está cerrada</div>
                         )}
                         {(user?.AdminConvocatorias ?? 0) >= 2 && (
                           <button
                             onClick={() => handleDeleteConvocatoria(item)}
-                            className="w-full bg-red-100 hover:bg-red-200 text-red-700 text-[10px] font-bold py-1.5 rounded-lg transition-colors mt-0.5"
+                            className="w-full bg-rose-500/15 hover:bg-red-200 text-rose-300 text-[10px] font-bold py-1.5 rounded-lg transition-colors mt-0.5"
                           >
                             Eliminar Permanente
                           </button>
@@ -1566,14 +1549,14 @@ export default function Home() {
                     </div>
                   ))
                 ) : (
-                  <div className="py-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
+                  <div className="py-12 text-center text-slate-400 bg-white/5 rounded-xl border border-white/10">
                     No se encontraron convocatorias.
                   </div>
                 )}
               </div>
 
-              <div className="mt-8 pt-6 border-t border-slate-100 flex justify-center">
-                <h3 className="text-lg md:text-xl font-bold text-slate-500 italic">
+              <div className="mt-8 pt-6 border-t border-white/10 flex justify-center">
+                <h3 className="text-lg md:text-xl font-bold text-slate-400 italic">
                   {isLoading ? 'Cargando...' : `${sortedConvocatorias.length} Convocatorias en total`}
                 </h3>
               </div>
@@ -1583,8 +1566,8 @@ export default function Home() {
 
       {/* Create Convocatoria Modal */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg relative">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
+          <div className="bg-[#0f172a] backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg relative">
             <button
               onClick={() => {
                 setIsCreateModalOpen(false);
@@ -1602,35 +1585,35 @@ export default function Home() {
                   eliminatoria: ''
                 });
               }}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 transition-colors"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            <h3 className="text-xl font-bold mb-4 text-slate-800">Nueva Convocatoria</h3>
+            <h3 className="text-xl font-bold mb-4 text-white">Nueva Convocatoria</h3>
 
             <div className="space-y-4">
               <div className="relative" ref={leagueDropdownRef}>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Liga o Torneo</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Liga o Torneo</label>
                 <div 
-                  className="w-full bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg flex justify-between items-center cursor-pointer hover:border-blue-500 transition-all"
+                  className="w-full bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg flex justify-between items-center cursor-pointer hover:border-blue-500 transition-all"
                   onClick={() => setIsLeagueDropdownOpen(!isLeagueDropdownOpen)}
                 >
-                  <span className={newConvocatoria.leagueId ? "text-slate-800 font-medium" : "text-slate-400"}>
+                  <span className={newConvocatoria.leagueId ? "text-white font-medium" : "text-slate-500"}>
                     {leagues.find(l => l.IdLiga.toString() === newConvocatoria.leagueId.toString())?.Liga || "Seleccione una liga"}
                   </span>
-                  <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${isLeagueDropdownOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown size={18} className={`text-slate-500 transition-transform duration-200 ${isLeagueDropdownOpen ? 'rotate-180' : ''}`} />
                 </div>
 
                 {isLeagueDropdownOpen && (
-                  <div className="absolute z-[70] w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-2 sticky top-0 bg-white border-b border-slate-100">
+                  <div className="absolute z-[70] w-full mt-1 bg-white/5 border border-white/10 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-2 sticky top-0 bg-white/5 border-b border-white/10">
                       <div className="relative">
-                        <Search className="absolute left-2 top-2.5 text-slate-400" size={14} />
+                        <Search className="absolute left-2 top-2.5 text-slate-500" size={14} />
                         <input
                           type="text"
-                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-slate-50 border-none rounded-md focus:ring-0 placeholder-slate-400"
+                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-white/5 border-none rounded-md focus:ring-0 placeholder-slate-400"
                           placeholder="Buscar liga..."
                           value={leagueSearchQuery}
                           onChange={(e) => setLeagueSearchQuery(e.target.value)}
@@ -1646,7 +1629,7 @@ export default function Home() {
                           .map((league) => (
                             <div
                               key={league.IdLiga}
-                              className="px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer transition-colors"
+                              className="px-4 py-2 text-sm text-slate-200 hover:bg-blue-500/10 hover:text-blue-300 cursor-pointer transition-colors"
                               onClick={() => {
                                 setNewConvocatoria(prev => ({ ...prev, leagueId: league.IdLiga.toString() }));
                                 setIsLeagueDropdownOpen(false);
@@ -1657,7 +1640,7 @@ export default function Home() {
                             </div>
                           ))
                       ) : (
-                        <div className="px-4 py-3 text-sm text-slate-500 text-center">No se encontraron ligas</div>
+                        <div className="px-4 py-3 text-sm text-slate-400 text-center">No se encontraron ligas</div>
                       )}
                     </div>
                   </div>
@@ -1665,25 +1648,25 @@ export default function Home() {
               </div>
 
               <div className="relative" ref={profesorDropdownRef}>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Profesor</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Profesor</label>
                 <div 
-                  className="w-full bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg flex justify-between items-center cursor-pointer hover:border-blue-500 transition-all"
+                  className="w-full bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg flex justify-between items-center cursor-pointer hover:border-blue-500 transition-all"
                   onClick={() => setIsProfesorDropdownOpen(!isProfesorDropdownOpen)}
                 >
-                  <span className={newConvocatoria.idProfesor ? "text-slate-800 font-medium" : "text-slate-400"}>
+                  <span className={newConvocatoria.idProfesor ? "text-white font-medium" : "text-slate-500"}>
                     {profesores.find(p => p.IdUsuario.toString() === newConvocatoria.idProfesor.toString())?.Usuario || "Seleccione Profesor"}
                   </span>
-                  <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${isProfesorDropdownOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown size={18} className={`text-slate-500 transition-transform duration-200 ${isProfesorDropdownOpen ? 'rotate-180' : ''}`} />
                 </div>
 
                 {isProfesorDropdownOpen && (
-                  <div className="absolute z-[70] w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-2 sticky top-0 bg-white border-b border-slate-100">
+                  <div className="absolute z-[70] w-full mt-1 bg-white/5 border border-white/10 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-2 sticky top-0 bg-white/5 border-b border-white/10">
                       <div className="relative">
-                        <Search className="absolute left-2 top-2.5 text-slate-400" size={14} />
+                        <Search className="absolute left-2 top-2.5 text-slate-500" size={14} />
                         <input
                           type="text"
-                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-slate-50 border-none rounded-md focus:ring-0 placeholder-slate-400"
+                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-white/5 border-none rounded-md focus:ring-0 placeholder-slate-400"
                           placeholder="Buscar profesor..."
                           value={profesorSearchQuery}
                           onChange={(e) => setProfesorSearchQuery(e.target.value)}
@@ -1699,7 +1682,7 @@ export default function Home() {
                           .map((prof) => (
                             <div
                               key={prof.IdUsuario}
-                              className="px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer transition-colors"
+                              className="px-4 py-2 text-sm text-slate-200 hover:bg-blue-500/10 hover:text-blue-300 cursor-pointer transition-colors"
                               onClick={() => {
                                 setNewConvocatoria(prev => ({ ...prev, idProfesor: prof.IdUsuario.toString() }));
                                 setIsProfesorDropdownOpen(false);
@@ -1710,7 +1693,7 @@ export default function Home() {
                             </div>
                           ))
                       ) : (
-                        <div className="px-4 py-3 text-sm text-slate-500 text-center">No se encontraron profesores</div>
+                        <div className="px-4 py-3 text-sm text-slate-400 text-center">No se encontraron profesores</div>
                       )}
                     </div>
                   </div>
@@ -1718,7 +1701,7 @@ export default function Home() {
               </div>
 
               <div className="relative" ref={categoryDropdownRef}>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Categoría</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Categoría</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -1729,11 +1712,11 @@ export default function Home() {
                       setCategorySearchQuery(e.target.value);
                       setIsCategoryDropdownOpen(true);
                     }}
-                    className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 pl-3 pr-10 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase transition-all"
+                    className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 pl-3 pr-10 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase transition-all"
                     placeholder="Escriba o seleccione categoría"
                   />
                   <div 
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer text-slate-400"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer text-slate-500"
                     onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
                   >
                     <ChevronDown size={18} className={`transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
@@ -1741,13 +1724,13 @@ export default function Home() {
                 </div>
 
                 {isCategoryDropdownOpen && (
-                  <div className="absolute z-[60] w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-2 sticky top-0 bg-white border-b border-slate-100">
+                  <div className="absolute z-[60] w-full mt-1 bg-white/5 border border-white/10 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-2 sticky top-0 bg-white/5 border-b border-white/10">
                       <div className="relative">
-                        <Search className="absolute left-2 top-2.5 text-slate-400" size={14} />
+                        <Search className="absolute left-2 top-2.5 text-slate-500" size={14} />
                         <input
                           type="text"
-                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-slate-50 border-none rounded-md focus:ring-0 placeholder-slate-400"
+                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-white/5 border-none rounded-md focus:ring-0 placeholder-slate-400"
                           placeholder="Buscar categoría existente..."
                           value={categorySearchQuery}
                           onChange={(e) => setCategorySearchQuery(e.target.value)}
@@ -1763,7 +1746,7 @@ export default function Home() {
                           .map((cat, idx) => (
                             <div
                               key={idx}
-                              className="px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer transition-colors flex justify-between items-center group"
+                              className="px-4 py-2.5 text-sm text-slate-200 hover:bg-blue-500/10 hover:text-blue-300 cursor-pointer transition-colors flex justify-between items-center group"
                               onClick={() => {
                                 setNewConvocatoria(prev => ({ ...prev, categoria: cat }));
                                 setCategorySearchQuery('');
@@ -1771,11 +1754,11 @@ export default function Home() {
                               }}
                             >
                               <span className="font-medium">{cat}</span>
-                              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">Seleccionar</span>
+                              <span className="text-[10px] bg-white/10 text-slate-400 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">Seleccionar</span>
                             </div>
                           ))
                       ) : (
-                        <div className="px-4 py-3 text-sm text-slate-500 text-center">
+                        <div className="px-4 py-3 text-sm text-slate-400 text-center">
                           {categorySearchQuery ? (
                             <>
                               No se encontró "<span className="font-semibold">{categorySearchQuery}</span>"
@@ -1792,64 +1775,64 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Color Distintivo (Rojo, Azul, etc.)</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Color Distintivo (Rojo, Azul, etc.)</label>
                 <input
                   type="text"
                   value={newConvocatoria.color}
                   onChange={(e) => setNewConvocatoria(prev => ({ ...prev, color: e.target.value.toUpperCase() }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase"
+                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase"
                   placeholder="Ej: ROJO, AZUL, BLANCO"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Fecha Inicio</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Fecha Inicio</label>
                 <input
                   type="date"
                   value={newConvocatoria.fechaInicio}
                   onChange={(e) => setNewConvocatoria(prev => ({ ...prev, fechaInicio: e.target.value }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Fecha Fin</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Fecha Fin</label>
                 <input
                   type="date"
                   value={newConvocatoria.fechaFin}
                   onChange={(e) => setNewConvocatoria(prev => ({ ...prev, fechaFin: e.target.value }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Liga</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo Liga</label>
                   <input
                     type="number"
                     value={newConvocatoria.costoLiga}
                     onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoLiga: parseFloat(e.target.value) || 0 }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Profesor</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo Profesor</label>
                   <input
                     type="number"
                     value={newConvocatoria.costoProfesor}
                     onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoProfesor: parseFloat(e.target.value) || 0 }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Árbitro</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo Árbitro</label>
                   <input
                     type="number"
                     value={newConvocatoria.costoArbitro}
                     onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoArbitro: parseFloat(e.target.value) || 0 }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
                 </div>
@@ -1857,23 +1840,23 @@ export default function Home() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cantidad de Jornadas</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Cantidad de Jornadas</label>
                   <input
                     type="number"
                     min={1}
                     step={1}
                     value={newConvocatoria.cantidadJornadas}
                     onChange={(e) => setNewConvocatoria(prev => ({ ...prev, cantidadJornadas: e.target.value }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="Ej. 10"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Eliminatoria</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Eliminatoria</label>
                   <select
                     value={newConvocatoria.eliminatoria}
                     onChange={(e) => setNewConvocatoria(prev => ({ ...prev, eliminatoria: e.target.value }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                   >
                     <option value="">Sin eliminatoria</option>
                     {ELIMINATORIAS.map((e) => <option key={e} value={e}>{e}</option>)}
@@ -1900,7 +1883,7 @@ export default function Home() {
                     eliminatoria: ''
                   });
                 }}
-                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded transition-colors"
+                className="bg-white/10 hover:bg-white/15 text-white font-bold py-2 px-4 rounded transition-colors"
               >
                 Cancelar
               </button>
@@ -1917,28 +1900,28 @@ export default function Home() {
 
       {/* Edit Convocatoria Modal */}
       {isEditModalOpen && selectedConvocatoria && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg relative">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
+          <div className="bg-[#0f172a] backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg relative">
             <button
               onClick={() => setIsEditModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 transition-colors"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            <h3 className="text-xl font-bold mb-4 text-slate-800">Editar Convocatoria</h3>
-            <p className="text-sm text-slate-500 mb-4">
+            <h3 className="text-xl font-bold mb-4 text-white">Editar Convocatoria</h3>
+            <p className="text-sm text-slate-400 mb-4">
               Editando: <span className="font-bold">{selectedConvocatoria.Liga} - {selectedConvocatoria.Categoria}</span>
             </p>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Profesor</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Profesor</label>
                 <select
                   value={editConvocatoria.idProfesor}
                   onChange={(e) => setEditConvocatoria(prev => ({ ...prev, idProfesor: e.target.value }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                 >
                   <option value="">Seleccione Profesor</option>
                   {profesores.map((prof) => (
@@ -1950,63 +1933,63 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Color Distintivo</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Color Distintivo</label>
                 <input
                   type="text"
                   value={editConvocatoria.newColor}
                   onChange={(e) => setEditConvocatoria(prev => ({ ...prev, newColor: e.target.value.toUpperCase() }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase"
+                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Fecha Inicio</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Fecha Inicio</label>
                 <input
                   type="date"
                   value={editConvocatoria.fechaInicio}
                   onChange={(e) => setEditConvocatoria(prev => ({ ...prev, fechaInicio: e.target.value }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Fecha Fin</label>
+                <label className="block text-sm font-medium text-slate-200 mb-2">Fecha Fin</label>
                 <input
                   type="date"
                   value={editConvocatoria.fechaFin}
                   onChange={(e) => setEditConvocatoria(prev => ({ ...prev, fechaFin: e.target.value }))}
-                  className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Liga</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo Liga</label>
                   <input
                     type="number"
                     value={editConvocatoria.costoLiga}
                     onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoLiga: parseFloat(e.target.value) || 0 }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Profesor</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo Profesor</label>
                   <input
                     type="number"
                     value={editConvocatoria.costoProfesor}
                     onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoProfesor: parseFloat(e.target.value) || 0 }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Costo Árbitro</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo Árbitro</label>
                   <input
                     type="number"
                     value={editConvocatoria.costoArbitro}
                     onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoArbitro: parseFloat(e.target.value) || 0 }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
                 </div>
@@ -2014,23 +1997,23 @@ export default function Home() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cantidad de Jornadas</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Cantidad de Jornadas</label>
                   <input
                     type="number"
                     min={1}
                     step={1}
                     value={editConvocatoria.cantidadJornadas}
                     onChange={(e) => setEditConvocatoria(prev => ({ ...prev, cantidadJornadas: e.target.value }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="Ej. 10"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Eliminatoria</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Eliminatoria</label>
                   <select
                     value={editConvocatoria.eliminatoria}
                     onChange={(e) => setEditConvocatoria(prev => ({ ...prev, eliminatoria: e.target.value }))}
-                    className="w-full bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                   >
                     <option value="">Sin eliminatoria</option>
                     {ELIMINATORIAS.map((e) => <option key={e} value={e}>{e}</option>)}
@@ -2042,7 +2025,7 @@ export default function Home() {
             <div className="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded transition-colors"
+                className="bg-white/10 hover:bg-white/15 text-white font-bold py-2 px-4 rounded transition-colors"
               >
                 Cancelar
               </button>
@@ -2059,22 +2042,22 @@ export default function Home() {
 
       {/* Players Modal */}
       {isPlayersModalOpen && selectedConvocatoria && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg w-full max-w-6xl h-full md:h-auto max-h-screen md:max-h-[90vh] overflow-hidden shadow-lg flex flex-col">
-            <div className="p-4 md:p-6 border-b border-slate-200">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0f172a] backdrop-blur-sm rounded-lg w-full max-w-6xl h-full md:h-auto max-h-screen md:max-h-[90vh] overflow-hidden shadow-lg flex flex-col">
+            <div className="p-4 md:p-6 border-b border-white/10">
               <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-xl md:text-2xl font-bold text-slate-800 flex flex-wrap items-center gap-2 md:gap-3">
+                  <h3 className="text-xl md:text-2xl font-bold text-white flex flex-wrap items-center gap-2 md:gap-3">
                     {selectedConvocatoria.Liga}
-                    <span className="hidden md:inline text-slate-300">/</span>
+                    <span className="hidden md:inline text-slate-600">/</span>
                     {selectedConvocatoria.Categoria}
                     {selectedConvocatoria.Color && (
-                      <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded border">
+                      <span className="text-xs font-normal text-slate-400 bg-white/10 px-2 py-1 rounded border">
                         {selectedConvocatoria.Color}
                       </span>
                     )}
                   </h3>
-                  <p className="text-xs md:text-sm text-slate-600 mt-1">
+                  <p className="text-xs md:text-sm text-slate-300 mt-1">
                     {formatDate(selectedConvocatoria.FechaInicio)} - {formatDate(selectedConvocatoria.FechaFin)}
                   </p>
                 </div>
@@ -2085,7 +2068,7 @@ export default function Home() {
                     setPlayers([]);
                     await fetchConvocatorias();
                   }}
-                  className="text-slate-400 hover:text-slate-600 transition-colors p-1"
+                  className="text-slate-500 hover:text-slate-300 transition-colors p-1"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2095,21 +2078,21 @@ export default function Home() {
 
               <div className="flex flex-col lg:flex-row gap-4 lg:items-center mt-4">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full lg:w-auto">
-                  <div className="text-xs md:text-sm font-medium text-slate-600 bg-slate-100 px-3 py-2 rounded-lg text-center">
-                    Conv.: <span className="text-slate-800 font-bold">{recordCount}</span>
+                  <div className="text-xs md:text-sm font-medium text-slate-300 bg-white/10 px-3 py-2 rounded-lg text-center">
+                    Conv.: <span className="text-white font-bold">{recordCount}</span>
                   </div>
-                  <div className="text-xs md:text-sm font-medium text-slate-600 bg-blue-50 px-3 py-2 rounded-lg text-center">
-                    Total: <span className="text-blue-700 font-bold text-[10px] md:text-xs">
+                  <div className="text-xs md:text-sm font-medium text-slate-300 bg-blue-500/10 px-3 py-2 rounded-lg text-center">
+                    Total: <span className="text-blue-300 font-bold text-[10px] md:text-xs">
                       {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrice)}
                     </span>
                   </div>
-                  <div className="text-xs md:text-sm font-medium text-slate-600 bg-green-50 px-3 py-2 rounded-lg text-center">
-                    Pagado: <span className="text-green-700 font-bold text-[10px] md:text-xs">
+                  <div className="text-xs md:text-sm font-medium text-slate-300 bg-emerald-500/10 px-3 py-2 rounded-lg text-center">
+                    Pagado: <span className="text-emerald-300 font-bold text-[10px] md:text-xs">
                       {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPagos)}
                     </span>
                   </div>
-                  <div className="text-xs md:text-sm font-medium text-slate-600 bg-red-50 px-3 py-2 rounded-lg text-center">
-                    CXC: <span className="text-red-700 font-bold text-[10px] md:text-xs">
+                  <div className="text-xs md:text-sm font-medium text-slate-300 bg-rose-500/10 px-3 py-2 rounded-lg text-center">
+                    CXC: <span className="text-rose-300 font-bold text-[10px] md:text-xs">
                       {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC)}
                     </span>
                   </div>
@@ -2123,19 +2106,8 @@ export default function Home() {
                       checked={showOnlyConvocados}
                       onChange={(e) => setShowOnlyConvocados(e.target.checked)}
                     />
-                    <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-600 whitespace-nowrap">Solo Convocados</span>
-                  </label>
-
-                  <label className="relative inline-flex items-center cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={showOnlyDebts}
-                      onChange={(e) => setShowOnlyDebts(e.target.checked)}
-                    />
-                    <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-600 whitespace-nowrap">Ver adeudos</span>
+                    <div className="w-10 h-5 bg-white/15 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-white/20 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-300 whitespace-nowrap">Solo Convocados</span>
                   </label>
 
                   <label className="relative inline-flex items-center cursor-pointer group" title="Deja solo a los jugadores con algún porcentaje de beca">
@@ -2145,8 +2117,8 @@ export default function Home() {
                       checked={showOnlyBecados}
                       onChange={(e) => setShowOnlyBecados(e.target.checked)}
                     />
-                    <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-600 whitespace-nowrap">Solo becados</span>
+                    <div className="w-10 h-5 bg-white/15 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-white/20 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-300 whitespace-nowrap">Solo becados</span>
                   </label>
                 </div>
 
@@ -2156,422 +2128,54 @@ export default function Home() {
                   <button onClick={handleOpenInviteModal} className="flex-[2] lg:flex-none bg-purple-600 text-white text-[10px] font-bold py-2 px-4 rounded-lg shadow-sm">+ Invitar</button>
                 </div>
 
-                <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 ml-auto">
-                  <button
-                    onClick={() => setPlayerViewMode('table')}
-                    className={`p-1.5 rounded-md transition-all ${playerViewMode === 'table' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
-                    title="Vista Tabla"
-                  >
-                    <List size={16} />
-                  </button>
-                  <button
-                    onClick={() => setPlayerViewMode('cards')}
-                    className={`p-1.5 rounded-md transition-all ${playerViewMode === 'cards' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
-                    title="Vista Cards"
-                  >
-                    <LayoutGrid size={16} />
-                  </button>
-                </div>
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-4 md:p-6 bg-slate-50/50">
+            <div className="flex-1 overflow-auto p-4 md:p-6 bg-white/5">
               {isLoadingPlayers ? (
                 <div className="flex items-center justify-center py-12">
-                  <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-8 w-8 text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                 </div>
               ) : (
                 <>
-                  {/* Players Search for Cards */}
-                  {playerViewMode === 'cards' && (
-                    <div className="mb-4">
-                      <input
-                        type="text"
-                        placeholder="Buscar jugador..."
-                        className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 shadow-sm"
-                        value={playerFilters.jugador}
-                        onChange={(e) => setPlayerFilters(prev => ({ ...prev, jugador: e.target.value }))}
-                      />
+                  {/* Un solo buscador: nombre, id o categoría. */}
+                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <input
+                      type="text"
+                      placeholder="Buscar jugador por nombre, ID o categoría..."
+                      className="flex-1 min-w-[240px] bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500 shadow-sm"
+                      value={busquedaJugador}
+                      onChange={(e) => setBusquedaJugador(e.target.value)}
+                    />
+                    <span className="text-xs text-slate-400 font-semibold">
+                      {sortedPlayers.length} de {players.length} jugador{players.length !== 1 ? 'es' : ''}
+                    </span>
+                  </div>
+
+                  {/* La lista solo trae inscritos: si alguien falta, hay que decir por qué. */}
+                  {ocultosNoInscritos > 0 && (
+                    <div className="mb-4 flex items-start gap-2 px-4 py-2.5 rounded-xl bg-white/10 border border-white/10 text-slate-300">
+                      <Info size={15} className="flex-shrink-0 mt-0.5 text-slate-500" />
+                      <p className="text-xs font-semibold leading-relaxed">
+                        {ocultosNoInscritos} jugador{ocultosNoInscritos !== 1 ? 'es' : ''} de la categoría no
+                        aparece{ocultosNoInscritos !== 1 ? 'n' : ''} por no tener inscripción pagada en la temporada.
+                      </p>
                     </div>
                   )}
 
-                  {/* Players View Container */}
-                  <div className="flex-1">
-                    {playerViewMode === 'table' ? (
-                      /* Table View */
-                      <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white overflow-x-auto">
-                        <table className="min-w-full bg-white">
-                  <thead className="sticky top-0 bg-white">
-                    <tr className="bg-gradient-to-r from-slate-700 to-slate-800 text-white">
-                      <th
-                        className="py-3 px-4 text-left font-semibold text-sm uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                        onClick={() => handlePlayerSort('IdJugador')}
-                      >
-                        <div className="flex items-center gap-2">
-                          ID
-                          {playerSortConfig?.key === 'IdJugador' && (
-                            <span className="text-blue-300">{playerSortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left font-semibold text-sm uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                        onClick={() => handlePlayerSort('Jugador')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Jugador
-                          {playerSortConfig?.key === 'Jugador' && (
-                            <span className="text-blue-300">{playerSortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left font-semibold text-sm uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                        onClick={() => handlePlayerSort('Categoria')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Categoría
-                          {playerSortConfig?.key === 'Categoria' && (
-                            <span className="text-blue-300">{playerSortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left font-semibold text-sm uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                        onClick={() => handlePlayerSort('Precio')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Precio
-                          {playerSortConfig?.key === 'Precio' && (
-                            <span className="text-blue-300">{playerSortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left font-semibold text-sm uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                        onClick={() => handlePlayerSort('PagoJugador')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Pago
-                          {playerSortConfig?.key === 'PagoJugador' && (
-                            <span className="text-blue-300">{playerSortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="py-3 px-4 text-left font-semibold text-sm uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                        onClick={() => handlePlayerSort('CXC')}
-                      >
-                        <div className="flex items-center gap-2">
-                          CXC
-                          {playerSortConfig?.key === 'CXC' && (
-                            <span className="text-blue-300">{playerSortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="py-3 px-4 text-center font-semibold text-sm uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors"
-                        onClick={() => handlePlayerSort('Estado')}
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          Estado
-                          {playerSortConfig?.key === 'Estado' && (
-                            <span className="text-blue-300">{playerSortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </div>
-                      </th>
-                      <th className="py-3 px-4 text-center font-semibold text-sm uppercase tracking-wider">Acciones</th>
-                    </tr>
-                    {/* Filter Row */}
-                    <tr className="bg-slate-100 border-b-2 border-slate-300">
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={playerFilters.idJugador}
-                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, idJugador: e.target.value }))}
-                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
-                          placeholder="ID..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={playerFilters.jugador}
-                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, jugador: e.target.value }))}
-                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
-                          placeholder="Jugador..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={playerFilters.categoria}
-                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, categoria: e.target.value }))}
-                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
-                          placeholder="Cat..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={playerFilters.precio}
-                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, precio: e.target.value }))}
-                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
-                          placeholder="Precio..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={playerFilters.pago}
-                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, pago: e.target.value }))}
-                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
-                          placeholder="Pago..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={playerFilters.cxc}
-                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, cxc: e.target.value }))}
-                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
-                          placeholder="CXC..."
-                        />
-                      </th>
-                      <th className="p-2">
-                        <input
-                          type="text"
-                          value={playerFilters.estado}
-                          onChange={(e) => setPlayerFilters(prev => ({ ...prev, estado: e.target.value }))}
-                          className="w-full text-xs border border-slate-300 rounded px-1 py-1 focus:border-blue-500 outline-none"
-                          placeholder="Estado..."
-                        />
-                      </th>
-                      <th className="p-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {sortedPlayers.map((player) => (
-                      <tr
-                        key={player.IdJugador}
-                        className={`transition-all duration-200 ${player.EsConvocado
-                          ? 'bg-green-50'
-                          : player.EsEliminado
-                            ? 'bg-red-50 opacity-60'
-                            : player.EsInvitado
-                              ? 'bg-yellow-50'
-                              : 'hover:bg-slate-50'
-                          }`}
-                      >
-                        <td className="py-3 px-4 text-sm font-medium">{player.IdJugador}</td>
-                        <td className="py-3 px-4 text-sm font-medium">
-                          <div className="flex items-center gap-2">
-                            {player.Jugador}
-                            {player.EsInvitado === 1 && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-yellow-200 text-yellow-800" title="Jugador invitado de otra categoría">
-                                ⚠️ Invitado
-                              </span>
-                            )}
-                            {etiquetaBeca(player.Beca) && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-purple-200 text-purple-800"
-                                title={`Jugador con ${etiquetaBeca(player.Beca)}`}
-                              >
-                                🎓 {etiquetaBeca(player.Beca)}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-sm">{player.Categoria}</td>
-                        {/* Importes solo de los convocados: en los demás no aplican todavía.
-                            El precio sigue siendo editable para poder dejarlo listo antes de convocar. */}
-                        <td className="py-3 px-4 text-sm">
-                          {user ? (
-                            <button
-                              onClick={() => handleUpdatePrice(player)}
-                              title={player.EsConvocado ? 'Cambiar precio' : 'Asignar precio (aún no convocado)'}
-                              className={`font-semibold transition-colors cursor-pointer hover:underline ${
-                                player.EsConvocado ? 'text-blue-600 hover:text-blue-800' : 'text-slate-300 hover:text-slate-500'
-                              }`}
-                            >
-                              {player.EsConvocado
-                                ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio)
-                                : '—'}
-                            </button>
-                          ) : (
-                            <span className={`font-semibold ${player.EsConvocado ? 'text-slate-600' : 'text-slate-300'}`}>
-                              {player.EsConvocado
-                                ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.Precio)
-                                : '—'}
-                            </span>
-                          )}
-                        </td>
-                        <td className={`py-3 px-4 text-sm font-bold ${player.EsConvocado ? 'text-green-700' : 'text-slate-300'}`}>
-                          {player.EsConvocado
-                            ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.PagoJugador || 0)
-                            : '—'}
-                        </td>
-                        <td className={`py-3 px-4 text-sm font-bold ${player.EsConvocado ? 'text-red-700 bg-red-50/30' : 'text-slate-300'}`}>
-                          {player.EsConvocado
-                            ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(player.CXC || 0)
-                            : '—'}
-                        </td>
-                        <td className="py-3 px-4 text-center text-sm">
-                          {player.EsConvocado ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800">
-                              Convocado
-                            </span>
-                          ) : player.EsEliminado ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                              Eliminado
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                              Disponible
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex gap-2 justify-center">
-                            {!player.EsConvocado && (
-                              <button
-                                onClick={() => handleConvocarPlayer(player)}
-                                className="bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white text-xs font-bold py-1 px-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
-                              >
-                                Convocar
-                              </button>
-                            )}
-                            {player.EsConvocado && (
-                              <button
-                                onClick={() => handleQuitarPlayer(player)}
-                                className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white text-xs font-bold py-1 px-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
-                              >
-                                Quitar
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                    </table>
-                  </div>
-                ) : (
-                    /* Card View (for all screen sizes) */
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-20">
-                      {sortedPlayers.length > 0 ? (
-                        sortedPlayers.map((player) => (
-                          <div 
-                            key={player.IdJugador} 
-                            className={`shadow-sm transition-all hover:shadow-md ${
-                              player.EsConvocado 
-                                ? 'p-4 bg-white border-l-4 border-l-green-500 rounded-xl z-10 scale-[1.02]' 
-                                : 'p-2.5 bg-slate-100/50 border-l-[3px] border-l-slate-300 rounded-lg opacity-75 grayscale-[0.3]'
-                            } ${player.EsEliminado ? 'opacity-50 grayscale border-l-red-500' : ''}`}
-                          >
-                            <div className="flex justify-between items-start mb-2">
-                              <div>
-                                <div className="text-[8px] text-slate-400 font-bold uppercase">#{player.IdJugador}</div>
-                                <h5 className={`text-sm font-black text-slate-900 ${player.EsConvocado ? '' : 'line-clamp-2'} leading-tight tracking-tight`}>
-                                  {player.Jugador}
-                                </h5>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[10px] text-slate-500">{player.Categoria}</span>
-                                  {/* La beca va junto a la categoría y no en la columna de estado:
-                                      es una condición del jugador, no del estado en la convocatoria. */}
-                                  {etiquetaBeca(player.Beca) && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200">
-                                      🎓 {etiquetaBeca(player.Beca)}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="text-right flex flex-col items-end gap-1">
-                                {player.EsInvitado === 1 && (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-800">
-                                    Invitado
-                                  </span>
-                                )}
-                                {player.EsConvocado ? (
-                                  <div className="flex flex-col items-end">
-                                    <div className="flex items-center justify-center w-6 h-6 bg-green-500 rounded-full shadow-sm border-2 border-white mb-1">
-                                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    </div>
-                                    <span className="text-[9px] font-bold text-green-600 uppercase tracking-tighter">Convocado</span>
-                                  </div>
-                                ) : player.EsEliminado ? (
-                                  <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">X</span>
-                                ) : (
-                                  <span className="text-[8px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded-full">D</span>
-                                )}
-                              </div>
-                            </div>
-                            
-                             {/* Importes solo de los convocados: en los demás no aplican todavía. */}
-                             {player.EsConvocado && (
-                             <div className="grid grid-cols-3 gap-1 my-3 p-2 bg-slate-50 rounded-md border border-slate-100">
-                               <div className="text-center border-r border-slate-200">
-                                 <div className="text-[8px] text-slate-400 font-bold uppercase">Precio</div>
-                                 <div className="text-[10px] font-bold text-blue-600">
-                                   ${player.Precio}
-                                 </div>
-                               </div>
-                               <div
-                                 className="text-center border-r border-slate-200 cursor-pointer hover:bg-slate-200/50 transition-colors rounded"
-                                 onClick={() => fetchPlayerPayments(player)}
-                               >
-                                 <div className="text-[8px] text-slate-400 font-bold uppercase">Pag.</div>
-                                 <div className="text-[10px] font-bold text-green-600">
-                                   ${player.PagoJugador || 0}
-                                 </div>
-                               </div>
-                               <div className="text-center">
-                                 <div className="text-[8px] text-slate-400 font-bold uppercase">CXC</div>
-                                 <div className="text-[10px] font-bold text-red-600">
-                                   ${player.CXC || 0}
-                                 </div>
-                               </div>
-                             </div>
-                             )}
-
-                            <div className="flex gap-1.5 items-center">
-                              {!player.EsConvocado ? (
-                                <button 
-                                  onClick={() => handleConvocarPlayer(player)} 
-                                  className="flex-1 bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold py-1 rounded-md transition-colors shadow-sm"
-                                >
-                                  Convocar
-                                </button>
-                              ) : (
-                                <button 
-                                  onClick={() => handleQuitarPlayer(player)} 
-                                  className="flex-none bg-red-600 hover:bg-red-700 text-white text-[8px] font-bold py-0.5 px-1.5 rounded transition-colors shadow-sm"
-                                >
-                                  Quitar
-                                </button>
-                              )}
-                              <button 
-                                onClick={() => handleUpdatePrice(player)} 
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-md transition-colors"
-                              >
-                                $
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="col-span-full text-center py-12 text-slate-500 bg-white rounded-xl border border-slate-200 shadow-sm">
-                          No se encontraron jugadores
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  </div>
+                  <ConvocatoriaPlayersTable
+                    players={sortedPlayers}
+                    sortConfig={playerSortConfig}
+                    onSort={handlePlayerSort}
+                    onConvocar={handleConvocarPlayer}
+                    onQuitar={handleQuitarPlayer}
+                    onPrecio={handleUpdatePrice}
+                    onHistorial={abrirHistorialPagos}
+                    onPagosConvocatoria={fetchPlayerPayments}
+                  />
                 </>
               )}
             </div>
@@ -2581,17 +2185,17 @@ export default function Home() {
 
       {/* Invite Player Modal */}
       {isInviteModalOpen && selectedConvocatoria && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg w-full max-w-md shadow-lg">
-            <div className="p-6 border-b border-slate-200">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0f172a] backdrop-blur-sm rounded-lg w-full max-w-md shadow-lg">
+            <div className="p-6 border-b border-white/10">
               <div className="flex justify-between items-center">
-                <h3 className="text-xl font-bold text-slate-800">Invitar Jugador</h3>
+                <h3 className="text-xl font-bold text-white">Invitar Jugador</h3>
                 <button
                   onClick={() => {
                     setIsInviteModalOpen(false);
                     setSelectedPlayerId('');
                   }}
-                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                  className="text-slate-500 hover:text-slate-300 transition-colors"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2603,29 +2207,29 @@ export default function Home() {
             <div className="p-6">
               {isLoadingAvailablePlayers ? (
                 <div className="flex items-center justify-center py-8">
-                  <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-8 w-8 text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                 </div>
               ) : availablePlayers.length === 0 ? (
-                <p className="text-center text-slate-600 py-8">No hay jugadores disponibles para invitar</p>
+                <p className="text-center text-slate-300 py-8">No hay jugadores disponibles para invitar</p>
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Buscar jugador</label>
+                  <label className="block text-sm font-medium text-slate-200 mb-2">Buscar jugador</label>
                   <input
                     type="text"
                     value={playerSearchQuery}
                     onChange={(e) => setPlayerSearchQuery(e.target.value)}
                     placeholder="Escribe para buscar..."
-                    className="w-full mb-4 appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                    className="w-full mb-4 appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                   />
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Seleccione un jugador</label>
+                  <label className="block text-sm font-medium text-slate-200 mb-2">Seleccione un jugador</label>
                   <select
                     value={selectedPlayerId}
                     onChange={(e) => setSelectedPlayerId(e.target.value)}
                     size={8}
-                    className="w-full appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
+                    className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                   >
                     <option value="">-- Seleccione --</option>
                     {availablePlayers
@@ -2634,30 +2238,40 @@ export default function Home() {
                         player.Categoria.toLowerCase().includes(playerSearchQuery.toLowerCase())
                       )
                       .map((player) => (
-                        <option key={player.IdJugador} value={player.IdJugador}>
-                          {player.Jugador} ({player.Categoria})
+                        <option
+                          key={player.IdJugador}
+                          value={player.IdJugador}
+                          disabled={!!player.Motivo}
+                          title={player.Motivo ?? undefined}
+                        >
+                          {player.Jugador} ({player.Categoria}){player.Motivo ? ` — ⛔ ${etiquetaNoInvitable(player)}` : ''}
                         </option>
                       ))}
                   </select>
+                  {availablePlayers.some(p => p.Motivo) && (
+                    <p className="mt-2 text-xs text-amber-300/90">
+                      Los jugadores marcados con ⛔ no se pueden invitar: necesitan inscripción en la temporada o ponerse al corriente.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
 
-            <div className="flex justify-end gap-2 p-6 border-t border-slate-200">
+            <div className="flex justify-end gap-2 p-6 border-t border-white/10">
               <button
                 onClick={() => {
                   setIsInviteModalOpen(false);
                   setSelectedPlayerId('');
                   setPlayerSearchQuery('');
                 }}
-                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded transition-colors"
+                className="bg-white/10 hover:bg-white/15 text-white font-bold py-2 px-4 rounded transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleInvitePlayer}
                 disabled={!selectedPlayerId}
-                className="bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors"
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-white/15 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded transition-colors"
               >
                 Invitar
               </button>
@@ -2667,13 +2281,13 @@ export default function Home() {
       )}
       {/* Payment Details Modal */}
       {isPaymentDetailsModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg shadow-xl overflow-hidden">
-            <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-800">Pagos de {selectedPlayerName}</h3>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60] p-4">
+          <div className="bg-white/5 rounded-lg w-full max-w-lg shadow-xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 bg-white/5 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-white">Pagos de {jugadorPagosConvocatoria?.jugador}</h3>
               <button
                 onClick={() => setIsPaymentDetailsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
+                className="text-slate-500 hover:text-slate-300 transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2684,32 +2298,32 @@ export default function Home() {
             <div className="p-6 max-h-[60vh] overflow-y-auto">
               {isLoadingPayments ? (
                 <div className="flex items-center justify-center py-8">
-                  <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-8 w-8 text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                 </div>
               ) : playerPayments.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 italic">No se registran pagos para este jugador en esta convocatoria.</div>
+                <div className="text-center py-8 text-slate-400 italic">No se registran pagos para este jugador en esta convocatoria.</div>
               ) : (
                 <div className="space-y-3">
                   {playerPayments.map((p: any) => (
-                    <div key={p.IdPago} className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex justify-between items-center hover:bg-slate-100 transition-colors">
+                    <div key={p.IdPago} className="bg-white/5 p-3 rounded-lg border border-white/10 flex justify-between items-center hover:bg-white/10 transition-colors">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Recibo #{p.Recibo || 'N/A'}</span>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase">{formatDate(p.FechaPago)}</span>
+                          <span className="text-[10px] font-bold text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded">Recibo #{p.Recibo || 'N/A'}</span>
+                          <span className="text-[10px] text-slate-500 font-bold uppercase">{formatDate(p.FechaPago)}</span>
                         </div>
-                        <div className="text-sm text-slate-700 font-medium leading-tight">{p.Comentario || 'Pago de convocatoria'}</div>
+                        <div className="text-sm text-slate-200 font-medium leading-tight">{p.Comentario || 'Pago de convocatoria'}</div>
                       </div>
-                      <div className="text-base font-bold text-green-700 ml-4">
+                      <div className="text-base font-bold text-emerald-300 ml-4">
                         {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(p.Pago)}
                       </div>
                     </div>
                   ))}
-                  <div className="pt-4 mt-4 border-t-2 border-slate-200 flex justify-between items-center font-bold text-lg">
-                    <span className="text-slate-800">Total:</span>
-                    <span className="text-blue-700">
+                  <div className="pt-4 mt-4 border-t-2 border-white/10 flex justify-between items-center font-bold text-lg">
+                    <span className="text-white">Total:</span>
+                    <span className="text-blue-300">
                       {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(playerPayments.reduce((sum, p) => sum + p.Pago, 0))}
                     </span>
                   </div>
@@ -2717,7 +2331,19 @@ export default function Home() {
               )}
             </div>
             
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+            <div className="p-4 bg-white/5 border-t border-white/10 flex justify-between items-center gap-3">
+              {/* Este modal solo muestra lo abonado a ESTA convocatoria. Desde aquí se
+                  salta al historial completo del jugador, que es otra pregunta. */}
+              <button
+                onClick={() => {
+                  setIsPaymentDetailsModalOpen(false);
+                  if (jugadorPagosConvocatoria) setPagosTarget(jugadorPagosConvocatoria);
+                }}
+                className="flex items-center gap-1.5 text-slate-300 hover:text-blue-300 font-bold text-xs transition-colors"
+              >
+                <History size={14} />
+                Ver historial completo del jugador
+              </button>
               <button
                 onClick={() => setIsPaymentDetailsModalOpen(false)}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-sm"
@@ -2728,6 +2354,17 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Historial de pagos del jugador. Es el MISMO modal de Inscripciones y Adeudos:
+          arranca en la temporada de la convocatoria y trae el interruptor para ver todo
+          el histórico, además de la exportación a PDF y Excel. */}
+      <PlayerPagosModal
+        target={pagosTarget}
+        temporadaId={temporadaDeLaLista}
+        temporadaNombre={nombreTemporadaDeLaLista}
+        onClose={() => setPagosTarget(null)}
+        onDataChanged={() => { if (selectedConvocatoria) handleNavigateToConvocatoria(selectedConvocatoria); }}
+      />
   </DashboardLayout>
   );
 }

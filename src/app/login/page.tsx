@@ -7,9 +7,15 @@ import { cn } from '@/lib/utils';
 
 import { useUser } from '@/contexts/user-context';
 
+/** Primera pantalla útil para quien acaba de entrar, según lo que su perfil permita. */
+function destinoInicial(paginas: string[]): string {
+    const preferidas = ['/', '/inscripciones', '/dashboard'];
+    return preferidas.find((p) => paginas.includes(p)) ?? paginas[0] ?? '/manual';
+}
+
 export default function LoginPage() {
     const router = useRouter();
-    const { setUser } = useUser();
+    const { setSesion } = useUser();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [formData, setFormData] = useState({
@@ -32,18 +38,13 @@ export default function LoginPage() {
             const data = await res.json();
 
             if (data.success) {
-                // Set user in context
-                setUser(data.user);
-                // Redirect based on role
-                if ((data.user.AdminConvocatorias ?? 0) >= 2) {
-                    router.push('/');
-                } else {
-                    router.push('/inscripciones');
-                }
+                const paginas: string[] = Array.isArray(data.paginas) ? data.paginas : [];
+                setSesion(data.user, paginas);
+                router.push(destinoInicial(paginas));
             } else {
                 setError(data.message || 'Error al iniciar sesión');
             }
-        } catch (err) {
+        } catch {
             setError('Error de conexión');
         } finally {
             setLoading(false);

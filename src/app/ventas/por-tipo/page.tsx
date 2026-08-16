@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import ExcelJS from "exceljs";
 import {
@@ -167,8 +166,8 @@ function squarify(items: TreeInput[], width: number, height: number): TreeRect[]
 }
 
 export default function VentasPorTipoPage() {
-  const router = useRouter();
   const { user } = useUser();
+  const puedeVer = usePuedeVer("/ventas/por-tipo");
 
   const initRange = periodRange("month");
   const [period, setPeriod] = useState<Period>("month");
@@ -242,10 +241,9 @@ export default function VentasPorTipoPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    if ((user.AdminConvocatorias ?? 0) < 2) { router.push("/"); return; }
+    if (!user || !puedeVer) return;
     fetchData(dateFrom, dateTo, idSede);
-  }, [user]);
+  }, [user, puedeVer]);
 
   const handlePeriod = (p: Period) => {
     const { from, to } = periodRange(p);
@@ -255,7 +253,7 @@ export default function VentasPorTipoPage() {
   };
 
   useEffect(() => {
-    if (!user || (user.AdminConvocatorias ?? 0) < 2) return;
+    if (!user || !puedeVer) return;
     fetchData(dateFrom, dateTo, idSede);
   }, [dateFrom, dateTo, idSede]);
 

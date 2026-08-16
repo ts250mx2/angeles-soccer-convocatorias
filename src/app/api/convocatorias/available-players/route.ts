@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { estadoEnTemporada, motivoNoConvocable } from '@/lib/convocatoria-elegibilidad';
+
+interface FilaDisponible {
+    IdJugador: number;
+    Jugador: string;
+    Categoria: string;
+}
 
 export async function GET(request: Request) {
     try {
@@ -17,20 +24,42 @@ export async function GET(request: Request) {
         }
 
         const query = `
-            SELECT IdJugador, Jugador, Categoria 
-            FROM tblJugadores 
-            WHERE Status = 0 
+            SELECT IdJugador, Jugador, Categoria
+            FROM tblJugadores
+            WHERE Status = 0
             AND IdJugador NOT IN (
-                SELECT IdJugador 
-                FROM tblDetalleConvocatorias 
+                SELECT IdJugador
+                FROM tblDetalleConvocatorias
                 WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?
             )
             ORDER BY Jugador ASC
         `;
 
-        const [rows] = await pool.query(query, [seasonId, leagueId, categoria, color]);
+        const [rows] = (await pool.query(
+            query,
+            [seasonId, leagueId, categoria, color],
+        )) as [FilaDisponible[], unknown];
 
-        return NextResponse.json({ success: true, data: rows });
+        /* El buscador de invitados NO esconde a quien no puede ser convocado: lo muestra
+           con su motivo (sin inscripción / con adeudo) para que quien busca entienda por
+           qué no lo puede invitar, en vez de creer que el jugador no existe. */
+        const estados = await estadoEnTemporada(
+            Number(seasonId),
+            rows.map((r) => Number(r.IdJugador)),
+        );
+
+        const data = rows.map((fila) => {
+            const estado = estados.get(Number(fila.IdJugador));
+            return {
+                ...fila,
+                Inscrito: estado?.inscrito ? 1 : 0,
+                Exento: estado?.exento ? 1 : 0,
+                MesesDebe: estado?.mesesDebe ?? 0,
+                Motivo: motivoNoConvocable(estado),
+            };
+        });
+
+        return NextResponse.json({ success: true, data });
     } catch (error) {
         console.error('Error fetching available players:', error);
         return NextResponse.json(

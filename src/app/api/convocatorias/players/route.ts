@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { estadoEnTemporada } from '@/lib/convocatoria-elegibilidad';
+
+interface FilaJugador {
+    IdJugador: number;
+    EsConvocado: number;
+    EsEliminado: number;
+}
 
 export async function GET(request: Request) {
     try {
@@ -36,7 +43,36 @@ export async function GET(request: Request) {
             ORDER BY B.Jugador ASC
         `;
 
-        const [rows] = await pool.query(selectQuery, [seasonId, leagueId, seasonId, leagueId, categoria, color]);
+        const [rows] = (await pool.query(
+            selectQuery,
+            [seasonId, leagueId, seasonId, leagueId, categoria, color],
+        )) as [FilaJugador[], unknown];
+
+        /* Inscripción y adeudo de la temporada, para cada jugador de la lista.
+           La pantalla solo muestra a los inscritos, pero NUNCA esconde a quien ya está
+           en la convocatoria: si un convocado no está inscrito, eso es justo lo que
+           hay que ver, no lo que hay que ocultar. */
+        const estados = await estadoEnTemporada(
+            Number(seasonId),
+            rows.map((r) => Number(r.IdJugador)),
+        );
+
+        const conEstado = rows.map((fila) => {
+            const estado = estados.get(Number(fila.IdJugador));
+            return {
+                ...fila,
+                Inscrito: estado?.inscrito ? 1 : 0,
+                Exento: estado?.exento ? 1 : 0,
+                MesesDebe: estado?.mesesDebe ?? 0,
+            };
+        });
+
+        const enLaConvocatoria = (f: typeof conEstado[number]) =>
+            Number(f.EsConvocado) === 1 || Number(f.EsEliminado) === 1;
+        const visibles = conEstado.filter(
+            (f) => f.Inscrito === 1 || f.Exento === 1 || enLaConvocatoria(f),
+        );
+        const ocultosNoInscritos = conEstado.length - visibles.length;
 
         // Get total sum and count
         const [totalRows] = await pool.query(
@@ -70,7 +106,15 @@ export async function GET(request: Request) {
         const totalPagos = Array.isArray(paymentRows) && paymentRows.length > 0 ? (paymentRows[0] as any).totalPagos || 0 : 0;
         const totalCXC = total - totalPagos;
 
-        return NextResponse.json({ success: true, data: rows, total, count, totalPagos, totalCXC });
+        return NextResponse.json({
+            success: true,
+            data: visibles,
+            total,
+            count,
+            totalPagos,
+            totalCXC,
+            ocultosNoInscritos,
+        });
     } catch (error) {
         console.error('Error fetching players:', error);
         return NextResponse.json(

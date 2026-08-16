@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { requierePagina } from '@/lib/permisos';
 import { filtroFechas, EGRESO_VIGENTE } from '../route';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +10,11 @@ const MAX_FILAS = 3000;
 
 /** Renglones de egreso de una sede (o de todas) dentro del período. */
 export async function GET(request: Request) {
+    const guardia = await requierePagina('/gastos/egresos');
+    if (!guardia.ok) {
+        return NextResponse.json({ success: false, message: guardia.message }, { status: guardia.status });
+    }
+
     try {
         const { searchParams } = new URL(request.url);
         const periodo = searchParams.get('periodo') || 'month';

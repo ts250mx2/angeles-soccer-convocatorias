@@ -37,18 +37,51 @@ const aSalida = (j: JugadorConAdeudo): DeudorSalida => ({
     Torneos: [],
 });
 
+/** Torneo que parece pertenecer a la temporada anterior, con sus motivos. */
+interface SugerenciaProducto {
+    IdProducto: number;
+    Producto: string;
+    IdTipoProducto: number;
+    TipoProducto: string;
+    CantidadPagos: number;
+    TotalRecaudado: number;
+    Razones: string[];
+}
+
+/** Años calendario que toca una temporada (FechaInicio..FechaFin). */
+const aniosDeTemporada = (anioInicio: number, anioFin: number): Set<number> => {
+    const out = new Set<number>();
+    for (let a = anioInicio; a <= Math.max(anioInicio, anioFin); a++) out.add(a);
+    return out;
+};
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const temporadaParam = searchParams.get('temporada');
+        /* Clinics sí o no, nunca las dos juntas: son negocios distintos y mezclarlos
+           deja un total que no le sirve a ninguno.
+           Es clinics si el producto está marcado (EsClinics) O si su nombre lo dice.
+           Hacen falta las dos condiciones: hay seis productos que se llaman CLINICS y
+           no están marcados —"CLINICS FUTSAL SEMANA 1..5" y un "AS CLINICS ... S7" al
+           que se le olvidó la marca— y otros ocho marcados cuyo nombre no lo menciona. */
+        const ES_CLINICS = `(COALESCE(PR.EsClinics, 0) = 1 OR UPPER(PR.Producto) LIKE '%CLINIC%')`;
+        const soloClinics = searchParams.get('clinics') === '1';
+        const filtroClinics = soloClinics ? ES_CLINICS : `NOT ${ES_CLINICS}`;
 
-        // Temporada del reporte: la que pida el filtro, o la activa.
+        // Temporada del reporte: la que pida el filtro, o la activa. Las fechas y los
+        // años se usan para las sugerencias de torneos de la temporada anterior.
+        const COLS_TEMPORADA =
+            'IdTemporada, Temporada, EsActiva, FechaInicio, YEAR(FechaInicio) AS AnioInicio, YEAR(FechaFin) AS AnioFin';
         const [seasonRows] = await pool.query(
             temporadaParam
-                ? 'SELECT IdTemporada, Temporada, EsActiva FROM tblTemporadas WHERE IdTemporada = ? LIMIT 1'
-                : 'SELECT IdTemporada, Temporada, EsActiva FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1',
+                ? `SELECT ${COLS_TEMPORADA} FROM tblTemporadas WHERE IdTemporada = ? LIMIT 1`
+                : `SELECT ${COLS_TEMPORADA} FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1`,
             temporadaParam ? [temporadaParam] : [],
-        ) as unknown as [Array<{ IdTemporada: number; Temporada: string; EsActiva: number }>, unknown];
+        ) as unknown as [Array<{
+            IdTemporada: number; Temporada: string; EsActiva: number;
+            FechaInicio: Date | string; AnioInicio: number; AnioFin: number;
+        }>, unknown];
 
         if (seasonRows.length === 0) {
             return NextResponse.json({ success: false, message: 'No se encontró la temporada' }, { status: 404 });
@@ -73,8 +106,13 @@ export async function GET(request: Request) {
             FROM tblProductos PR
             LEFT JOIN tblTiposProductos TP ON PR.IdTipoProducto = TP.IdTipoProducto
             LEFT JOIN tblPagos P ON PR.IdProducto = P.IdProducto AND P.IdTemporada = ? AND P.Status = 0
-            WHERE PR.IdTipoProducto IN (3, 4)
+            WHERE PR.IdTipoProducto IN (3, 4) AND ${filtroClinics}
             GROUP BY PR.IdProducto, PR.Producto, PR.IdTipoProducto, TP.TipoProducto
+            -- Sin un solo pago en la temporada, el torneo no se muestra: el catálogo
+            -- arrastra productos de años anteriores y llenaban la pantalla de tarjetas
+            -- en cero. Se filtra por número de pagos y no por importe, porque un pago
+            -- de cero pesos sigue siendo un movimiento de esta temporada.
+            HAVING CantidadPagos > 0
             ORDER BY TotalRecaudado DESC, PR.Producto ASC`,
             [seasonId],
         ) as unknown as [FilaProducto[], unknown];
@@ -93,6 +131,7 @@ export async function GET(request: Request) {
                FROM tblPagos P
               INNER JOIN tblProductos PR ON PR.IdProducto = P.IdProducto
               WHERE P.IdTemporada = ? AND P.Status = 0 AND PR.IdTipoProducto IN (3, 4)
+                AND ${filtroClinics}
               ORDER BY PR.Producto ASC`,
             [seasonId],
         ) as unknown as [Array<{ IdProducto: number; Producto: string; IdJugador: number }>, unknown];
@@ -132,9 +171,101 @@ export async function GET(request: Request) {
             };
         });
 
+        /* 3. Sugerencias: torneos de la lista que parecen pertenecer a la temporada
+           INMEDIATA ANTERIOR (misma regla de "anterior" que loadSeasonAndPrevious:
+           por FechaInicio, con IdTemporada de desempate). Tres señales, todas
+           explicables al usuario; basta una para sugerir, y cada tarjeta lista las
+           suyas para que quien decide vea el porqué:
+             a) el nombre menciona un año que solo toca la temporada anterior;
+             b) tiene pagos con fecha ANTERIOR al inicio de la temporada del filtro
+                (no se compara contra el fin de la anterior porque los rangos de
+                tblTemporadas se traslapan en algunos meses);
+             c) el mismo torneo recaudó más pagos en la anterior que aquí (los de
+                aquí parecen arrastre de captura). */
+        const [prevRows] = await pool.query(
+            `SELECT IdTemporada, Temporada,
+                    YEAR(FechaInicio) AS AnioInicio, YEAR(FechaFin) AS AnioFin
+             FROM tblTemporadas
+             WHERE (FechaInicio < ?) OR (FechaInicio = ? AND IdTemporada < ?)
+             ORDER BY FechaInicio DESC, IdTemporada DESC
+             LIMIT 1`,
+            [season.FechaInicio, season.FechaInicio, seasonId],
+        ) as unknown as [Array<{ IdTemporada: number; Temporada: string; AnioInicio: number; AnioFin: number }>, unknown];
+        const anterior = prevRows[0] ?? null;
+
+        const sugeridos: SugerenciaProducto[] = [];
+        if (anterior && rows.length > 0) {
+            const ids = rows.map((p) => Number(p.IdProducto));
+
+            // Pagos del mismo torneo en la temporada anterior (señal c).
+            const [enAnterior] = await pool.query(
+                `SELECT IdProducto, COUNT(*) AS Pagos
+                 FROM tblPagos
+                 WHERE IdTemporada = ? AND Status = 0 AND IdProducto IN (?)
+                 GROUP BY IdProducto`,
+                [anterior.IdTemporada, ids],
+            ) as unknown as [Array<{ IdProducto: number; Pagos: number }>, unknown];
+            const pagosEnAnterior = new Map(enAnterior.map((r) => [Number(r.IdProducto), Number(r.Pagos)]));
+
+            // Pagos de ESTA temporada fechados antes de que arrancara (señal b).
+            const [fechadosAntes] = await pool.query(
+                `SELECT IdProducto, COUNT(*) AS Pagos
+                 FROM tblPagos
+                 WHERE IdTemporada = ? AND Status = 0 AND IdProducto IN (?)
+                   AND FechaPago IS NOT NULL AND DATE(FechaPago) < DATE(?)
+                 GROUP BY IdProducto`,
+                [seasonId, ids, season.FechaInicio],
+            ) as unknown as [Array<{ IdProducto: number; Pagos: number }>, unknown];
+            const pagosFechadosAntes = new Map(fechadosAntes.map((r) => [Number(r.IdProducto), Number(r.Pagos)]));
+
+            const aniosActual = aniosDeTemporada(Number(season.AnioInicio), Number(season.AnioFin));
+            const aniosAnterior = aniosDeTemporada(Number(anterior.AnioInicio), Number(anterior.AnioFin));
+
+            for (const p of rows) {
+                const id = Number(p.IdProducto);
+                const cantidadPagos = Number(p.CantidadPagos) || 0;
+                const razones: string[] = [];
+
+                const anioEnNombre = [...String(p.Producto).matchAll(/\b(20\d{2})\b/g)]
+                    .map((m) => Number(m[1]))
+                    .find((a) => aniosAnterior.has(a) && !aniosActual.has(a));
+                if (anioEnNombre) {
+                    razones.push(`El nombre menciona ${anioEnNombre}, año que solo abarca la temporada anterior`);
+                }
+
+                const antesDeIniciar = pagosFechadosAntes.get(id) ?? 0;
+                if (antesDeIniciar > 0) {
+                    razones.push(antesDeIniciar === cantidadPagos
+                        ? `Sus ${cantidadPagos} pago(s) tienen fecha anterior al inicio de esta temporada`
+                        : `${antesDeIniciar} de ${cantidadPagos} pagos tienen fecha anterior al inicio de esta temporada`);
+                }
+
+                const enLaAnterior = pagosEnAnterior.get(id) ?? 0;
+                if (enLaAnterior > cantidadPagos) {
+                    razones.push(`En la temporada anterior recaudó ${enLaAnterior} pagos y aquí solo ${cantidadPagos}`);
+                }
+
+                if (razones.length > 0) {
+                    sugeridos.push({
+                        IdProducto: id,
+                        Producto: String(p.Producto),
+                        IdTipoProducto: Number(p.IdTipoProducto),
+                        TipoProducto: String(p.TipoProducto),
+                        CantidadPagos: cantidadPagos,
+                        TotalRecaudado: Number(p.TotalRecaudado) || 0,
+                        Razones: razones,
+                    });
+                }
+            }
+            // Primero los casos con más señales; a igualdad, alfabético.
+            sugeridos.sort((a, b) =>
+                b.Razones.length - a.Razones.length || a.Producto.localeCompare(b.Producto, 'es'));
+        }
+
         return NextResponse.json({
             success: true,
             season: { IdTemporada: season.IdTemporada, Temporada: season.Temporada },
+            soloClinics,
             // Contra qué temporada se midió el adeudo (puede no ser la del filtro).
             temporadaAdeudos: temporadas
                 ? { IdTemporada: temporadas.actual.seasonId, Temporada: temporadas.actual.temporadaNombre }
@@ -143,6 +274,13 @@ export async function GET(request: Request) {
                 jugadores: globales.size,
                 deudores: [...globales.values()].sort(ordenar),
             },
+            // Torneos que parecen de la temporada anterior; null si no hay anterior.
+            sugerencias: anterior
+                ? {
+                    temporadaAnterior: { IdTemporada: anterior.IdTemporada, Temporada: anterior.Temporada },
+                    productos: sugeridos,
+                }
+                : null,
             data,
         }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {

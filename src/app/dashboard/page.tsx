@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   DollarSign, CreditCard, Users, TrendingUp, TrendingDown,
@@ -326,6 +326,7 @@ function BarSection({ title, icon, data, labelKey, colorBase, period, onClickIte
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isInitialized, season } = useUser();
+  const puedeVer = usePuedeVer("/dashboard");
 
   const today = new Date().toISOString().split("T")[0];
   const [period, setPeriod] = useState<Period>("month");
@@ -367,13 +368,7 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
-    if (isInitialized) {
-      if (!user) {
-        router.push("/login");
-      } else if ((user.AdminConvocatorias ?? 0) < 2) {
-        router.push("/inscripciones");
-      }
-    }
+    if (isInitialized && !user) router.push("/login");
   }, [user, isInitialized, router]);
 
   const fetchKPIs = useCallback(async (p: Period, from?: string, to?: string) => {
@@ -862,9 +857,10 @@ export default function DashboardPage() {
     return Object.values(map).sort((a, b) => b.total - a.total);
   };
 
+  // Sin el permiso, DashboardLayout pinta "Sin acceso": no hay nada que pedir.
   useEffect(() => {
-    if (isInitialized && user) fetchKPIs(period, dateFrom, dateTo);
-  }, [isInitialized, user, period, fetchKPIs]);
+    if (isInitialized && user && puedeVer) fetchKPIs(period, dateFrom, dateTo);
+  }, [isInitialized, user, puedeVer, period, fetchKPIs]);
 
   const handlePeriodClick = (p: Period) => {
     if (p === "custom") { setShowDatePicker(true); setPendingFrom(dateFrom); setPendingTo(dateTo); return; }

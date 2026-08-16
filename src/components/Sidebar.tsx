@@ -3,199 +3,71 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
-import { useUser } from "@/contexts/user-context";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useUser, usePermisos } from "@/contexts/user-context";
+import { NAV_ITEMS, puedeVerItem, type NavItem } from "@/lib/navegacion";
+import IconoNav from "./IconoNav";
 import {
-  LayoutDashboard,
-  Trophy,
-  Users,
-  ClipboardList,
   ChevronDown,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  MapPin,
-  UserCheck,
-  Banknote,
-  LayoutList,
-  ShoppingCart,
-  Receipt,
-  CalendarRange,
-  LayoutGrid,
-  Boxes,
-  CalendarDays,
-  QrCode,
-  Bot,
-  Ban,
-  BookOpen,
+  Search,
+  X,
 } from "lucide-react";
 
-interface NavItem {
-  label: string;
-  href?: string;
-  icon: React.ReactNode;
-  children?: NavItem[];
-  adminOnly?: boolean;
-}
-
 /**
- * Menú de la aplicación. Vive fuera del componente y se exporta porque el Manual de
- * Operación arma sus secciones a partir de esta MISMA lista: así el manual nunca
- * muestra un módulo que el usuario no tiene, ni se queda atrás cuando el menú cambia.
+ * El menú y sus permisos viven en @/lib/navegacion (dato plano, sin JSX) porque el
+ * servidor también los necesita: aquí solo se pintan.
  */
-export const NAV_ITEMS: NavItem[] = [
-  {
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: <LayoutDashboard size={18} />,
-    adminOnly: true,
-  },
-  {
-    label: "QR Accesos",
-    href: "/qr-accesos",
-    icon: <QrCode size={18} />,
-    adminOnly: true,
-  },
-  {
-    label: "Agente Inteligente",
-    href: "/agente",
-    icon: <Bot size={18} />,
-    adminOnly: true,
-  },
-  {
-    label: "Copas y Ligas",
-    icon: <Trophy size={18} />,
-    children: [
-      {
-        label: "Convocatorias",
-        href: "/",
-        icon: <ClipboardList size={16} />,
-      },
-      {
-        label: "Pagos de Copas y Ligas",
-        href: "/pagos-copas",
-        icon: <Trophy size={16} />,
-        adminOnly: true,
-      },
-    ],
-  },
-  {
-    label: "Caja",
-    icon: <Banknote size={18} />,
-    adminOnly: true,
-    children: [
-      {
-        label: "Control de Caja",
-        href: "/caja",
-        icon: <LayoutList size={16} />,
-        adminOnly: true,
-      },
-    ],
-  },
-  {
-    label: "Gastos",
-    icon: <Receipt size={18} />,
-    adminOnly: true,
-    children: [
-      {
-        label: "Egresos por Sede",
-        href: "/gastos/egresos",
-        icon: <MapPin size={16} />,
-        adminOnly: true,
-      },
-    ],
-  },
-  {
-    label: "Jugadores",
-    icon: <Users size={18} />,
-    children: [
-      {
-        label: "Inscripciones",
-        href: "/inscripciones",
-        icon: <UserCheck size={16} />,
-      },
-      {
-        label: "Adeudos por Sede",
-        href: "/adeudos/sede",
-        icon: <MapPin size={16} />,
-        adminOnly: true,
-      },
-    ],
-  },
-  {
-    label: "Ventas",
-    icon: <ShoppingCart size={18} />,
-    adminOnly: true,
-    children: [
-      {
-        label: "Historial de ventas",
-        href: "/ventas",
-        icon: <ShoppingCart size={16} />,
-      },
-      {
-        label: "Ventas por Producto",
-        href: "/ventas/por-producto",
-        icon: <Boxes size={16} />,
-      },
-      {
-        label: "Ventas por Día",
-        href: "/ventas/por-dia",
-        icon: <CalendarDays size={16} />,
-      },
-      {
-        label: "Ventas Canceladas",
-        href: "/ventas/canceladas",
-        icon: <Ban size={16} />,
-      },
-      {
-        label: "Cortes de Caja",
-        href: "/caja",
-        icon: <Receipt size={16} />,
-      },
-      {
-        label: "Cortes de Caja por Mes",
-        href: "/cortes-mensuales",
-        icon: <CalendarRange size={16} />,
-      },
-      {
-        label: "Ventas por Tipo de Producto",
-        href: "/ventas/por-tipo",
-        icon: <LayoutGrid size={16} />,
-      },
-    ],
-  },
-  {
-    label: "Manual de Operación",
-    href: "/manual",
-    icon: <BookOpen size={18} />,
-  },
-];
 
-/** Los módulos marcados adminOnly requieren AdminConvocatorias >= 2. */
-export function puedeVer(item: { adminOnly?: boolean }, user: { AdminConvocatorias?: number } | null): boolean {
-  return !item.adminOnly || (user?.AdminConvocatorias ?? 0) >= 2;
-}
+/** Acentos del español; el menú no tiene otros. */
+const SIN_ACENTO: Record<string, string> = {
+  á: "a", é: "e", í: "i", ó: "o", ú: "u", ü: "u", ñ: "n",
+};
+
+/** Para buscar sin que estorben mayúsculas ni acentos: "administracion" encuentra "Administración". */
+const normaliza = (texto: string): string =>
+  texto.toLowerCase().replace(/[áéíóúüñ]/g, (letra) => SIN_ACENTO[letra]);
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, season } = useUser();
+  const { user, season, setSesion } = useUser();
+  const { paginas } = usePermisos();
   const [collapsed, setCollapsed] = useState(false);
-  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({
-    "Copas y Ligas": true,
-    Caja: true,
-    Jugadores: true,
-    Ventas: true,
-  });
+  /* Vacío a propósito: los grupos nacen CERRADOS. Lo que no está aquí cae en el valor
+     por omisión (abierto solo si contiene la pantalla en la que estás), y en cuanto el
+     usuario abre o cierra uno a mano, su decisión queda guardada y manda. */
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+  const [busqueda, setBusqueda] = useState("");
+  const inputBusqueda = useRef<HTMLInputElement>(null);
+  /* Bandera en ref, no en estado: el sidebar colapsado no tiene input que enfocar, así
+     que hay que esperar a que se expanda. Un estado aquí provocaría un render extra
+     por cada expansión sin cambiar nada de lo que se pinta. */
+  const pedirFoco = useRef(false);
 
+  useEffect(() => {
+    if (!collapsed && pedirFoco.current) {
+      inputBusqueda.current?.focus();
+      pedirFoco.current = false;
+    }
+  }, [collapsed]);
 
-  const toggleMenu = (label: string) => {
+  /* Colapsar esconde la caja de búsqueda; dejar el filtro vivo ocultaría módulos del
+     riel de iconos sin que nada explique por qué. */
+  const cambiarColapso = (valor: boolean) => {
+    setCollapsed(valor);
+    if (valor) setBusqueda("");
+  };
+
+  const toggleMenu = (label: string, abiertoAhora: boolean) => {
     if (collapsed) {
       setCollapsed(false);
       setOpenMenus((prev) => ({ ...prev, [label]: true }));
       return;
     }
-    setOpenMenus((prev) => ({ ...prev, [label]: !prev[label] }));
+    setOpenMenus((prev) => ({ ...prev, [label]: !abiertoAhora }));
   };
 
   const isActive = (href: string) => {
@@ -210,8 +82,40 @@ export default function Sidebar() {
     } catch {
       /* aunque falle, salimos igualmente */
     }
+    setSesion(null, null);
     router.push("/login");
   };
+
+  const consulta = normaliza(busqueda.trim());
+  const buscando = consulta.length > 0;
+
+  /**
+   * Menú ya filtrado por permisos y por la búsqueda. Un grupo entra si su propio
+   * nombre coincide (y entonces muestra todos sus módulos) o si alguno de sus hijos
+   * coincide (y entonces muestra solo esos). Los hijos ya vienen filtrados por
+   * permiso, así que el render no vuelve a comprobarlo.
+   */
+  const resultados: NavItem[] = useMemo(() => {
+    const out: NavItem[] = [];
+
+    for (const item of NAV_ITEMS) {
+      if (!puedeVerItem(item, paginas)) continue;
+
+      if (!item.children) {
+        if (!buscando || normaliza(item.label).includes(consulta)) out.push(item);
+        continue;
+      }
+
+      const coincideGrupo = !buscando || normaliza(item.label).includes(consulta);
+      const hijos = item.children.filter(
+        (hijo) =>
+          puedeVerItem(hijo, paginas) &&
+          (coincideGrupo || normaliza(hijo.label).includes(consulta)),
+      );
+      if (hijos.length > 0) out.push({ ...item, children: hijos });
+    }
+    return out;
+  }, [paginas, consulta, buscando]);
 
   return (
     <>
@@ -220,7 +124,7 @@ export default function Sidebar() {
         className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-30 lg:hidden transition-opacity duration-300 ${
           collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
         }`}
-        onClick={() => setCollapsed(true)}
+        onClick={() => cambiarColapso(true)}
       />
 
       {/* Sidebar */}
@@ -266,7 +170,7 @@ export default function Sidebar() {
             />
           )}
           <button
-            onClick={() => setCollapsed(!collapsed)}
+            onClick={() => cambiarColapso(!collapsed)}
             className={`p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all duration-200 flex-shrink-0 ${
               collapsed ? "hidden" : ""
             }`}
@@ -298,31 +202,73 @@ export default function Sidebar() {
                 <p className="text-sm font-bold text-white truncate">
                   {user.Usuario}
                 </p>
+                {/* El perfil es lo que decide qué ve: se muestra tal cual, en vez de
+                    la etiqueta genérica "Administrador / Usuario". */}
                 <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
-                  {(user.AdminConvocatorias ?? 0) >= 2 ? (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
-                      Administrador
-                    </>
-                  ) : (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
-                      Usuario
-                    </>
-                  )}
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block flex-shrink-0" />
+                  {user.Puesto || "Sin perfil"}
                 </p>
               </div>
             </div>
           </div>
         )}
 
+        {/* Buscador del menú */}
+        {collapsed ? (
+          <button
+            onClick={() => {
+              pedirFoco.current = true;
+              setCollapsed(false);
+            }}
+            title="Buscar en el menú"
+            className="mx-auto mt-2 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all duration-200"
+          >
+            <Search size={16} />
+          </button>
+        ) : (
+          <div className="px-3 pt-3">
+            <div className="relative">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+              />
+              <input
+                ref={inputBusqueda}
+                type="text"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setBusqueda("");
+                }}
+                placeholder="Buscar en el menú..."
+                className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500/60 focus:bg-white/8 transition-all"
+              />
+              {busqueda && (
+                <button
+                  onClick={() => {
+                    setBusqueda("");
+                    inputBusqueda.current?.focus();
+                  }}
+                  title="Limpiar búsqueda"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-500 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {NAV_ITEMS.map((item) => {
-            // Skip admin-only top-level items
-            if (item.adminOnly && (user?.AdminConvocatorias ?? 0) < 2)
-              return null;
-
+          {!collapsed && buscando && resultados.length === 0 && (
+            <p className="px-3 py-6 text-center text-[11px] text-slate-500 leading-relaxed">
+              Ningún módulo coincide con
+              <br />
+              <span className="font-bold text-slate-400">&ldquo;{busqueda.trim()}&rdquo;</span>
+            </p>
+          )}
+          {resultados.map((item) => {
             if (!item.children) {
               // Simple link
               const active = item.href ? isActive(item.href) : false;
@@ -344,7 +290,7 @@ export default function Sidebar() {
                       active ? "text-blue-400" : "group-hover:text-white"
                     }`}
                   >
-                    {item.icon}
+                    <IconoNav nombre={item.icono} size={18} />
                   </span>
                   {!collapsed && (
                     <span className="text-sm font-semibold truncate">
@@ -358,16 +304,21 @@ export default function Sidebar() {
               );
             }
 
-            // Group with children
-            const isOpen = openMenus[item.label];
-            const hasActiveChild = item.children.some(
+            // Group with children (ya vienen filtrados por permiso y por la búsqueda)
+            const hijosVisibles = item.children;
+            const hasActiveChild = hijosVisibles.some(
               (child) => child.href && isActive(child.href)
             );
+
+            /* Cerrado salvo que el usuario lo haya abierto, que contenga la pantalla en
+               la que estás (si no, al navegar se perdería el rastro) o que haya una
+               búsqueda en curso, donde esconder los resultados no tendría sentido. */
+            const isOpen = buscando || (openMenus[item.label] ?? hasActiveChild);
 
             return (
               <div key={item.label}>
                 <button
-                  onClick={() => toggleMenu(item.label)}
+                  onClick={() => toggleMenu(item.label, isOpen)}
                   title={collapsed ? item.label : undefined}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group
                     ${
@@ -385,7 +336,7 @@ export default function Sidebar() {
                           : "group-hover:text-white"
                       }`}
                     >
-                      {item.icon}
+                      <IconoNav nombre={item.icono} size={18} />
                     </span>
                     {!collapsed && (
                       <span className="text-sm font-semibold truncate">
@@ -406,13 +357,7 @@ export default function Sidebar() {
                 {/* Children */}
                 {!collapsed && isOpen && (
                   <div className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2">
-                    {item.children.map((child) => {
-                      if (
-                        child.adminOnly &&
-                        (user?.AdminConvocatorias ?? 0) < 2
-                      )
-                        return null;
-
+                    {hijosVisibles.map((child) => {
                       const childActive = child.href
                         ? isActive(child.href)
                         : false;
@@ -434,7 +379,7 @@ export default function Sidebar() {
                                 : "group-hover:text-slate-300"
                             }`}
                           >
-                            {child.icon}
+                            <IconoNav nombre={child.icono} size={16} />
                           </span>
                           <span className="text-xs font-semibold truncate">
                             {child.label}

@@ -4,9 +4,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { BookOpen, Printer, Search, ExternalLink } from "lucide-react";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePermisos } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
-import { NAV_ITEMS, puedeVer } from "@/components/Sidebar";
+import { NAV_ITEMS, puedeVerItem } from "@/lib/navegacion";
 import {
   INTRO, CIERRE, POR_CLAVE, type Bloque, type SeccionManual,
 } from "@/lib/manual-contenido";
@@ -137,6 +137,7 @@ function BloqueVista({ bloque }: { bloque: Bloque }) {
 export default function ManualPage() {
   const router = useRouter();
   const { user, isInitialized } = useUser();
+  const { paginas } = usePermisos();
   const [busqueda, setBusqueda] = useState("");
 
   useEffect(() => {
@@ -157,10 +158,10 @@ export default function ManualPage() {
     };
 
     for (const item of NAV_ITEMS) {
-      if (!puedeVer(item, user)) continue;
+      if (!puedeVerItem(item, paginas)) continue;
 
       if (item.children) {
-        const hijosVisibles = item.children.filter((c) => puedeVer(c, user));
+        const hijosVisibles = item.children.filter((c) => puedeVerItem(c, paginas));
         if (hijosVisibles.length === 0) continue;
         /* Un grupo puede tener una sección de conjunto (p. ej. Ventas) y ADEMÁS
            secciones propias de algunos hijos; se pintan las dos cosas. */
@@ -174,7 +175,7 @@ export default function ManualPage() {
       if (item.href) agrega(item.href, item.href, item.label);
     }
     return out;
-  }, [user]);
+  }, [paginas]);
 
   const todas: SeccionVisible[] = useMemo(
     () => [

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   ShoppingCart, Search, RefreshCw, Calendar, X,
@@ -40,6 +40,7 @@ const fmt = (n: number) =>
 export default function VentasPage() {
   const router = useRouter();
   const { user, isInitialized, season } = useUser();
+  const puedeVer = usePuedeVer("/ventas");
 
   // Sales List State
   const [sales, setSales] = useState<Sale[]>([]);
@@ -57,13 +58,8 @@ export default function VentasPage() {
   const [pendingFrom, setPendingFrom] = useState("");
   const [pendingTo, setPendingTo] = useState("");
 
-  // Redirect non-admins
   useEffect(() => {
-    if (isInitialized && !user) {
-      router.push("/login");
-    } else if (user && (user.AdminConvocatorias ?? 0) < 2) {
-      router.push("/");
-    }
+    if (isInitialized && !user) router.push("/login");
   }, [user, isInitialized, router]);
 
   // Fetch Sedes (para el filtro)
@@ -102,12 +98,13 @@ export default function VentasPage() {
     }
   }, [period, selectedSedeFilter, searchQuery, dateFrom, dateTo]);
 
+  // Sin el permiso, DashboardLayout pinta "Sin acceso": no hay nada que pedir.
   useEffect(() => {
-    if (user && (user.AdminConvocatorias ?? 0) >= 2) {
+    if (user && puedeVer) {
       fetchSedes();
       fetchSales();
     }
-  }, [user, fetchSales, fetchSedes]);
+  }, [user, puedeVer, fetchSales, fetchSedes]);
 
   const handlePeriodChange = (p: Period) => {
     if (p === "all") {

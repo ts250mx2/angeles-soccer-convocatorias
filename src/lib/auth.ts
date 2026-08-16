@@ -70,11 +70,14 @@ export interface SessionUser {
     IdUsuario: number;
     Usuario: string;
     AdminConvocatorias: number;
+    /** Perfil del usuario: de él cuelgan los permisos de módulo. */
+    IdPuesto: number | null;
+    Puesto: string | null;
 }
 
 /**
- * Usuario autenticado del request, con el rol releído de la base de datos.
- * Devuelve null si no hay cookie válida o el usuario ya no existe.
+ * Usuario autenticado del request, con el perfil releído de la base de datos.
+ * Devuelve null si no hay cookie válida, el usuario ya no existe o está dado de baja.
  */
 export async function getSessionUser(): Promise<SessionUser | null> {
     const store = await cookies();
@@ -86,10 +89,11 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
     try {
         const [rows] = await pool.query(
-            `SELECT A.IdUsuario, A.Usuario, COALESCE(B.M8, 0) AS AdminConvocatorias
+            `SELECT A.IdUsuario, A.Usuario, A.IdPuesto, B.Puesto,
+                    COALESCE(B.M8, 0) AS AdminConvocatorias
              FROM tblUsuarios A
              INNER JOIN tblPuestos B ON A.IdPuesto = B.IdPuesto
-             WHERE A.IdUsuario = ?
+             WHERE A.IdUsuario = ? AND COALESCE(A.Status, 0) = 0
              LIMIT 1`,
             [payload.uid]
         ) as any[];
@@ -98,6 +102,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
             IdUsuario: rows[0].IdUsuario,
             Usuario: rows[0].Usuario,
             AdminConvocatorias: Number(rows[0].AdminConvocatorias) || 0,
+            IdPuesto: rows[0].IdPuesto ?? null,
+            Puesto: rows[0].Puesto ?? null,
         };
     } catch {
         return null;

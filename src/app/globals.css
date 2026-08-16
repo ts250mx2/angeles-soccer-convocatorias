@@ -24,3 +24,26 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/*
+ * Controles nativos del tema oscuro (todo lo que cuelga de DashboardLayout).
+ *
+ * Sin esto, el desplegable de un <select> y los calendarios de fecha los pinta el
+ * navegador según el modo claro/oscuro de WINDOWS, no de la aplicación: en modo claro
+ * salen con fondo blanco y, como el texto del control es claro, las letras no se
+ * distinguen. La regla vive aquí y no clase por clase para que ningún select nuevo
+ * vuelva a nacer con el defecto; el formulario público de preregistro queda fuera a
+ * propósito (no usa DashboardLayout) porque ese sí es de tema claro.
+ */
+.tema-oscuro :is(select, input, textarea) {
+  color-scheme: dark;
+}
+
+.tema-oscuro select option {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+.tema-oscuro select option:disabled {
+  color: #64748b;
+}

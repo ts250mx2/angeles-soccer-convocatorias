@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import { QRCodeCanvas } from "qrcode.react";
 import {
@@ -17,8 +16,8 @@ interface Sede {
 }
 
 export default function QrAccesosPage() {
-  const router = useRouter();
   const { user } = useUser();
+  const puedeVer = usePuedeVer("/qr-accesos");
 
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,11 +44,12 @@ export default function QrAccesosPage() {
     setOrigin(window.location.origin);
   }, []);
 
+  // Si el perfil no tiene el módulo, DashboardLayout pinta "Sin acceso" en lugar de
+  // esta pantalla; aquí solo se evita pedir datos que no se van a mostrar.
   useEffect(() => {
-    if (!user) return;
-    if ((user.AdminConvocatorias ?? 0) < 2) { router.push("/"); return; }
+    if (!user || !puedeVer) return;
     fetchSedes();
-  }, [user]);
+  }, [user, puedeVer]);
 
   const linkFor = (uuid: string) => (origin ? `${origin}/preregistro/${uuid}` : "");
 

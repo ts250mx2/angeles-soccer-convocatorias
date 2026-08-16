@@ -96,12 +96,14 @@ export async function GET(request: Request) {
             params.push(Number(clinicsParam));
         }
 
-        /* Regla keeper (igual que en adeudos): un keeper/portero cuenta como inscrito si
-           tiene un pago de inscripción de CUALQUIER temporada, no solo de la seleccionada.
-           "Inscrito" = tiene inscripción de esta temporada, o es keeper con alguna. */
+        /* "Inscrito" en la temporada: pagó su inscripción, o es keeper/portero y pagó
+           inscripción o alguna mensualidad de los meses de la temporada.
+           MISMA regla que el resumen por sede: si el modal usara la regla histórica de
+           keeper (cualquier inscripción de cualquier temporada) listaría a 72 keepers
+           mientras la tarjeta cuenta los de la temporada. */
         const ES_KEEPER = esKeeperOPortero('S');
         const inscritoSql = temporadaId
-            ? `(J.IdJugador IN (${JUGADORES_DE_TEMPORADA_SQL}) OR (${ES_KEEPER} AND J.IdJugador IN (${CUALQUIER_INSCRIPCION_SQL})))`
+            ? `(J.IdJugador IN (${JUGADORES_DE_TEMPORADA_SQL}) OR (${ES_KEEPER} AND J.IdJugador IN (${MENSUALIDADES_EN_TEMPORADA_SQL})))`
             : `(${ES_KEEPER} AND J.IdJugador IN (${CUALQUIER_INSCRIPCION_SQL}))`;
         // Segmento de plantilla / inscritos.
         const grupo = searchParams.get('grupo');
@@ -112,7 +114,9 @@ export async function GET(request: Request) {
             where.push(`J.IdJugador IN (${MENSUALIDADES_EN_TEMPORADA_SQL})`);
             params.push(temporadaId);
             where.push(`NOT ${inscritoSql}`);
-            if (temporadaId) params.push(temporadaId);
+            // Dos placeholders: el de la inscripción de la temporada y el de las
+            // mensualidades de sus meses. Van los dos o se desalinea todo lo que sigue.
+            if (temporadaId) params.push(temporadaId, temporadaId);
             where.push('J.Status = 0');
             where.push(`NOT ${ES_VENTA_PUBLICO}`);
         } else if (esActivos) {
@@ -121,7 +125,8 @@ export async function GET(request: Request) {
             // Inscritos con regla keeper; se excluye venta al público.
             where.push('J.Status = 0');
             where.push(inscritoSql);
-            if (temporadaId) params.push(temporadaId);
+            // Dos placeholders, ver arriba.
+            if (temporadaId) params.push(temporadaId, temporadaId);
             where.push(`NOT ${ES_VENTA_PUBLICO}`);
             if (filtro === 'becados') {
                 where.push("J.Beca IS NOT NULL AND J.Beca <> '0' AND J.Beca <> ''");

@@ -1,5 +1,6 @@
 import { modelosDisponibles, MODEL_POR_DEFECTO } from '@/lib/anthropic';
-import { requireAdmin } from '@/lib/auth';
+import { requierePagina } from '@/lib/permisos';
+import { CLAVE_AGENTE } from '@/lib/navegacion';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * pantalla nunca ofrece una opción que fallaría al primer mensaje.
  */
 export async function GET() {
-    const auth = await requireAdmin();
+    const auth = await requierePagina(CLAVE_AGENTE);
     if (!auth.ok) {
         return Response.json({ success: false, error: auth.message }, { status: auth.status });
     }

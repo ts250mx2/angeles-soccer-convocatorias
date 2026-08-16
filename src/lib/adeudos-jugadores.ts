@@ -31,10 +31,30 @@ export interface JugadorConAdeudo {
 /**
  * Devuelve solo a quien tiene algo pendiente: o no se inscribió, o se inscribió y le
  * faltan meses vencidos. Quien está al corriente no aparece en el mapa.
+ *
+ * `soloJugadores` acota el cálculo a una lista concreta. Sin él se recorre la
+ * temporada entera (lo que necesitan Adeudos por Sede y Pagos de Copas); con él, las
+ * pantallas que solo preguntan por un puñado de jugadores —la lista de una
+ * convocatoria— no pagan el barrido completo de tblPagos. La REGLA es la misma en
+ * ambos casos: lo único que cambia es cuántos jugadores entran al cálculo.
  */
-export async function jugadoresConAdeudo(m: SeasonMonths): Promise<Map<number, JugadorConAdeudo>> {
+export async function jugadoresConAdeudo(
+    m: SeasonMonths,
+    soloJugadores?: number[],
+): Promise<Map<number, JugadorConAdeudo>> {
     const ES_FUTSAL = esFutsal('SD');
     const finCodigo = m.anioInicio * 100 + m.endMonth;
+
+    // Lista vacía = ningún jugador que consultar; no es lo mismo que no acotar.
+    if (soloJugadores && soloJugadores.length === 0) return new Map();
+
+    // Sin lista, los filtros quedan vacíos y el SQL es idéntico al de antes.
+    const acotado = Array.isArray(soloJugadores);
+    const filtroP = acotado ? 'AND P.IdJugador IN (?)' : '';
+    const filtroPagos = acotado ? 'AND IdJugador IN (?)' : '';
+    const filtroJ = acotado ? 'AND J.IdJugador IN (?)' : '';
+    /** El mismo arreglo de ids como parámetro, una vez por filtro aplicado. */
+    const ids: unknown[] = acotado ? [soloJugadores] : [];
 
     const [rows] = await pool.query(
         `SELECT
@@ -52,7 +72,7 @@ export async function jugadoresConAdeudo(m: SeasonMonths): Promise<Map<number, J
                     GREATEST(?, LEAST(?, MIN(YEAR(P.FechaPago) * 100 + MONTH(P.FechaPago)))) % 100 AS MesInscripcion
              FROM tblPagos P
              INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
-             WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0
+             WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0 ${filtroP}
              GROUP BY P.IdJugador
          ) INS ON INS.IdJugador = J.IdJugador
          LEFT JOIN (
@@ -60,7 +80,7 @@ export async function jugadoresConAdeudo(m: SeasonMonths): Promise<Map<number, J
              SELECT DISTINCT P.IdJugador
              FROM tblPagos P
              INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
-             WHERE PR.IdTipoProducto = 2 AND P.Status = 0
+             WHERE PR.IdTipoProducto = 2 AND P.Status = 0 ${filtroP}
          ) KINS ON KINS.IdJugador = J.IdJugador
          LEFT JOIN (
              SELECT P.IdJugador, GROUP_CONCAT(DISTINCT P.Mes) AS MesesPagados
@@ -68,13 +88,13 @@ export async function jugadoresConAdeudo(m: SeasonMonths): Promise<Map<number, J
              INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
              WHERE PR.IdTipoProducto = 1 AND P.Status = 0
                AND P.Anio IS NOT NULL AND P.Mes BETWEEN 1 AND 12
-               AND (P.Anio * 100 + P.Mes) BETWEEN ? AND ?
+               AND (P.Anio * 100 + P.Mes) BETWEEN ? AND ? ${filtroP}
              GROUP BY P.IdJugador
          ) MEN ON MEN.IdJugador = J.IdJugador
          LEFT JOIN (
              -- Temporada del primer pago: quien solo tiene pagos posteriores no estuvo aquí.
              SELECT IdJugador, MIN(IdTemporada) AS minTemp
-             FROM tblPagos WHERE Status = 0 GROUP BY IdJugador
+             FROM tblPagos WHERE Status = 0 ${filtroPagos} GROUP BY IdJugador
          ) PT ON PT.IdJugador = J.IdJugador
          WHERE ${SIN_CLINICS}
            AND J.Status = 0
@@ -84,8 +104,15 @@ export async function jugadoresConAdeudo(m: SeasonMonths): Promise<Map<number, J
            AND (
                (PT.minTemp IS NOT NULL AND PT.minTemp <= ?)
                OR (PT.minTemp IS NULL AND COALESCE(J.IdTemporadaActiva, 0) <= ?)
-           )`,
-        [m.desdeCodigo, finCodigo, m.seasonId, m.desdeCodigo, finCodigo, m.seasonId, m.seasonId],
+           )
+           ${filtroJ}`,
+        [
+            m.desdeCodigo, finCodigo, m.seasonId, ...ids,  // INS
+            ...ids,                                        // KINS
+            m.desdeCodigo, finCodigo, ...ids,              // MEN
+            ...ids,                                        // PT
+            m.seasonId, m.seasonId, ...ids,                // WHERE externo
+        ],
     ) as unknown as [Array<Record<string, unknown>>, unknown];
 
     // Tope de cobro por categoría: categorías que dejaron de cobrarse antes de que

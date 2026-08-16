@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
@@ -69,8 +68,8 @@ const fmtFechaHora = (v: string) => {
 const sanitize = (s: string) => (s || "").replace(/[^\w-]+/g, "_").slice(0, 60);
 
 export default function VentasPorDiaPage() {
-  const router = useRouter();
   const { user } = useUser();
+  const puedeVer = usePuedeVer("/ventas/por-dia");
 
   const initRange = periodRange("month");
   const [period, setPeriod] = useState<Period>("month");
@@ -115,13 +114,12 @@ export default function VentasPorDiaPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    if ((user.AdminConvocatorias ?? 0) < 2) { router.push("/"); return; }
+    if (!user || !puedeVer) return;
     fetchData(dateFrom, dateTo, idSede);
-  }, [user]);
+  }, [user, puedeVer]);
 
   useEffect(() => {
-    if (!user || (user.AdminConvocatorias ?? 0) < 2) return;
+    if (!user || !puedeVer) return;
     fetchData(dateFrom, dateTo, idSede);
   }, [dateFrom, dateTo, idSede]);
 

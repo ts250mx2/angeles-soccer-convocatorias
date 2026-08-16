@@ -265,6 +265,52 @@ export const SECCIONES: SeccionManual[] = [
                 alt: 'Desglose por categoría de una liga: cada categoría con su recaudación, los pagos y los jugadores distintos que pagaron, y abajo el total del producto.',
                 pie: 'Al abrir un torneo se ve qué categorías lo sostienen. El número entre paréntesis son jugadores distintos, no pagos.',
             },
+            {
+                tipo: 'parrafo',
+                texto: 'Si en una categoría hay jugadores que pagaron el torneo y hoy deben algo en la temporada en curso, su tarjeta muestra el aviso rojo **N con adeudo**. Al tocarlo se abre la lista de esos jugadores y, desde ahí, el detalle de lo que cada uno pagó. Es el mismo dato que el aviso de la tarjeta del torneo, repartido por categoría, así que las sumas siempre cuadran.',
+            },
+            { tipo: 'subtitulo', texto: 'Torneos que parecen de la temporada anterior' },
+            {
+                tipo: 'parrafo',
+                texto: 'Cuando un torneo de la lista parece pertenecer a la temporada anterior, aparece un aviso azul con la sugerencia de mandar sus pagos allá. La sospecha se explica caso por caso: el nombre menciona un año que solo abarca la temporada anterior, hay pagos con fecha previa al arranque de esta temporada, o el mismo torneo recaudó más en la anterior que aquí.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Ojo',
+                texto: 'Mandar un torneo mueve **todos sus pagos vigentes** de esta temporada a la inmediata anterior y los totales de ambas cambian al momento. Solo administración puede hacerlo, pide confirmación torneo por torneo, y el regreso no es automático: revisa las razones antes de confirmar.',
+            },
+        ],
+    },
+    {
+        clave: '/jugadores',
+        titulo: 'Lista de Jugadores',
+        audiencia: ['operacion', 'direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'La plantilla completa, jugador por jugador, con su situación en la temporada elegida: si pagó su **inscripción**, si arrastra **adeudo de mensualidades**, su **categoría** y si tiene **beca**. La inscripción y el adeudo se calculan con las mismas reglas que Adeudos por Sede y Convocatorias, así que las tres pantallas siempre dicen lo mismo de cada jugador.',
+            },
+            { tipo: 'subtitulo', texto: 'Cómo se lee cada renglón' },
+            {
+                tipo: 'tabla',
+                encabezados: ['Columna', 'Qué significa'],
+                filas: [
+                    ['Categoría', 'La categoría del jugador, resaltada en azul.'],
+                    ['Beca', 'El porcentaje de beca en morado; sin insignia es que no tiene.'],
+                    ['Inscripción', '**SÍ** con la fecha del pago, **NO** si está pendiente, **N/A** en clinics y venta al público. La beca del 100% cuenta como pagada y los porteros heredan su inscripción de temporadas anteriores.'],
+                    ['Adeudo', 'Meses de mensualidad vencidos sin pagar. **Sin inscripción** cuando lo pendiente es la inscripción misma; **No aplica** cuando el jugador no paga mensualidad (clinics, venta al público).'],
+                ],
+            },
+            { tipo: 'subtitulo', texto: 'Filtros y exportación' },
+            {
+                tipo: 'parrafo',
+                texto: 'Se puede buscar por nombre o ID y cortar por sede, categoría, beca, estatus (activos/bajas) y situación de pago. Los indicadores de arriba y los botones **Excel** y **PDF** trabajan sobre lo filtrado: lo que se ve es lo que se exporta.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Al tocar un renglón se abre el detalle del jugador con sus datos generales (nacimiento, edad, alta, teléfonos y correos) y el botón **Historial de pagos**, que es el mismo modal de pagos de Inscripciones y Adeudos, también exportable.',
+            },
         ],
     },
     {
@@ -483,6 +529,7 @@ export const SECCIONES: SeccionManual[] = [
                     ['Ventas por Día', '¿Cómo se comportó el mostrador día con día?'],
                     ['Ventas por Producto', '¿Qué artículo o concepto se movió más?'],
                     ['Ventas por Tipo de Producto', 'Lo mismo, agrupado por familia en vez de artículo suelto.'],
+                    ['Ventas por Forma de Pago', '¿Cómo entró el dinero? Efectivo, tarjeta, transferencia, dólares.'],
                     ['Ventas Canceladas', '¿Qué se canceló, cuándo y por cuánto? Es lo único que los demás reportes excluyen.'],
                 ],
             },
@@ -569,6 +616,53 @@ export const SECCIONES: SeccionManual[] = [
                 texto: 'Este reporte agrupa por la **sede a la que pertenece el gasto**. El control de caja agrupa por la caja de la que salió el dinero, y solo ve los gastos que pasaron por una caja abierta. Por eso los totales de las dos pantallas no coinciden: miden cosas distintas, y este es el que da la foto completa.',
             },
             { tipo: 'parrafo', texto: 'El detalle se limita a 3,000 movimientos; si se recorta, la pantalla te avisa.' },
+        ],
+    },
+    {
+        clave: '/gastos/por-forma-pago',
+        titulo: 'Gastos por Forma de Pago',
+        audiencia: ['direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'Con qué se pagó lo que salió de las sedes: efectivo, transferencia, tarjeta y demás. Responde "¿cuánto de mis gastos sale en efectivo?" y, en dos clics, quién se llevó ese dinero.',
+            },
+            {
+                tipo: 'lista',
+                items: [
+                    'Arriba eliges el **período** (hoy, ayer, semana, mes o un rango propio) y la **sede**; solo aparecen las sedes que tuvieron gasto.',
+                    'El mapa de rectángulos y la tabla muestran lo mismo: cada forma de pago con su importe, su porcentaje y cuántos movimientos.',
+                    'Al abrir una forma de pago se ve **a quién se le pagó** con ella; al abrir un destinatario, los movimientos uno por uno.',
+                    'Los tres niveles se exportan a Excel, y el de movimientos respeta el buscador.',
+                ],
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Ojo',
+                texto: 'Un gasto capturado sin forma de pago se cuenta como **efectivo**, que es como lo daba de alta el sistema de escritorio. La lista de movimientos se limita a 1,000 renglones; si se recorta, la pantalla te avisa.',
+            },
+        ],
+    },
+    {
+        clave: '/gastos/por-tipo',
+        titulo: 'Gastos por Tipo',
+        audiencia: ['direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'El mismo reporte, partido en los dos tipos de gasto que maneja el sistema: **pago a personal** y **pago a proveedor**. Sirve para ver cuánto se va en nómina contra cuánto en compras y servicios.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Funciona igual que Gastos por Forma de Pago: mismos filtros de período y sede, mismo mapa de rectángulos, y los mismos tres niveles (tipo → destinatario → movimientos) con exportación a Excel en cada uno.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Ojo',
+                texto: 'El tipo sale de cómo se capturó el egreso en el sistema de escritorio: el botón de **Nuevo Pago a Personal** lo marca como personal y el de **Pago a Proveedor** como proveedor. No hay más tipos que esos dos, así que un gasto mal capturado aparece del lado equivocado y se corrige en la captura, no aquí.',
+            },
         ],
     },
     {
@@ -676,7 +770,136 @@ export const SECCIONES: SeccionManual[] = [
             },
             {
                 tipo: 'parrafo',
-                texto: 'El formulario ayuda con el domicilio a partir del código postal, para evitar errores de captura.',
+                texto: 'El formulario ayuda con el domicilio a partir del código postal, para evitar errores de captura. Lo que va cayendo se consulta en **Jugadores › Preregistros**.',
+            },
+        ],
+    },
+    {
+        clave: '/preregistros',
+        titulo: 'Preregistros',
+        audiencia: ['operacion', 'direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'Todo lo que llega por el QR aterriza aquí. La pantalla responde una sola pregunta por cada prospecto: **¿terminó siendo jugador o se quedó en el camino?** El alta formal se sigue haciendo en el sistema de escritorio; este reporte es el que dice a quién falta darle seguimiento.',
+            },
+            { tipo: 'subtitulo', texto: 'Cómo se relaciona un preregistro con un jugador' },
+            {
+                tipo: 'parrafo',
+                texto: 'El preregistro y el alta viven en tablas distintas y casi nunca quedan amarrados entre sí, así que el sistema **deduce** la relación con cuatro reglas, de la más confiable a la más débil.',
+            },
+            {
+                tipo: 'tabla',
+                encabezados: ['Etiqueta', 'Qué significa', 'Qué hacer'],
+                filas: [
+                    ['Convertido', 'El escritorio grabó el número de jugador en el preregistro. Es el único caso sin margen de duda.', 'Nada: el caso está cerrado.'],
+                    ['Ya es jugador', 'Existe un jugador con el mismo nombre completo. El alta se hizo, pero sin amarrarla al preregistro.', 'Nada, salvo que la fecha de nacimiento no coincida: el sistema lo avisa en la ficha.'],
+                    ['Probablemente inscrito', 'Hay un jugador que nació el mismo día y lleva un nombre casi igual: el mismo niño con un apellido cambiado o añadido.', 'Ábrelo y confirma que es la misma persona.'],
+                    ['Familiar inscrito', 'No hay jugador con ese nombre, pero el teléfono o el correo de un tutor ya está en la plantilla: un hermano entrena con nosotros.', 'Es el prospecto más fácil de cerrar: la familia ya conoce la academia.'],
+                    ['Sin relación', 'Ni el nombre ni los datos de contacto aparecen en la plantilla.', 'Es el trabajo pendiente: llamar y capturar el alta.'],
+                ],
+            },
+            {
+                tipo: 'nota',
+                estilo: 'cuidado',
+                titulo: 'Coincidir de nombre no es lo mismo que estar amarrado',
+                texto: '"Ya es jugador" se apoya en el nombre completo, y en la plantilla hay nombres repetidos. Cuando hay varios candidatos, la ficha muestra el más probable —mismo día de nacimiento y activo— y avisa cuántos más existen. Antes de dar de alta a alguien, ábrelo y verifica.',
+            },
+            { tipo: 'subtitulo', texto: 'Cómo se usa' },
+            {
+                tipo: 'pasos',
+                items: [
+                    'Las cinco tarjetas de arriba son también el filtro: pulsa **Sin relación** para quedarte solo con lo accionable.',
+                    'Debajo se filtra por sede y por periodo (**Todo el historial** por omisión, porque un preregistro puede tardar semanas en convertirse).',
+                    'La búsqueda entra por nombre, tutor, teléfono, correo, CURP o escuela: sirve para comprobar si una familia que llama ya se había preregistrado.',
+                    'Pulsa cualquier renglón para ver la ficha completa: datos capturados, con qué jugador se relacionó y qué hermanos tiene en la academia.',
+                    '**Exportar** baja a Excel o PDF exactamente lo que estás viendo, con los filtros aplicados.',
+                ],
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'El icono de las hojas',
+                texto: 'Marca los preregistros repetidos entre sí: la misma familia llenó el formulario dos veces. No son un error del sistema y no hay que capturarlos dos veces.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'El porcentaje de la primera tarjeta es la **conversión**: de todo lo que entró por el QR con los filtros puestos, cuánto acabó en la plantilla. Filtrando por sede se ve qué sede aprovecha mejor sus prospectos.',
+            },
+        ],
+    },
+    {
+        clave: '/usuarios',
+        titulo: 'Usuarios',
+        audiencia: ['operacion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'Aquí vive **todo el personal**, no solo quien entra al sistema. La mayoría de los registros son profesores que existen para poder asignarlos a una convocatoria: esos no llevan usuario ni contraseña. El filtro **Solo directorio / Solo con acceso** separa unos de otros.',
+            },
+            { tipo: 'subtitulo', texto: 'Dar de alta a alguien' },
+            {
+                tipo: 'pasos',
+                items: [
+                    'Pulsa **Nuevo usuario** y captura el nombre completo.',
+                    'Elige su **perfil**: es lo que decide qué pantallas verá. Los perfiles se configuran en Perfiles y Permisos.',
+                    'Asigna la sede si la persona pertenece a una en particular.',
+                    'Si además va a entrar al sistema, llena **Usuario de acceso** y **Contraseña**. Si no, déjalos vacíos.',
+                ],
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Al editar',
+                texto: 'La contraseña siempre aparece vacía: dejarla así la conserva tal cual. Solo se cambia si escribes una nueva. Y si borras el usuario de acceso, la cuenta pierde también la contraseña y queda como registro de directorio.',
+            },
+            {
+                tipo: 'subtitulo',
+                texto: 'Bajas',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Nadie se borra: se marca como **baja**. El registro se conserva porque de él cuelgan convocatorias e historiales, pero deja de poder iniciar sesión. Se recupera volviendo a activarlo desde su ficha.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'cuidado',
+                titulo: 'No puedes darte de baja a ti mismo',
+                texto: 'El sistema lo impide a propósito, para que nadie se quede fuera por accidente.',
+            },
+        ],
+    },
+    {
+        clave: '/perfiles',
+        titulo: 'Perfiles y Permisos',
+        audiencia: ['operacion', 'direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'Un **perfil** es un puesto (ADMINISTRACION, ENTRENADOR, VENTAS…) con una lista de pantallas asignada. Los permisos no se dan usuario por usuario: se dan al perfil, y todos los usuarios que lo tienen heredan el cambio.',
+            },
+            {
+                tipo: 'pasos',
+                items: [
+                    'Elige el perfil en la columna de la izquierda.',
+                    'Marca o desmarca las pantallas que debe ver. Están agrupadas igual que el menú.',
+                    '**Marcar todos / Quitar todos** aplica a un grupo completo de una vez.',
+                    'Pulsa **Guardar cambios**.',
+                ],
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'El cambio surte efecto de inmediato: la próxima vez que el usuario cargue una pantalla, su menú ya viene ajustado, sin necesidad de que vuelva a entrar.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'cuidado',
+                titulo: 'Tu propio perfil está protegido',
+                texto: 'No puedes quitarle "Perfiles y Permisos" al perfil con el que estás trabajando ni darlo de baja: si lo hicieras, perderías la pantalla desde la que se arregla.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Un perfil nuevo nace con lo básico (Convocatorias, Inscripciones y Manual); lo demás se concede aquí. Para dar de baja un perfil, primero hay que mover sus usuarios activos a otro.',
             },
         ],
     },

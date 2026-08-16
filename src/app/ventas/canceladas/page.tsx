@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
@@ -58,6 +58,7 @@ const PERIOD_LABELS: Record<Period, string> = {
 export default function VentasCanceladasPage() {
   const router = useRouter();
   const { user, isInitialized, season } = useUser();
+  const puedeVer = usePuedeVer("/ventas/canceladas");
 
   // Cancelled Sales List State
   const [sales, setSales] = useState<SaleCancelada[]>([]);
@@ -76,13 +77,8 @@ export default function VentasCanceladasPage() {
   const [pendingTo, setPendingTo] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  // Redirect non-admins
   useEffect(() => {
-    if (isInitialized && !user) {
-      router.push("/login");
-    } else if (user && (user.AdminConvocatorias ?? 0) < 2) {
-      router.push("/");
-    }
+    if (isInitialized && !user) router.push("/login");
   }, [user, isInitialized, router]);
 
   // Fetch Cancelled Sales (el endpoint también regresa las sedes con cancelaciones
@@ -117,11 +113,12 @@ export default function VentasCanceladasPage() {
     }
   }, [period, selectedSedeFilter, searchQuery, dateFrom, dateTo]);
 
+  // Sin el permiso, DashboardLayout pinta "Sin acceso": no hay nada que pedir.
   useEffect(() => {
-    if (user && (user.AdminConvocatorias ?? 0) >= 2) {
+    if (user && puedeVer) {
       fetchSales();
     }
-  }, [user, fetchSales]);
+  }, [user, puedeVer, fetchSales]);
 
   const handlePeriodChange = (p: Period) => {
     if (p === "all") {

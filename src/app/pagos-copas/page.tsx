@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useDialogoModal } from "@/components/useDialogoModal";
 import {
   Trophy, Search, Users, ChevronRight, X, CreditCard,
-  Target, Calendar, RefreshCw, BarChart3, TrendingUp, User, FileDown, AlertTriangle
+  Target, Calendar, RefreshCw, BarChart3, TrendingUp, User, FileDown, AlertTriangle, History
 } from "lucide-react";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -50,6 +51,23 @@ interface ProductSummary {
   /** Pagaron este torneo y hoy deben algo en la temporada en curso. */
   JugadoresConAdeudo: number;
   Deudores: Deudor[];
+}
+
+/** Torneo que el servidor cree que pertenece a la temporada anterior. */
+interface SugerenciaProducto {
+  IdProducto: number;
+  Producto: string;
+  IdTipoProducto: number;
+  TipoProducto: string;
+  CantidadPagos: number;
+  TotalRecaudado: number;
+  /** Motivos legibles de la sospecha; se muestran tal cual. */
+  Razones: string[];
+}
+
+interface Sugerencias {
+  temporadaAnterior: { IdTemporada: number; Temporada: string };
+  productos: SugerenciaProducto[];
 }
 
 interface CategoryBreakdown {
@@ -110,14 +128,37 @@ const fmt = (n: number) =>
 const fmtC = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", notation: "compact", maximumFractionDigits: 1 }).format(n);
 
+/**
+ * Clave para casar la categoría de una tarjeta con la de un deudor. Las dos salen de
+ * J.Categoria, pero MySQL agrupa sin distinguir mayúsculas ni espacios finales y el
+ * texto de la tarjeta puede no coincidir letra por letra con el del jugador.
+ *
+ * También se quitan los acentos: la columna es latin1_swedish_ci, que agrupa "PEQUEÑOS"
+ * y "PEQUENOS" en una sola tarjeta. Hoy ninguna categoría capturada lleva acentos —así
+ * que esto no mueve ningún número—, pero sin la normalización el día que alguien
+ * capture una, su deudor se perdería de la insignia en silencio.
+ */
+const claveCategoria = (s: string) =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase();
+
 export default function PagosCopasPage() {
   const router = useRouter();
   const { user, isInitialized, season } = useUser();
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [temporadas, setTemporadas] = useState<Temporada[]>([]);
   const [temporadaId, setTemporadaId] = useState<number | null>(null);
+  /* Apagado por defecto: la vista normal es la de copas y ligas que NO son clinics. */
+  const [soloClinics, setSoloClinics] = useState(false);
   const [alerta, setAlerta] = useState<{ jugadores: number; deudores: Deudor[] }>({ jugadores: 0, deudores: [] });
   const [temporadaAdeudos, setTemporadaAdeudos] = useState<string>("");
+  // Torneos que parecen de la temporada anterior y el flujo para mandarlos allá.
+  const [sugerencias, setSugerencias] = useState<Sugerencias | null>(null);
+  const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
+  // Torneo en confirmación de envío / en envío. Uno a la vez: el envío es irreversible
+  // desde esta pantalla y confirmar en dos pasos evita mandar un torneo por accidente.
+  const [confirmarEnvioId, setConfirmarEnvioId] = useState<number | null>(null);
+  const [enviandoId, setEnviandoId] = useState<number | null>(null);
+  const [avisoEnvio, setAvisoEnvio] = useState<{ ok: boolean; texto: string } | null>(null);
   // Lista de deudores abierta: la global o la de un torneo.
   const [deudoresAbiertos, setDeudoresAbiertos] = useState<{ titulo: string; lista: Deudor[] } | null>(null);
   // Deudor cuyo detalle de pago se está viendo.
@@ -160,33 +201,45 @@ export default function PagosCopasPage() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const qs = temporadaId ? `?temporada=${temporadaId}` : "";
-      const res = await fetch(`/api/pagos-copas/summary${qs}`, { cache: "no-store" });
+      const qs = new URLSearchParams();
+      if (temporadaId) qs.set("temporada", String(temporadaId));
+      if (soloClinics) qs.set("clinics", "1");
+      const res = await fetch(`/api/pagos-copas/summary?${qs}`, { cache: "no-store" });
       const json = await res.json();
       if (json.success) {
         setProducts(json.data);
         setAlerta(json.alerta ?? { jugadores: 0, deudores: [] });
         setTemporadaAdeudos(json.temporadaAdeudos?.Temporada ?? "");
+        setSugerencias(json.sugerencias ?? null);
         setLastUpdated(new Date());
       }
     } catch (e) { console.error(e); }
     finally { setIsLoading(false); }
-  }, [temporadaId]);
+  }, [temporadaId, soloClinics]);
 
   useEffect(() => {
     if (isInitialized && user && temporadaId !== null) fetchData();
-  }, [isInitialized, user, temporadaId, fetchData]);
+  }, [isInitialized, user, temporadaId, soloClinics, fetchData]);
+
+  /* Torneo cuya petición de categorías es la vigente. Sin esto, abrir un torneo lento
+     y luego otro rápido deja las categorías del primero junto al encabezado y las
+     insignias de deudores del segundo: dos fuentes que dejarían de cuadrar. */
+  const torneoEnCurso = useRef<number | null>(null);
 
   const fetchCategories = async (product: ProductSummary) => {
+    torneoEnCurso.current = product.IdProducto;
     setSelectedProduct(product);
     setIsLoadingCategories(true);
     setCategories([]);
     try {
       const res = await fetch(`/api/pagos-copas/categories?idProducto=${product.IdProducto}&temporada=${temporadaId ?? ""}`);
       const json = await res.json();
+      if (torneoEnCurso.current !== product.IdProducto) return;
       if (json.success) setCategories(json.data);
     } catch (e) { console.error(e); }
-    finally { setIsLoadingCategories(false); }
+    finally {
+      if (torneoEnCurso.current === product.IdProducto) setIsLoadingCategories(false);
+    }
   };
 
   const fetchDetails = async (categoria: string) => {
@@ -201,6 +254,65 @@ export default function PagosCopasPage() {
     } catch (e) { console.error(e); }
     finally { setIsLoadingDetails(false); }
   };
+
+  // Manda TODOS los pagos vigentes del torneo a la temporada anterior. El servidor
+  // vuelve a validar que el destino sea la inmediata anterior; aquí solo se propone.
+  const reasignarATemporadaAnterior = async (s: SugerenciaProducto) => {
+    if (!sugerencias || temporadaId === null) return;
+    setEnviandoId(s.IdProducto);
+    setAvisoEnvio(null);
+    try {
+      const res = await fetch("/api/pagos-copas/reasignar", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idProducto: s.IdProducto,
+          temporadaOrigen: temporadaId,
+          temporadaDestino: sugerencias.temporadaAnterior.IdTemporada,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setAvisoEnvio({
+          ok: true,
+          texto: `Se enviaron ${json.data.pagosMovidos} pago(s) de "${s.Producto}" a ${sugerencias.temporadaAnterior.Temporada}.`,
+        });
+        // El torneo desaparece de las tarjetas y de la lista de sugerencias.
+        await fetchData();
+      } else {
+        setAvisoEnvio({ ok: false, texto: json.message || "No se pudieron mover los pagos." });
+      }
+    } catch (e) {
+      console.error(e);
+      setAvisoEnvio({ ok: false, texto: "Error de red al mover los pagos. Intenta de nuevo." });
+    } finally {
+      setEnviandoId(null);
+      setConfirmarEnvioId(null);
+    }
+  };
+
+  const cerrarSugerencias = () => {
+    setSugerenciasAbiertas(false);
+    setConfirmarEnvioId(null);
+    setAvisoEnvio(null);
+  };
+
+  // Al cerrar el torneo se suelta la petición de categorías en vuelo: si llega tarde,
+  // ya no debe repoblar la lista de un modal que el usuario cerró.
+  const cerrarCategorias = () => {
+    torneoEnCurso.current = null;
+    setSelectedProduct(null);
+  };
+
+  /* Teclado de los modales, del más alto al más bajo. Escape cierra el de encima y el
+     foco entra al diálogo al abrirlo; sin esto, quien abre un modal desde un control
+     que queda tapado (la insignia de adeudo dentro del modal de categorías) se queda
+     tabulando por detrás del overlay. */
+  const refPagoDeudor = useDialogoModal<HTMLDivElement>(pagoDeudor !== null, () => setPagoDeudor(null));
+  const refSugerencias = useDialogoModal<HTMLDivElement>(sugerenciasAbiertas, cerrarSugerencias);
+  const refDeudores = useDialogoModal<HTMLDivElement>(deudoresAbiertos !== null, () => setDeudoresAbiertos(null));
+  const refDetalles = useDialogoModal<HTMLDivElement>(selectedCategory !== null, () => setSelectedCategory(null));
+  const refCategorias = useDialogoModal<HTMLDivElement>(selectedProduct !== null, cerrarCategorias);
 
   // Detalle de lo que ese jugador pagó de copas y ligas en la temporada del filtro.
   useEffect(() => {
@@ -256,10 +368,24 @@ export default function PagosCopasPage() {
     doc.save(`Pagos_${selectedProduct.Producto.replace(/\s+/g, '_')}_${selectedCategory.replace(/\s+/g, '_')}.pdf`);
   };
 
-  const filteredProducts = products.filter(p => 
+  const filteredProducts = products.filter(p =>
     p.Producto.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.TipoProducto.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Deudores del torneo abierto agrupados por categoría, para que cada tarjeta del
+  // modal muestre los suyos. Se agrupa aquí (y no con otra consulta) porque el resumen
+  // ya trae la lista completa del torneo; así la suma por categoría siempre cuadra
+  // con el "N con adeudo" de la tarjeta del torneo.
+  const deudoresPorCategoria = new Map<string, Deudor[]>();
+  if (selectedProduct) {
+    for (const d of selectedProduct.Deudores) {
+      const clave = claveCategoria(d.Categoria);
+      const lista = deudoresPorCategoria.get(clave);
+      if (lista) lista.push(d);
+      else deudoresPorCategoria.set(clave, [d]);
+    }
+  }
 
   return (
     <DashboardLayout>
@@ -311,6 +437,19 @@ export default function PagosCopasPage() {
                   ))}
                 </select>
               </div>
+              <label className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-xl cursor-pointer hover:bg-white/10 transition-all self-end"
+                     title="Encendido muestra las copas y ligas de clinics; apagado, las que no lo son. Nunca se mezclan.">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={soloClinics}
+                  onChange={(e) => setSoloClinics(e.target.checked)}
+                />
+                <div className="w-9 h-5 bg-slate-600 rounded-full peer peer-checked:bg-amber-500 after:content-[''] after:absolute after:w-4 after:h-4 after:bg-white after:rounded-full after:translate-x-0.5 peer-checked:after:translate-x-4 after:transition-all relative transition-colors" />
+                <span className={`text-xs font-black uppercase tracking-widest ${soloClinics ? "text-amber-300" : "text-slate-400"}`}>
+                  Clinics
+                </span>
+              </label>
               <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-xl">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Temporada</p>
                 <p className="text-lg font-black text-emerald-400">{fmtC(products.reduce((acc, p) => acc + p.TotalRecaudado, 0))}</p>
@@ -363,6 +502,33 @@ export default function PagosCopasPage() {
                 </p>
               </div>
               <ChevronRight size={18} className="text-red-400/60 flex-shrink-0 mt-1" />
+            </button>
+          )}
+
+          {/* Sugerencia: torneos que parecen de la temporada anterior. Mismo patrón
+              visual que la alerta (base oscura + tinte), en azul cielo porque es una
+              recomendación, no un problema de cobranza. */}
+          {!isLoading && sugerencias && sugerencias.productos.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSugerenciasAbiertas(true)}
+              className="group relative w-full text-left flex items-start gap-3 bg-slate-950/70 border border-sky-500/40 hover:border-sky-500/70 rounded-2xl px-5 py-4 transition-all overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-sky-500/[0.12] group-hover:bg-sky-500/[0.18] transition-colors pointer-events-none" />
+              <div className="relative bg-sky-500/20 p-2 rounded-xl border border-sky-500/25 flex-shrink-0">
+                <History size={18} className="text-sky-400" />
+              </div>
+              <div className="relative min-w-0 flex-1">
+                <p className="text-sm font-black text-sky-200">
+                  {sugerencias.productos.length === 1
+                    ? "1 torneo parece de la temporada anterior"
+                    : `${sugerencias.productos.length} torneos parecen de la temporada anterior`}
+                </p>
+                <p className="text-xs text-sky-300/80 mt-0.5">
+                  Puedes mandar sus pagos a {sugerencias.temporadaAnterior.Temporada} para que salgan de esta temporada. Toca para revisar.
+                </p>
+              </div>
+              <ChevronRight size={18} className="text-sky-400/60 flex-shrink-0 mt-1" />
             </button>
           )}
 
@@ -459,7 +625,12 @@ export default function PagosCopasPage() {
         {pagoDeudor && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[130] p-4" onClick={() => setPagoDeudor(null)}>
             <div
-              className="bg-[#0f172a] border border-white/15 rounded-3xl w-full max-w-xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden"
+              ref={refPagoDeudor}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Pagos de torneo de ${pagoDeudor.Jugador}`}
+              className="bg-[#0f172a] border border-white/15 rounded-3xl w-full max-w-xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden outline-none"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-5 border-b border-white/10 bg-white/5 flex items-start justify-between gap-3">
@@ -552,7 +723,12 @@ export default function PagosCopasPage() {
         {deudoresAbiertos && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[120] p-4" onClick={() => setDeudoresAbiertos(null)}>
             <div
-              className="bg-[#0f172a] border border-red-500/30 rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden"
+              ref={refDeudores}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Jugadores con adeudo: ${deudoresAbiertos.titulo}`}
+              className="bg-[#0f172a] border border-red-500/30 rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden outline-none"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-5 border-b border-white/10 bg-red-500/10 flex items-start justify-between gap-3">
@@ -622,10 +798,138 @@ export default function PagosCopasPage() {
           </div>
         )}
 
+        {/* Torneos sugeridos para la temporada anterior: revisión y envío */}
+        {sugerenciasAbiertas && sugerencias && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[140] p-4" onClick={cerrarSugerencias}>
+            <div
+              ref={refSugerencias}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Torneos que parecen de la temporada anterior"
+              className="bg-[#0f172a] border border-sky-500/30 rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden outline-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-5 border-b border-white/10 bg-sky-500/10 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-base font-black text-white flex items-center gap-2">
+                    <History size={16} className="text-sky-400 flex-shrink-0" />
+                    <span className="truncate">Torneos que parecen de la temporada anterior</span>
+                  </h3>
+                  <p className="text-[11px] text-sky-300/80 mt-0.5">
+                    Al mandar un torneo, TODOS sus pagos de esta temporada pasan a {sugerencias.temporadaAnterior.Temporada} y dejan de contar aquí.
+                  </p>
+                </div>
+                <button onClick={cerrarSugerencias} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all flex-shrink-0">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {avisoEnvio && (
+                  <div className={`rounded-2xl border px-4 py-3 text-xs font-bold ${avisoEnvio.ok
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                    : "bg-red-500/10 border-red-500/40 text-red-300"}`}
+                  >
+                    {avisoEnvio.texto}
+                  </div>
+                )}
+
+                {sugerencias.productos.length === 0 ? (
+                  <div className="h-24 flex items-center justify-center text-slate-500 text-sm font-bold">
+                    No quedan torneos por revisar.
+                  </div>
+                ) : (
+                  sugerencias.productos.map((s) => {
+                    const estilo = estiloDe(s.IdTipoProducto);
+                    const confirmando = confirmarEnvioId === s.IdProducto;
+                    const enviando = enviandoId === s.IdProducto;
+                    return (
+                      <div key={s.IdProducto} className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-white leading-tight">{s.Producto}</p>
+                            <span className={`inline-block mt-1 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md border ${estilo.chip}`}>
+                              {s.TipoProducto}
+                            </span>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-base font-black text-emerald-400 whitespace-nowrap">{fmt(s.TotalRecaudado)}</p>
+                            <p className="text-[10px] text-slate-500 font-bold">{s.CantidadPagos} pago{s.CantidadPagos === 1 ? "" : "s"}</p>
+                          </div>
+                        </div>
+
+                        {/* El porqué de la sospecha, tal cual lo explica el servidor. */}
+                        <ul className="mt-3 pt-3 border-t border-white/5 space-y-1">
+                          {s.Razones.map((r) => (
+                            <li key={r} className="text-[11px] text-sky-200/80 flex gap-1.5">
+                              <span className="text-sky-400 flex-shrink-0">•</span>
+                              <span>{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+
+                        <div className="mt-3 flex flex-wrap justify-end items-center gap-2">
+                          {enviando ? (
+                            <span className="flex items-center gap-2 text-[11px] font-bold text-slate-400">
+                              <RefreshCw size={13} className="animate-spin text-sky-400" />
+                              Enviando pagos...
+                            </span>
+                          ) : confirmando ? (
+                            <>
+                              <span className="text-[11px] font-bold text-amber-300">
+                                ¿Mandar {s.CantidadPagos} pago{s.CantidadPagos === 1 ? "" : "s"} a {sugerencias.temporadaAnterior.Temporada}?
+                              </span>
+                              <button
+                                onClick={() => reasignarATemporadaAnterior(s)}
+                                className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 rounded-lg text-white text-[11px] font-black transition-all"
+                              >
+                                Confirmar
+                              </button>
+                              <button
+                                onClick={() => setConfirmarEnvioId(null)}
+                                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-slate-300 text-[11px] font-black transition-all"
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => { setConfirmarEnvioId(s.IdProducto); setAvisoEnvio(null); }}
+                              disabled={enviandoId !== null}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 rounded-lg text-sky-300 text-[11px] font-black transition-all disabled:opacity-50"
+                            >
+                              <History size={13} />
+                              Mandar a la temporada anterior
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="p-4 px-5 bg-white/5 border-t border-white/10 flex justify-end">
+                <button onClick={cerrarSugerencias} className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-white text-xs font-black border border-white/10 transition-all">
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Categories Modal */}
         {selectedProduct && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[100] p-4">
-            <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95">
+            <div
+              ref={refCategorias}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Desglose por categoría de ${selectedProduct.Producto}`}
+              className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 outline-none"
+            >
               <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
                 <div className="flex items-center gap-4">
                   <div className={`p-3 rounded-2xl border ${estiloDe(selectedProduct.IdTipoProducto).icono}`}>
@@ -638,7 +942,7 @@ export default function PagosCopasPage() {
                     </p>
                   </div>
                 </div>
-                <button onClick={() => setSelectedProduct(null)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                <button onClick={cerrarCategorias} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
                   <X size={20} />
                 </button>
               </div>
@@ -656,8 +960,15 @@ export default function PagosCopasPage() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {categories.map((c) => (
-                      <div 
+                    {categories.map((c) => {
+                      // Deudores del torneo que hoy pertenecen a esta categoría.
+                      const deudoresCat = deudoresPorCategoria.get(claveCategoria(String(c.Categoria ?? ""))) ?? [];
+                      const abrirDeudoresCat = () => setDeudoresAbiertos({
+                        titulo: `${selectedProduct.Producto} · ${c.Categoria || "Sin categoría"}`,
+                        lista: deudoresCat,
+                      });
+                      return (
+                      <div
                         key={c.Categoria}
                         onClick={() => fetchDetails(c.Categoria)}
                         className="group bg-white/5 border border-white/10 hover:border-blue-500/40 rounded-2xl p-5 cursor-pointer transition-all hover:bg-white/[0.08]"
@@ -682,15 +993,42 @@ export default function PagosCopasPage() {
                             style={{ width: `${(c.Total / Math.max(...categories.map(cat => cat.Total))) * 100}%` }}
                           />
                         </div>
+                        {/* Quiénes de esta categoría pagaron el torneo y hoy deben algo.
+                            Mismo aviso rojo que la tarjeta del torneo; abre la misma
+                            lista de deudores, acotada a la categoría. */}
+                        {deudoresCat.length > 0 && (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              abrirDeudoresCat();
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key !== "Enter" && e.key !== " ") return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              abrirDeudoresCat();
+                            }}
+                            title="Ver quiénes son"
+                            className="mt-3 flex items-center gap-1.5 bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 rounded-lg px-2 py-1.5 transition-all"
+                          >
+                            <AlertTriangle size={12} className="text-red-400 flex-shrink-0" />
+                            <span className="text-[10px] font-black text-red-200">
+                              {deudoresCat.length} con adeudo
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
 
               <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center px-8">
                 <span className="text-xs text-slate-500 font-bold">Total Producto: <span className="text-white">{fmt(selectedProduct.TotalRecaudado)}</span></span>
-                <button onClick={() => setSelectedProduct(null)} className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-white text-xs font-black border border-white/10 transition-all">Cerrar</button>
+                <button onClick={cerrarCategorias} className="px-6 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-white text-xs font-black border border-white/10 transition-all">Cerrar</button>
               </div>
             </div>
           </div>
@@ -699,7 +1037,14 @@ export default function PagosCopasPage() {
         {/* Details Modal */}
         {selectedCategory && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[110] p-4">
-            <div className="bg-[#0f172a] border border-white/15 rounded-3xl w-full max-w-2xl max-h-[75vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95">
+            <div
+              ref={refDetalles}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Pagos de ${selectedCategory} en ${selectedProduct?.Producto ?? "el torneo"}`}
+              className="bg-[#0f172a] border border-white/15 rounded-3xl w-full max-w-2xl max-h-[75vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 outline-none"
+            >
               <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/5">
                 <div className="flex items-center gap-4">
                   <div className="bg-purple-600/20 p-2.5 rounded-xl border border-purple-500/20">

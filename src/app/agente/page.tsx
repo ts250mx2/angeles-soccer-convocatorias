@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import AgentAnswer from "@/components/AgentAnswer";
 import {
-  Bot, Send, Loader2, AlertCircle, User as UserIcon, Trash2, ShieldAlert,
+  Bot, Send, Loader2, AlertCircle, User as UserIcon, Trash2,
 } from "lucide-react";
 
 const SUGERENCIAS = [
@@ -21,17 +21,14 @@ export default function AgentePage() {
   const router = useRouter();
   const { user, isInitialized } = useUser();
 
-  const isAdmin = (user?.AdminConvocatorias ?? 0) >= 2;
+  const puedeVer = usePuedeVer("/agente");
 
   const { messages, busy, send, clear, modelos, modelo, setModelo } = useAgentChat();
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Solo administradores
   useEffect(() => {
-    if (!isInitialized) return;
-    if (!user) { router.push("/login"); return; }
-    if ((user.AdminConvocatorias ?? 0) < 2) { router.push("/"); }
+    if (isInitialized && !user) router.push("/login");
   }, [user, isInitialized, router]);
 
   useEffect(() => {
@@ -45,17 +42,10 @@ export default function AgentePage() {
     setInput("");
   };
 
-  // Pantalla para no administradores (además del redirect)
-  if (isInitialized && user && !isAdmin) {
-    return (
-      <DashboardLayout>
-        <main className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-400 p-8">
-          <ShieldAlert size={44} className="text-amber-400 opacity-70" />
-          <h1 className="text-lg font-black text-white">Acceso restringido</h1>
-          <p className="text-sm">El agente está disponible solo para administradores.</p>
-        </main>
-      </DashboardLayout>
-    );
+  // Quien no tiene el módulo ve la pantalla "Sin acceso" de DashboardLayout; aquí
+  // solo se evita montar el chat, que dispararía peticiones al agente.
+  if (isInitialized && user && !puedeVer) {
+    return <DashboardLayout><div /></DashboardLayout>;
   }
 
   return (

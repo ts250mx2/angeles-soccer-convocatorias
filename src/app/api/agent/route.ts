@@ -4,7 +4,8 @@ import { anthropic, openai, resolveModel, type ModelConfig } from '@/lib/anthrop
 import { manualComoTexto } from '@/lib/manual-contenido';
 import { MARCA_SUGERENCIAS } from '@/lib/agent-sugerencias';
 import { assertReadOnly } from '@/lib/sql-sandbox';
-import { requireAdmin } from '@/lib/auth';
+import { requierePagina } from '@/lib/permisos';
+import { CLAVE_AGENTE } from '@/lib/navegacion';
 import { pool } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -373,8 +374,9 @@ async function correrOpenAI(
 }
 
 export async function POST(req: Request) {
-    // Autorización de servidor: valida la sesión firmada y relee el rol en la BD.
-    const auth = await requireAdmin();
+    // Autorización de servidor: valida la sesión firmada y relee en la BD los
+    // módulos del perfil, igual que hace el menú.
+    const auth = await requierePagina(CLAVE_AGENTE);
     if (!auth.ok) {
         return Response.json({ error: auth.message }, { status: auth.status });
     }

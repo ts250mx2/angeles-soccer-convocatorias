@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -307,8 +306,8 @@ function AperturaRow({ ap, pal, onVentas, onEgresos, onCorte }: {
 }
 
 export default function CortesMensualesPage() {
-  const router = useRouter();
   const { user } = useUser();
+  const puedeVer = usePuedeVer("/cortes-mensuales");
 
   const [year, setYear]             = useState<number>(CURRENT_YEAR);
   const [selectedSede, setSelectedSede] = useState<number | "all">("all");
@@ -448,10 +447,9 @@ export default function CortesMensualesPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    if ((user.AdminConvocatorias ?? 0) < 2) { router.push("/"); return; }
+    if (!user || !puedeVer) return;
     fetchAperturas(year);
-  }, [user]);
+  }, [user, puedeVer]);
 
   const handleYearClick = (y: number) => {
     if (y === year) return;

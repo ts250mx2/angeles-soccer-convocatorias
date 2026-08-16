@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { requierePagina } from '@/lib/permisos';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +49,13 @@ export function filtroFechas(
 export const EGRESO_VIGENTE = 'COALESCE(E.Status, 0) = 0';
 
 export async function GET(request: Request) {
+    // Sin la guardia, todo el gasto de la empresa quedaba a un fetch de distancia
+    // para cualquiera sin sesión.
+    const guardia = await requierePagina('/gastos/egresos');
+    if (!guardia.ok) {
+        return NextResponse.json({ success: false, message: guardia.message }, { status: guardia.status });
+    }
+
     try {
         const { searchParams } = new URL(request.url);
         const periodo = searchParams.get('periodo') || 'month';

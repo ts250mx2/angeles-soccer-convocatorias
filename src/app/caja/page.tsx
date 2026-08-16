@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { useUser } from "@/contexts/user-context";
+import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -153,8 +152,8 @@ function InitialAvatar({ name, colorClass }: { name: string; colorClass: string 
 }
 
 export default function CajaPage() {
-  const router = useRouter();
   const { user } = useUser();
+  const puedeVer = usePuedeVer("/caja");
 
   const [period, setPeriod]         = useState<Period>("today");
   const [dateFrom, setDateFrom]     = useState("");
@@ -436,10 +435,9 @@ export default function CajaPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    if ((user.AdminConvocatorias ?? 0) < 2) { router.push("/"); return; }
+    if (!user || !puedeVer) return;
     fetchAperturas("today", "", "");
-  }, [user]);
+  }, [user, puedeVer]);
 
   useEffect(() => {
     if (!user || period === "custom") return;

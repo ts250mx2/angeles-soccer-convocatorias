@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { estadoEnTemporada, motivoNoConvocable } from '@/lib/convocatoria-elegibilidad';
 
 export async function POST(request: Request) {
     try {
@@ -10,6 +11,14 @@ export async function POST(request: Request) {
                 { success: false, message: 'Faltan parámetros requeridos' },
                 { status: 400 }
             );
+        }
+
+        /* La misma reja que convoke: la opción deshabilitada en el modal es comodidad,
+           pero quien decide si un jugador puede ser invitado es el servidor. */
+        const estados = await estadoEnTemporada(Number(seasonId), [Number(playerId)]);
+        const motivo = motivoNoConvocable(estados.get(Number(playerId)));
+        if (motivo) {
+            return NextResponse.json({ success: false, message: motivo }, { status: 409 });
         }
 
         const insertQuery = `
