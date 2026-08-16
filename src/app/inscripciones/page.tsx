@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, MapPin, ChevronRight, ChevronDown, UserCheck, Users, CalendarRange, AlertTriangle, GraduationCap } from 'lucide-react';
+import { MapPin, ChevronRight, ChevronDown, UserCheck, Users, CalendarRange, AlertTriangle, GraduationCap, X } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import DashboardLayout from '@/components/DashboardLayout';
 import PlayersModal, { type PlayersModalConfig } from '@/components/PlayersModal';
@@ -10,18 +10,24 @@ import Meter from '@/components/Meter';
 import BecasDonut, {
   SIN_BECA_COLOR, BECA_RAMPA, OTRAS_BECAS_COLOR, MAX_NIVELES, type Rebanada,
 } from '@/components/BecasDonut';
+import { GRUPO_COLOR, VerSedesBtn, BarraComposicion, TileGrupo, PanelHeader } from '@/components/KpiPanel';
 
 interface SedeSummary {
   IdSede: number;
   Sede: string;
   /** 1 = sede de clinics. */
   EsClinics: number;
-  /** Plantilla completa (Status 0), sin acotar a la temporada. */
+  /** Activos DE LA TEMPORADA: pagaron al menos una mensualidad de sus meses. */
   Activos: number;
   ActivosKeepers: number;
   ActivosFutsal: number;
   ActivosClinicsFutsal: number;
   ActivosVentaPublico: number;
+  /** Plantilla completa (Status 0). Es la base de la barra de avance de inscripción. */
+  Plantilla: number;
+  PlantillaVentaPublico: number;
+  PlantillaClinicsFutsal: number;
+  PlantillaKeepers: number;
   Inscritos: number;
   InscritosKeepers: number;
   InscritosFutsal: number;
@@ -90,29 +96,12 @@ interface Temporada {
 }
 
 /**
- * Id de la temporada más reciente: la de FechaInicio mayor, con IdTemporada como
- * desempate. Se resuelve por fecha y no por id a secas porque los ids no
- * necesariamente van en orden cronológico.
- */
-function idUltimaTemporada(temporadas: Temporada[]): number | null {
-  let ultima: Temporada | null = null;
-  for (const t of temporadas) {
-    if (!ultima) { ultima = t; continue; }
-    const fecha = new Date(t.FechaInicio).getTime();
-    const fechaUltima = new Date(ultima.FechaInicio).getTime();
-    if (fecha > fechaUltima || (fecha === fechaUltima && t.IdTemporada > ultima.IdTemporada)) {
-      ultima = t;
-    }
-  }
-  return ultima ? ultima.IdTemporada : null;
-}
-
-/**
  * Qué color le toca a cada nivel de beca.
  *
- * Se decide UNA vez con el desglose completo y se reutiliza en las tres donas. Si
- * cada una eligiera sus niveles por su cuenta, el color saldría de la posición en su
- * propia lista y el mismo "Beca 50%" podría verse claro en una y oscuro en otra.
+ * Se decide UNA vez con el desglose completo y se reutiliza en todas las donas (las
+ * del KPI total y las de cada sede del modal). Si cada una eligiera sus niveles por
+ * su cuenta, el color saldría de la posición en su propia lista y el mismo "Beca 50%"
+ * podría verse claro en una y oscuro en otra.
  *
  * Solo se nombran los MAX_NIVELES niveles más numerosos, porque de un solo tono
  * únicamente se distinguen tres escalones; el resto comparte el color de "Otras becas".
@@ -187,7 +176,126 @@ interface GrupoBecados {
 }
 
 /**
- * KPI de becados: la dona con el reparto y, al lado, la lista con número y
+ * Todas las cifras derivadas de un conjunto de sedes. Es la MISMA aritmética para el
+ * KPI total (todas las sedes) y para cada tarjeta del modal (una sola sede), así que
+ * el total y el desglose por sede no pueden discrepar.
+ */
+interface Agregados {
+  activosSedes: number;
+  activosKeepers: number;
+  activosFutsal: number;
+  activosClinicsFutsal: number;
+  activosVentaPublico: number;
+  activosClinics: number;
+  inscritosSedes: number;
+  inscritosKeepers: number;
+  inscritosFutsal: number;
+  inscritosNormal: number;
+  reinscritosSedes: number;
+  reinscritosKeepers: number;
+  reinscritosFutsal: number;
+  reinscritosNormal: number;
+  becasTotal: string | null;
+  becasNuevas: string | null;
+  becasReinsc: string | null;
+  becadosNuevasKeepers: number;
+  becadosNuevasFutsal: number;
+  becadosNuevasClinicsFutsal: number;
+  becadosReinscKeepers: number;
+  becadosReinscFutsal: number;
+  becadosReinscClinicsFutsal: number;
+  plantillaElegible: number;
+  plantillaKeepers: number;
+  bajasNormal: number;
+  bajasKeepers: number;
+  bajasFutsal: number;
+  bajasClinicsFutsal: number;
+  sinInscripcion: number;
+}
+
+function calcularAgregados(lista: SedeSummary[]): Agregados {
+  /* Plantilla activa separada por tipo de sede (clinics aparte). El avance de
+     inscripción se mide solo sobre sedes normales: clinics no maneja inscripción,
+     así que incluirlo hundiría el porcentaje sin significar nada. */
+  const sumaPorTipo = (esClinics: number, pick: (s: SedeSummary) => number) =>
+    lista.filter(s => (s.EsClinics || 0) === esClinics)
+         .reduce((acc, s) => acc + (pick(s) || 0), 0);
+  const sumTodos = (pick: (s: SedeSummary) => number) =>
+    lista.reduce((acc, s) => acc + (pick(s) || 0), 0);
+
+  // Plantilla no-clinics partida en normal / keepers / futsal / venta público / clinics futsal.
+  const activosKeepers = sumaPorTipo(0, s => s.ActivosKeepers);
+  const activosFutsal = sumaPorTipo(0, s => s.ActivosFutsal);
+  const activosClinicsFutsal = sumTodos(s => s.ActivosClinicsFutsal);
+  const activosVentaPublico = sumTodos(s => s.ActivosVentaPublico);
+  /* Venta pública y clinics futsal son segmentos propios (sumTodos), así que cada uno
+     se resta de la base de la que salió: lo de sedes normales sale de "Sedes" y lo de
+     sedes de clinics sale de "Clinics". Restar los sumTodos completos de la base
+     normal (la fórmula anterior) volvía negativo el segmento "Sedes" al reducir el
+     cálculo a una sola sede de clinics, y contaba dos veces esos registros dentro de
+     "Clinics". Con esto los seis segmentos son mutuamente excluyentes y su suma da el
+     total, tanto en el KPI global como en la tarjeta de una sede del modal. */
+  const activosSedes = sumaPorTipo(0, s => s.Activos) - activosKeepers - activosFutsal
+    - sumaPorTipo(0, s => s.ActivosVentaPublico) - sumaPorTipo(0, s => s.ActivosClinicsFutsal);
+  const activosClinics = sumaPorTipo(1, s => s.Activos)
+    - sumaPorTipo(1, s => s.ActivosVentaPublico) - sumaPorTipo(1, s => s.ActivosClinicsFutsal);
+  // Inscritos (keeper-aware, sin venta pública) separando keepers, futsal y clinics futsal.
+  const inscritosSedes = sumaPorTipo(0, s => s.Inscritos);
+  const inscritosKeepers = sumaPorTipo(0, s => s.InscritosKeepers);
+  const inscritosFutsal = sumaPorTipo(0, s => s.InscritosFutsal);
+  const inscritosClinicsFutsal = sumTodos(s => s.InscritosClinicsFutsal);
+  const inscritosNormal = inscritosSedes - inscritosKeepers - inscritosFutsal - inscritosClinicsFutsal;
+  // Reinscritos por área (ya tenían inscripción antes); "nuevas" = inscritos - reinscritos.
+  const reinscritosKeepers = sumaPorTipo(0, s => s.ReinscritosKeepers);
+  const reinscritosFutsal = sumaPorTipo(0, s => s.ReinscritosFutsal);
+  const reinscritosClinicsFutsal = sumTodos(s => s.ReinscritosClinicsFutsal);
+  const reinscritosSedes = sumaPorTipo(0, s => s.Reinscritos);
+  const reinscritosNormal = reinscritosSedes - reinscritosKeepers - reinscritosFutsal - reinscritosClinicsFutsal;
+  /* Becas del KPI: se juntan solo las de sedes normales, que es de donde salen las
+     tres áreas de arriba. Incluir clinics metería becados que el KPI no está contando.
+     El denominador del porcentaje es ese mismo universo (inscritosSedes), no el de un
+     área suelta, para que becados y base cuenten a la misma gente. */
+  const sedesNormales = lista.filter(s => (s.EsClinics || 0) === 0);
+  const becasTotal = unirBecas(sedesNormales, s => s.BecasDetail);
+  const becasNuevas = unirBecas(sedesNormales, s => s.BecasNuevasDetail);
+  const becasReinsc = unirBecas(sedesNormales, s => s.BecasReinscDetail);
+  // Becados por grupo, con el mismo alcance que las becas: solo sedes no-clinics.
+  const becadosNuevasKeepers = sumaPorTipo(0, s => s.BecadosNuevasKeepers);
+  const becadosNuevasFutsal = sumaPorTipo(0, s => s.BecadosNuevasFutsal);
+  const becadosNuevasClinicsFutsal = sumaPorTipo(0, s => s.BecadosNuevasClinicsFutsal);
+  const becadosReinscKeepers = sumaPorTipo(0, s => s.BecadosReinscKeepers);
+  const becadosReinscFutsal = sumaPorTipo(0, s => s.BecadosReinscFutsal);
+  const becadosReinscClinicsFutsal = sumaPorTipo(0, s => s.BecadosReinscClinicsFutsal);
+  /* Base del avance de inscripción: la PLANTILLA elegible (no-clinics, sin venta
+     pública ni clinics futsal), como antes de acotar "activos" a la temporada. Medir
+     los inscritos contra los activos de la temporada no es un avance: alguien recién
+     inscrito que aún no paga su primera mensualidad no cuenta como activo, y el
+     cociente se pasaba de 100%. */
+  const plantillaElegible = sumaPorTipo(0, s => s.Plantilla)
+    - sumaPorTipo(0, s => s.PlantillaVentaPublico)
+    - sumTodos(s => s.PlantillaClinicsFutsal);
+  const plantillaKeepers = sumaPorTipo(0, s => s.PlantillaKeepers);
+  // Bajas separando keepers, futsal y clinics futsal.
+  const bajasKeepers = sumTodos(s => s.BajasKeepers);
+  const bajasFutsal = sumTodos(s => s.BajasFutsal);
+  const bajasClinicsFutsal = sumTodos(s => s.BajasClinicsFutsal);
+  const bajasNormal = sumTodos(s => s.Bajas) - bajasKeepers - bajasFutsal - bajasClinicsFutsal;
+
+  return {
+    activosSedes, activosKeepers, activosFutsal, activosClinicsFutsal, activosVentaPublico, activosClinics,
+    inscritosSedes, inscritosKeepers, inscritosFutsal, inscritosNormal,
+    reinscritosSedes, reinscritosKeepers, reinscritosFutsal, reinscritosNormal,
+    becasTotal, becasNuevas, becasReinsc,
+    becadosNuevasKeepers, becadosNuevasFutsal, becadosNuevasClinicsFutsal,
+    becadosReinscKeepers, becadosReinscFutsal, becadosReinscClinicsFutsal,
+    plantillaElegible, plantillaKeepers,
+    bajasNormal, bajasKeepers, bajasFutsal, bajasClinicsFutsal,
+    sinInscripcion: sumTodos(s => s.SinInscripcion),
+  };
+}
+
+/**
+ * KPI de becados: la dona con el reparto y, al lado, la lista con número, barra y
  * porcentaje de cada rebanada.
  *
  * La lista no es decoración: en una dona los ángulos parecidos no se comparan bien,
@@ -195,7 +303,7 @@ interface GrupoBecados {
  * mantiene legible el gráfico para quien no distingue los tonos.
  */
 function BecadosKpi({
-  rebanadas, inscritos, nuevas, reinsc, detalleCompleto, onRebanada, onNuevas, onReinsc,
+  rebanadas, inscritos, nuevas, reinsc, detalleCompleto, onRebanada, onNuevas, onReinsc, pie,
 }: {
   rebanadas: Rebanada[];
   inscritos: number;
@@ -207,6 +315,7 @@ function BecadosKpi({
   onRebanada: (etiqueta: string) => void;
   onNuevas: () => void;
   onReinsc: () => void;
+  pie?: React.ReactNode;
 }) {
   const sumaBecados = (r: Rebanada[]) =>
     r.filter((x) => x.etiqueta !== 'Sin beca').reduce((s, x) => s + x.cantidad, 0);
@@ -226,15 +335,15 @@ function BecadosKpi({
         type="button"
         onClick={onClick}
         title={`${titulo}: ${becadosGrupo} becados de ${grupo.inscritos} (${pct(becadosGrupo, grupo.inscritos)}%)`}
-        className="flex items-center gap-2 bg-white/5 hover:bg-white/15 border border-white/10 rounded px-1.5 py-1 text-left transition-all"
+        className="flex items-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-purple-500/40 rounded-xl px-3 py-2.5 text-left transition-all"
       >
         <div className="relative flex-shrink-0">
-          <BecasDonut rebanadas={grupo.rebanadas} total={grupo.inscritos} tamano={38} />
+          <BecasDonut rebanadas={grupo.rebanadas} total={grupo.inscritos} tamano={48} />
         </div>
         <div className="min-w-0">
-          <p className="text-[7px] uppercase font-black text-slate-400 tracking-wider leading-none">{etiqueta}</p>
-          <p className="text-sm font-black text-purple-200 leading-tight">{becadosGrupo}</p>
-          <p className="text-[7px] font-bold text-slate-500 leading-none">
+          <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider leading-none">{etiqueta}</p>
+          <p className="text-2xl font-black text-purple-200 leading-tight tabular-nums">{becadosGrupo}</p>
+          <p className="text-[10px] font-bold text-slate-500 leading-none">
             {pct(becadosGrupo, grupo.inscritos)}% de {grupo.inscritos}
           </p>
         </div>
@@ -249,35 +358,40 @@ function BecadosKpi({
    * real es comparativa: si el futsal trae más beca al reinscribirse que al entrar,
    * eso solo se ve con las dos cifras en el mismo renglón.
    */
-  const filaGrupo = (etiqueta: string, tono: string, nuevo: number, reinscrito: number) => (
+  const filaGrupo = (etiqueta: string, color: string, nuevo: number, reinscrito: number) => (
     <div className="flex items-center gap-2 px-1">
-      <span className={`text-[9px] font-bold flex-1 ${tono}`}>{etiqueta}</span>
-      <span className="text-[9px] font-black text-white tabular-nums w-8 text-right">{nuevo}</span>
-      <span className="text-[9px] font-black text-white tabular-nums w-8 text-right">{reinscrito}</span>
+      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+      <span className="text-[11px] font-bold text-slate-300 flex-1">{etiqueta}</span>
+      <span className="text-xs font-black text-white tabular-nums w-10 text-right">{nuevo}</span>
+      <span className="text-xs font-black text-white tabular-nums w-10 text-right">{reinscrito}</span>
     </div>
   );
 
   return (
-    <div className="flex-1 md:flex-none bg-purple-500/10 border border-purple-500/20 px-4 py-2 rounded-xl min-w-[260px]">
-      <div className="flex items-center gap-2 mb-1.5">
-        <div className="bg-purple-500/20 p-1.5 rounded-lg">
-          <GraduationCap size={16} className="text-purple-300" />
-        </div>
-        <p className="text-[10px] uppercase tracking-wider text-purple-300 font-bold">Becados</p>
-        <span className="text-[9px] text-slate-500 italic">sobre inscritos</span>
-      </div>
+    <div className="h-full bg-purple-500/10 border border-purple-500/20 rounded-2xl p-5 flex flex-col">
+      <PanelHeader
+        icono={<GraduationCap size={20} className="text-purple-300" />}
+        iconoClase="bg-purple-500/20 border-purple-500/30"
+        titulo="Becados"
+        tituloClase="text-purple-300"
+        subtitulo="Inscritos con algún nivel de beca"
+        valor={becados}
+        nota={`${pct(becados)}% de ${inscritos} inscritos`}
+        notaClase="text-purple-300/80"
+      />
 
-      <div className="flex items-center gap-3">
+      {/* Dona grande + leyenda con barras: el reparto por nivel de beca. */}
+      <div className="flex items-center gap-5 mt-5">
         <div className="relative flex-shrink-0">
-          <BecasDonut rebanadas={rebanadas} total={inscritos} tamano={84} />
+          <BecasDonut rebanadas={rebanadas} total={inscritos} tamano={132} />
           {/* El número vive en el hueco: es el dato que la dona está contando. */}
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <span className="text-base font-black text-purple-200 leading-none">{becados}</span>
-            <span className="text-[8px] font-bold text-slate-400 leading-none mt-0.5">{pct(becados)}%</span>
+            <span className="text-2xl font-black text-purple-200 leading-none tabular-nums">{becados}</span>
+            <span className="text-[10px] font-bold text-slate-400 leading-none mt-1">{pct(becados)}%</span>
           </div>
         </div>
 
-        <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="min-w-0 flex-1 space-y-1">
           {rebanadas.filter((r) => r.cantidad > 0).map((r) => (
             <button
               key={r.etiqueta}
@@ -286,88 +400,341 @@ function BecadosKpi({
               title={r.etiqueta === 'Otras becas' && detalleCompleto
                 ? `Otras becas · ${formatBecasDetail(detalleCompleto)}`
                 : `${r.etiqueta}: ${r.cantidad} de ${inscritos} inscritos`}
-              className="w-full flex items-center gap-1.5 text-left rounded px-1 py-0.5 hover:bg-white/10 transition-colors"
+              className="w-full flex items-center gap-2 text-left rounded-lg px-1.5 py-1 hover:bg-white/10 transition-colors"
             >
-              <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: r.color }} />
-              <span className="text-[9px] font-bold text-slate-300 truncate flex-1">{r.etiqueta}</span>
-              <span className="text-[9px] font-black text-white tabular-nums">{r.cantidad}</span>
-              <span className="text-[9px] text-slate-500 tabular-nums w-7 text-right">{pct(r.cantidad)}%</span>
+              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: r.color }} />
+              <span className="text-[11px] font-bold text-slate-300 truncate w-20">{r.etiqueta}</span>
+              <span className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                <span className="block h-full rounded-full" style={{ width: `${pct(r.cantidad)}%`, backgroundColor: r.color }} />
+              </span>
+              <span className="text-xs font-black text-white tabular-nums">{r.cantidad}</span>
+              <span className="text-[10px] text-slate-500 tabular-nums w-8 text-right">{pct(r.cantidad)}%</span>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-1 mt-2 pt-2 border-t border-white/10">
+      <div className="grid grid-cols-2 gap-3 mt-4">
         {subgrupo('Nuevas', nuevas,
           'Becados cuya inscripción de esta temporada es su primera inscripción histórica', onNuevas)}
         {subgrupo('Reinsc.', reinsc,
           'Becados que ya tenían inscripción en una temporada anterior', onReinsc)}
       </div>
 
-      <div className="mt-1.5 pt-1.5 border-t border-white/5 space-y-0.5">
+      <div className="mt-4 pt-3 border-t border-white/10 space-y-1.5 flex-1">
         <div className="flex items-center gap-2 px-1">
-          <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider flex-1">Becados por grupo</span>
-          <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider w-8 text-right">Nuev.</span>
-          <span className="text-[7px] uppercase font-black text-slate-500 tracking-wider w-8 text-right">Reins.</span>
+          <span className="text-[9px] uppercase font-black text-slate-500 tracking-wider flex-1">Becados por grupo</span>
+          <span className="text-[9px] uppercase font-black text-slate-500 tracking-wider w-10 text-right">Nuev.</span>
+          <span className="text-[9px] uppercase font-black text-slate-500 tracking-wider w-10 text-right">Reins.</span>
         </div>
-        {filaGrupo('Sedes', 'text-emerald-300', nuevas.sedes, reinsc.sedes)}
-        {filaGrupo('Keepers', 'text-cyan-300', nuevas.keepers, reinsc.keepers)}
-        {filaGrupo('Futsal', 'text-fuchsia-300', nuevas.futsal, reinsc.futsal)}
+        {filaGrupo('Sedes', GRUPO_COLOR.sedes, nuevas.sedes, reinsc.sedes)}
+        {filaGrupo('Keepers', GRUPO_COLOR.keepers, nuevas.keepers, reinsc.keepers)}
+        {filaGrupo('Futsal', GRUPO_COLOR.futsal, nuevas.futsal, reinsc.futsal)}
       </div>
+      {pie}
     </div>
   );
 }
 
-/** Celda de un área de inscritos con el total y su desglose Nuevas / Reinscripciones. */
-function AreaInscritos({ label, tone, total, nuevas, reinsc, onTotal, onNuevas, onReinsc }: {
+/** Área de inscritos: cifra grande, reparto Nuevas/Reinscripciones con barra, y avance. */
+function AreaInscritos({ label, color, total, nuevas, reinsc, pctDelTotal, barra, onTotal, onNuevas, onReinsc }: {
   label: string;
-  tone: string;
+  color: string;
   total: number;
   nuevas: number;
   reinsc: number;
+  /** Peso del área dentro del total del KPI (0-100). */
+  pctDelTotal?: number;
+  /** Avance del área contra su propia plantilla; solo algunas lo llevan. */
+  barra?: { base: number; sufijo: string };
   onTotal: () => void;
   onNuevas: () => void;
   onReinsc: () => void;
 }) {
+  const den = nuevas + reinsc;
   return (
-    <div className="bg-white/5 border border-white/10 rounded-lg px-2 py-1">
-      <button type="button" onClick={onTotal} className="w-full text-left hover:opacity-80 transition-opacity">
-        <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">{label}</p>
-        <p className={`text-lg font-black ${tone}`}>{total}</p>
+    <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 flex flex-col gap-2.5">
+      <button type="button" onClick={onTotal} className="text-left group">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+          <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider group-hover:text-slate-200 transition-colors">{label}</span>
+        </span>
+        <span className="flex items-baseline gap-2 mt-1.5">
+          <span className="text-3xl font-black text-white tabular-nums leading-none">{total}</span>
+          {pctDelTotal !== undefined && <span className="text-[10px] font-bold text-slate-500 tabular-nums">{pctDelTotal}% del total</span>}
+        </span>
       </button>
-      <div className="grid grid-cols-2 gap-1 mt-1">
-        <button
-          type="button"
-          onClick={onNuevas}
-          title="Inscripciones nuevas: es la primera inscripción histórica del jugador"
-          className="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded px-1.5 py-0.5 text-left transition-all"
-        >
-          <p className="text-[7px] uppercase font-black text-emerald-300/80 tracking-wider leading-none">Nuevas</p>
-          <p className="text-sm font-black text-emerald-300 leading-tight">{nuevas}</p>
-        </button>
-        <button
-          type="button"
-          onClick={onReinsc}
-          title="Reinscripciones: el jugador ya tenía inscripción en una temporada anterior"
-          className="bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded px-1.5 py-0.5 text-left transition-all"
-        >
-          <p className="text-[7px] uppercase font-black text-amber-300/80 tracking-wider leading-none">Reinsc.</p>
-          <p className="text-sm font-black text-amber-300 leading-tight">{reinsc}</p>
-        </button>
+      <div>
+        {/* Reparto nuevas/reinscripciones: la barra y las dos cifras cuentan lo mismo. */}
+        {den > 0 && (
+          <div className="h-1.5 rounded-full overflow-hidden flex bg-white/5">
+            <div className="bg-emerald-400" style={{ width: `${(nuevas / den) * 100}%` }} />
+            <div className="bg-amber-400" style={{ width: `${(reinsc / den) * 100}%` }} />
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+          <button
+            type="button"
+            onClick={onNuevas}
+            title="Inscripciones nuevas: es la primera inscripción histórica del jugador"
+            className="bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/20 rounded-lg px-2 py-1 text-left transition-all"
+          >
+            <p className="text-[9px] uppercase font-black text-emerald-300/80 tracking-wider leading-none">Nuevas</p>
+            <p className="text-lg font-black text-emerald-300 leading-tight tabular-nums">{nuevas}</p>
+          </button>
+          <button
+            type="button"
+            onClick={onReinsc}
+            title="Reinscripciones: el jugador ya tenía inscripción en una temporada anterior"
+            className="bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/20 rounded-lg px-2 py-1 text-left transition-all"
+          >
+            <p className="text-[9px] uppercase font-black text-amber-300/80 tracking-wider leading-none">Reinsc.</p>
+            <p className="text-lg font-black text-amber-300 leading-tight tabular-nums">{reinsc}</p>
+          </button>
+        </div>
       </div>
+      {barra && (
+        <Meter size="xs" valor={total} total={barra.base} etiqueta={`de ${barra.base} ${barra.sufijo}`} />
+      )}
     </div>
   );
 }
+
+type Abrir = (cfg: PlayersModalConfig) => void;
+
+/** Panel de Jugadores Activos: total, composición y un tile por grupo de plantilla. */
+function TarjetaActivos({ a, abrir, verSedes }: { a: Agregados; abrir: Abrir; verSedes?: () => void }) {
+  const partes: { label: string; valor: number; color: string; title?: string; cfg: PlayersModalConfig }[] = [
+    { label: 'Sedes', valor: a.activosSedes, color: GRUPO_COLOR.sedes, cfg: { title: 'Jugadores Activos · Sedes', filtro: 'activos', clinics: 0, grupo: 'normal' } },
+    { label: 'Keepers', valor: a.activosKeepers, color: GRUPO_COLOR.keepers, title: 'Keepers y porteros', cfg: { title: 'Jugadores Activos · Keepers/Porteros', filtro: 'activos', clinics: 0, grupo: 'keepers' } },
+    { label: 'Futsal', valor: a.activosFutsal, color: GRUPO_COLOR.futsal, title: 'Sedes de futsal / categorías futsal (cuentan como sede normal)', cfg: { title: 'Jugadores Activos · Futsal', filtro: 'activos', clinics: 0, grupo: 'futsal' } },
+    { label: 'Clinics F.', valor: a.activosClinicsFutsal, color: GRUPO_COLOR.clinicsFutsal, title: 'Clinics Futsal (sede futsal + categoría clinics)', cfg: { title: 'Jugadores Activos · Clinics Futsal', filtro: 'activos', grupo: 'clinicsfutsal' } },
+    { label: 'Venta púb.', valor: a.activosVentaPublico, color: GRUPO_COLOR.ventaPublico, title: 'Registros de venta al público (no cuentan en el total de sedes)', cfg: { title: 'Jugadores Activos · Venta al Público', filtro: 'activos', grupo: 'ventapublico' } },
+    { label: 'Clinics', valor: a.activosClinics, color: GRUPO_COLOR.clinics, cfg: { title: 'Jugadores Activos · Clinics', filtro: 'activos', clinics: 1 } },
+  ];
+  const total = partes.reduce((s, p) => s + p.valor, 0);
+  const pctDe = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+  return (
+    <div className="h-full bg-sky-500/10 border border-sky-500/20 rounded-2xl p-5 flex flex-col">
+      <PanelHeader
+        icono={<Users size={20} className="text-sky-400" />}
+        iconoClase="bg-sky-500/20 border-sky-500/30"
+        titulo="Jugadores Activos"
+        tituloClase="text-sky-400"
+        subtitulo="Pagaron al menos una mensualidad de la temporada"
+        valor={total}
+        nota="jugadores"
+      />
+      <BarraComposicion
+        className="mt-4"
+        partes={partes.map((p) => ({ etiqueta: p.label, cantidad: p.valor, color: p.color }))}
+      />
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3 flex-1 content-start">
+        {partes.map((p) => (
+          <TileGrupo key={p.label} label={p.label} valor={p.valor} color={p.color} pct={pctDe(p.valor)} title={p.title} onClick={() => abrir(p.cfg)} />
+        ))}
+      </div>
+      {verSedes && <VerSedesBtn onClick={verSedes} />}
+    </div>
+  );
+}
+
+/** Panel de Total Inscritos: la cifra protagonista, el avance y las tres áreas. */
+function TarjetaInscritos({ a, abrir, verSedes }: { a: Agregados; abrir: Abrir; verSedes?: () => void }) {
+  const total = a.inscritosSedes;
+  const pctDe = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+  const avance = a.plantillaElegible > 0 ? Math.round((total / a.plantillaElegible) * 100) : 0;
+  return (
+    <div className="h-full bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 flex flex-col">
+      <PanelHeader
+        icono={<UserCheck size={20} className="text-emerald-400" />}
+        iconoClase="bg-emerald-500/20 border-emerald-500/30"
+        titulo="Total Inscritos"
+        tituloClase="text-emerald-400"
+        subtitulo="Pagaron la inscripción de la temporada · incluye becados"
+        valor={total}
+        nota={`${avance}% de la plantilla`}
+        notaClase="text-emerald-300/80"
+      />
+
+      {/* Avance de inscripción sobre la plantilla elegible (normal + keepers + futsal). */}
+      <div className="mt-4">
+        <Meter
+          valor={total}
+          total={a.plantillaElegible}
+          etiqueta={`${total} de ${a.plantillaElegible} en plantilla`}
+        />
+      </div>
+
+      {/* Composición del total por área, con los colores fijos de grupo. */}
+      <BarraComposicion
+        className="mt-4"
+        partes={[
+          { etiqueta: 'Sedes', cantidad: a.inscritosNormal, color: GRUPO_COLOR.sedes },
+          { etiqueta: 'Keepers', cantidad: a.inscritosKeepers, color: GRUPO_COLOR.keepers },
+          { etiqueta: 'Futsal', cantidad: a.inscritosFutsal, color: GRUPO_COLOR.futsal },
+        ]}
+      />
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 flex-1 content-start">
+        <AreaInscritos
+          label="Sedes"
+          color={GRUPO_COLOR.sedes}
+          total={a.inscritosNormal}
+          nuevas={a.inscritosNormal - a.reinscritosNormal}
+          reinsc={a.reinscritosNormal}
+          pctDelTotal={pctDe(a.inscritosNormal)}
+          onTotal={() => abrir({ title: 'Inscritos · Sedes', filtro: 'inscritos', clinics: 0, grupo: 'normal' })}
+          onNuevas={() => abrir({ title: 'Inscripciones Nuevas · Sedes', filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'nueva' })}
+          onReinsc={() => abrir({ title: 'Reinscripciones · Sedes', filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'reinscripcion' })}
+        />
+        <AreaInscritos
+          label="Keepers"
+          color={GRUPO_COLOR.keepers}
+          total={a.inscritosKeepers}
+          nuevas={a.inscritosKeepers - a.reinscritosKeepers}
+          reinsc={a.reinscritosKeepers}
+          pctDelTotal={pctDe(a.inscritosKeepers)}
+          barra={{ base: a.plantillaKeepers, sufijo: 'keepers' }}
+          onTotal={() => abrir({ title: 'Inscritos · Keepers/Porteros', filtro: 'inscritos', clinics: 0, grupo: 'keepers' })}
+          onNuevas={() => abrir({ title: 'Inscripciones Nuevas · Keepers/Porteros', filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'nueva' })}
+          onReinsc={() => abrir({ title: 'Reinscripciones · Keepers/Porteros', filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'reinscripcion' })}
+        />
+        <AreaInscritos
+          label="Futsal"
+          color={GRUPO_COLOR.futsal}
+          total={a.inscritosFutsal}
+          nuevas={a.inscritosFutsal - a.reinscritosFutsal}
+          reinsc={a.reinscritosFutsal}
+          pctDelTotal={pctDe(a.inscritosFutsal)}
+          onTotal={() => abrir({ title: 'Inscritos · Futsal', filtro: 'inscritos', clinics: 0, grupo: 'futsal' })}
+          onNuevas={() => abrir({ title: 'Inscripciones Nuevas · Futsal', filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'nueva' })}
+          onReinsc={() => abrir({ title: 'Reinscripciones · Futsal', filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'reinscripcion' })}
+        />
+      </div>
+      {verSedes && <VerSedesBtn onClick={verSedes} />}
+    </div>
+  );
+}
+
+/** KPI de Becados armado desde los agregados, con los colores compartidos. */
+function TarjetaBecados({ a, colores, abrir, verSedes }: {
+  a: Agregados; colores: Map<string, string>; abrir: Abrir; verSedes?: () => void;
+}) {
+  return (
+    <BecadosKpi
+      rebanadas={rebanadasBecas(a.becasTotal, a.inscritosSedes, colores)}
+      inscritos={a.inscritosSedes}
+      nuevas={grupoBecados(a.becasNuevas, a.inscritosSedes - a.reinscritosSedes, colores, {
+        keepers: a.becadosNuevasKeepers,
+        futsal: a.becadosNuevasFutsal,
+        clinicsFutsal: a.becadosNuevasClinicsFutsal,
+      })}
+      reinsc={grupoBecados(a.becasReinsc, a.reinscritosSedes, colores, {
+        keepers: a.becadosReinscKeepers,
+        futsal: a.becadosReinscFutsal,
+        clinicsFutsal: a.becadosReinscClinicsFutsal,
+      })}
+      detalleCompleto={a.becasTotal}
+      onRebanada={(etiqueta) => abrir({
+        title: etiqueta === 'Sin beca' ? 'Inscritos sin beca' : `Becados · ${etiqueta}`,
+        filtro: etiqueta === 'Sin beca' ? 'inscritos' : 'becados',
+        clinics: 0,
+      })}
+      onNuevas={() => abrir({ title: 'Becados · Inscripciones Nuevas', filtro: 'becados', clinics: 0, tipoInscripcion: 'nueva' })}
+      onReinsc={() => abrir({ title: 'Becados · Reinscripciones', filtro: 'becados', clinics: 0, tipoInscripcion: 'reinscripcion' })}
+      pie={verSedes ? <VerSedesBtn onClick={verSedes} /> : undefined}
+    />
+  );
+}
+
+/** Panel de Total Bajas: total, composición y un tile por grupo. */
+function TarjetaBajas({ a, abrir, verSedes }: { a: Agregados; abrir: Abrir; verSedes?: () => void }) {
+  const partes: { label: string; valor: number; color: string; title?: string; cfg: PlayersModalConfig }[] = [
+    { label: 'Sedes', valor: a.bajasNormal, color: GRUPO_COLOR.sedes, cfg: { title: 'Bajas · Sedes', filtro: 'bajas', grupo: 'normal' } },
+    { label: 'Keepers', valor: a.bajasKeepers, color: GRUPO_COLOR.keepers, title: 'Keepers/porteros dados de baja', cfg: { title: 'Bajas · Keepers/Porteros', filtro: 'bajas', grupo: 'keepers' } },
+    { label: 'Futsal', valor: a.bajasFutsal, color: GRUPO_COLOR.futsal, title: 'Futsal dados de baja', cfg: { title: 'Bajas · Futsal', filtro: 'bajas', grupo: 'futsal' } },
+    { label: 'Clinics F.', valor: a.bajasClinicsFutsal, color: GRUPO_COLOR.clinicsFutsal, title: 'Clinics Futsal dados de baja', cfg: { title: 'Bajas · Clinics Futsal', filtro: 'bajas', grupo: 'clinicsfutsal' } },
+  ];
+  const total = partes.reduce((s, p) => s + p.valor, 0);
+  const pctDe = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+  return (
+    <div className="h-full bg-rose-500/10 border border-rose-500/20 rounded-2xl p-5 flex flex-col">
+      <PanelHeader
+        icono={<Users size={20} className="text-rose-400" />}
+        iconoClase="bg-rose-500/20 border-rose-500/30"
+        titulo="Total Bajas"
+        tituloClase="text-rose-400"
+        subtitulo="Jugadores dados de baja en la temporada"
+        valor={total}
+        nota="jugadores"
+      />
+      <BarraComposicion
+        className="mt-4"
+        partes={partes.map((p) => ({ etiqueta: p.label, cantidad: p.valor, color: p.color }))}
+      />
+      <div className="grid grid-cols-2 gap-2.5 mt-3 flex-1 content-start">
+        {partes.map((p) => (
+          <TileGrupo key={p.label} label={p.label} valor={p.valor} color={p.color} pct={pctDe(p.valor)} title={p.title} onClick={() => abrir(p.cfg)} />
+        ))}
+      </div>
+      {verSedes && <VerSedesBtn onClick={verSedes} />}
+    </div>
+  );
+}
+
+/** Panel de Con Pagos sin Inscripción: la alerta operativa de la página. */
+function TarjetaSinInscripcion({ a, abrir, verSedes }: { a: Agregados; abrir: Abrir; verSedes?: () => void }) {
+  return (
+    <div className="h-full bg-amber-500/10 border border-amber-500/25 rounded-2xl p-5 flex flex-col">
+      <button
+        type="button"
+        onClick={() => abrir({ title: 'Con Pagos sin Inscripción', filtro: 'sin-inscripcion' })}
+        title="Pagaron mensualidad de los meses de la temporada pero no la inscripción"
+        className="flex-1 text-left group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="bg-amber-500/20 border border-amber-500/30 p-2.5 rounded-xl flex-shrink-0">
+            <AlertTriangle size={20} className="text-amber-400" />
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-widest text-amber-400 font-black">Sin Inscripción</p>
+            <p className="text-xs text-slate-400 leading-snug">Pagaron mensualidad pero no la inscripción</p>
+          </div>
+        </div>
+        <p className="text-5xl font-black text-amber-300 tabular-nums leading-none mt-5 group-hover:text-amber-200 transition-colors">{a.sinInscripcion}</p>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-1.5">jugadores por regularizar</p>
+      </button>
+      {verSedes && <VerSedesBtn onClick={verSedes} />}
+    </div>
+  );
+}
+
+/** KPIs que saben desglosarse por sede en el modal. */
+type KpiClave = 'activos' | 'inscritos' | 'becados' | 'bajas' | 'sin-inscripcion';
+
+/* Inscritos y Becados solo cuentan sedes normales (igual que sus KPIs), así que las
+   sedes de clinics no entran en esos desgloses: su tarjeta saldría vacía. Las demás
+   sedes se listan TODAS, incluso en cero (atenuadas): son la única puerta que queda
+   hacia "Ver Categorías" de una sede que apenas arranca la temporada. */
+const KPI_INFO: Record<KpiClave, { titulo: string; medida: (s: SedeSummary) => number; incluye: (s: SedeSummary) => boolean }> = {
+  activos: { titulo: 'Jugadores Activos', medida: (s) => s.Activos || 0, incluye: () => true },
+  inscritos: { titulo: 'Total Inscritos', medida: (s) => s.Inscritos || 0, incluye: (s) => (s.EsClinics || 0) === 0 },
+  becados: { titulo: 'Becados', medida: (s) => (s.BecasDetail ? s.BecasDetail.split(',').filter(Boolean).length : 0), incluye: (s) => (s.EsClinics || 0) === 0 },
+  bajas: { titulo: 'Total Bajas', medida: (s) => s.Bajas || 0, incluye: () => true },
+  'sin-inscripcion': { titulo: 'Sin Inscripción', medida: (s) => s.SinInscripcion || 0, incluye: () => true },
+};
 
 export default function InscripcionesSedesPage() {
   const router = useRouter();
   const { user, isInitialized } = useUser();
   const [sedes, setSedes] = useState<SedeSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   const [temporadas, setTemporadas] = useState<Temporada[]>([]);
   const [temporadaId, setTemporadaId] = useState<number | null>(null);
   const [modal, setModal] = useState<PlayersModalConfig | null>(null);
+  // KPI abierto en el modal de desglose por sedes (null = cerrado).
+  const [detalleKpi, setDetalleKpi] = useState<KpiClave | null>(null);
 
   // Check if user is logged in
   useEffect(() => {
@@ -422,84 +789,63 @@ export default function InscripcionesSedesPage() {
     }
   }, [isInitialized, user, temporadaId]);
 
-  const filteredSedes = sedes.filter(sede => 
-    sede.Sede.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const sedesWithInscritos = filteredSedes.filter(sede => sede.Inscritos > 0);
-  const sedesWithoutInscritos = filteredSedes.filter(sede => sede.Inscritos === 0);
-
   const temporadaNombre = temporadas.find(t => t.IdTemporada === temporadaId)?.Temporada;
+  /* En la temporada en curso el área de "Jugadores Activos" se oculta: apenas van uno o
+     dos meses cobrados, así que el número queda muy por debajo de la plantilla y se
+     presta a leerse como una caída. Se usa la marca EsActiva de la base y no "la más
+     reciente por fecha", porque cuál es la temporada en curso lo decide ese campo. */
+  const esTemporadaActiva = temporadas.some(t => t.IdTemporada === temporadaId && t.EsActiva);
 
-  /* En la última temporada la inscripción apenas va en curso y la plantilla activa
-     todavía corresponde a la temporada previa, así que el área de "Jugadores Activos"
-     se oculta (en el total y en cada sede) para no leerse como referencia de ésta. */
-  const ocultarActivos = temporadaId !== null && temporadaId === idUltimaTemporada(temporadas);
+  const totales = calcularAgregados(sedes);
+  /* Los colores salen del desglose COMPLETO y se comparten con las donas de cada
+     sede del modal, para que un mismo nivel de beca se vea igual en todas. */
+  const coloresBeca = coloresPorNivel(totales.becasTotal);
+  const fueraDeLugar = sedes.filter(s => (s.FueraDeLugar || 0) > 0);
 
-  /* Plantilla activa separada por tipo de sede (clinics aparte). El avance de
-     inscripción se mide solo sobre sedes normales: clinics no maneja inscripción,
-     así que incluirlo hundiría el porcentaje sin significar nada. */
-  const sumaPorTipo = (esClinics: number, pick: (s: SedeSummary) => number) =>
-    sedes.filter(s => (s.EsClinics || 0) === esClinics)
-         .reduce((acc, s) => acc + (pick(s) || 0), 0);
-  const sumTodos = (pick: (s: SedeSummary) => number) =>
-    sedes.reduce((acc, s) => acc + (pick(s) || 0), 0);
+  const categoriaHref = (sede: SedeSummary) =>
+    `/inscripciones/${sede.IdSede}${temporadaId ? `?temporada=${temporadaId}` : ''}`;
 
-  // Plantilla no-clinics partida en normal / keepers / futsal / venta público / clinics futsal.
-  const activosKeepers = sumaPorTipo(0, s => s.ActivosKeepers);
-  const activosFutsal = sumaPorTipo(0, s => s.ActivosFutsal);
-  const activosClinicsFutsal = sumTodos(s => s.ActivosClinicsFutsal);
-  const activosVentaPublico = sumTodos(s => s.ActivosVentaPublico);
-  const activosSedes = sumaPorTipo(0, s => s.Activos) - activosKeepers - activosFutsal - activosVentaPublico - activosClinicsFutsal;
-  const activosClinics = sumaPorTipo(1, s => s.Activos);
-  // Inscritos (keeper-aware, sin venta pública) separando keepers, futsal y clinics futsal.
-  const inscritosSedes = sumaPorTipo(0, s => s.Inscritos);
-  const inscritosKeepers = sumaPorTipo(0, s => s.InscritosKeepers);
-  const inscritosFutsal = sumaPorTipo(0, s => s.InscritosFutsal);
-  const inscritosClinicsFutsal = sumTodos(s => s.InscritosClinicsFutsal);
-  const inscritosNormal = inscritosSedes - inscritosKeepers - inscritosFutsal - inscritosClinicsFutsal;
-  // Reinscritos por área (ya tenían inscripción antes); "nuevas" = inscritos - reinscritos.
-  const reinscritosKeepers = sumaPorTipo(0, s => s.ReinscritosKeepers);
-  const reinscritosFutsal = sumaPorTipo(0, s => s.ReinscritosFutsal);
-  const reinscritosClinicsFutsal = sumTodos(s => s.ReinscritosClinicsFutsal);
-  const reinscritosSedes = sumaPorTipo(0, s => s.Reinscritos);
-  const reinscritosNormal = reinscritosSedes - reinscritosKeepers - reinscritosFutsal - reinscritosClinicsFutsal;
-  /* Becas del KPI: se juntan solo las de sedes normales, que es de donde salen las
-     tres áreas de arriba. Incluir clinics metería becados que el KPI no está contando.
-     El denominador del porcentaje es ese mismo universo (inscritosSedes), no el de un
-     área suelta, para que becados y base cuenten a la misma gente. */
-  const sedesNormales = sedes.filter(s => (s.EsClinics || 0) === 0);
-  const becasTotal = unirBecas(sedesNormales, s => s.BecasDetail);
-  const becasNuevas = unirBecas(sedesNormales, s => s.BecasNuevasDetail);
-  const becasReinsc = unirBecas(sedesNormales, s => s.BecasReinscDetail);
-  /* Los colores salen del desglose COMPLETO y se pasan a las tres donas, para que un
-     mismo nivel de beca se vea igual en todas. */
-  const coloresBeca = coloresPorNivel(becasTotal);
-  // Becados por grupo, con el mismo alcance que las becas: solo sedes no-clinics.
-  const becadosNuevasKeepers = sumaPorTipo(0, s => s.BecadosNuevasKeepers);
-  const becadosNuevasFutsal = sumaPorTipo(0, s => s.BecadosNuevasFutsal);
-  const becadosNuevasClinicsFutsal = sumaPorTipo(0, s => s.BecadosNuevasClinicsFutsal);
-  const becadosReinscKeepers = sumaPorTipo(0, s => s.BecadosReinscKeepers);
-  const becadosReinscFutsal = sumaPorTipo(0, s => s.BecadosReinscFutsal);
-  const becadosReinscClinicsFutsal = sumaPorTipo(0, s => s.BecadosReinscClinicsFutsal);
-  // Base del avance: plantilla elegible (no-clinics, sin venta pública) = normal + keepers + futsal.
-  const activosElegibles = activosSedes + activosKeepers + activosFutsal;
-  // Bajas separando keepers, futsal y clinics futsal.
-  const bajasKeepers = sumTodos(s => s.BajasKeepers);
-  const bajasFutsal = sumTodos(s => s.BajasFutsal);
-  const bajasClinicsFutsal = sumTodos(s => s.BajasClinicsFutsal);
-  const bajasTotal = sumTodos(s => s.Bajas);
-  const bajasNormal = bajasTotal - bajasKeepers - bajasFutsal - bajasClinicsFutsal;
+  const abrirGlobal: Abrir = (cfg) => setModal({ subtitle: temporadaNombre, ...cfg });
+  /* El mismo corte, pero acotado a una sede: es lo que abren las tarjetas del modal
+     de desglose. El PlayersModal (z-150) se pinta ENCIMA del desglose (z-120), así
+     que al cerrarlo se regresa al desglose sin perderlo. */
+  const abrirSede = (sede: SedeSummary): Abrir => (cfg) => setModal({
+    subtitle: [sede.Sede, temporadaNombre].filter(Boolean).join(' · '),
+    sedeId: sede.IdSede,
+    /* La vista por categorías se arma con los inscritos, así que la liga no
+       corresponde para el corte de "sin inscripción". */
+    categoriaHref: cfg.filtro === 'sin-inscripcion' ? undefined : categoriaHref(sede),
+    ...cfg,
+  });
+
+  /** La tarjeta del KPI pedido, con los agregados que se le den (total o una sede). */
+  const tarjetaDe = (kpi: KpiClave, a: Agregados, abrir: Abrir, verSedes?: () => void) => {
+    switch (kpi) {
+      case 'activos': return <TarjetaActivos a={a} abrir={abrir} verSedes={verSedes} />;
+      case 'inscritos': return <TarjetaInscritos a={a} abrir={abrir} verSedes={verSedes} />;
+      case 'becados': return <TarjetaBecados a={a} colores={coloresBeca} abrir={abrir} verSedes={verSedes} />;
+      case 'bajas': return <TarjetaBajas a={a} abrir={abrir} verSedes={verSedes} />;
+      case 'sin-inscripcion': return <TarjetaSinInscripcion a={a} abrir={abrir} verSedes={verSedes} />;
+    }
+  };
+
+  // Sedes del modal: todas las elegibles, de mayor a menor; las que están en cero
+  // se pintan atenuadas al final en vez de ocultarse.
+  const sedesDetalle = detalleKpi
+    ? sedes
+        .filter(KPI_INFO[detalleKpi].incluye)
+        .sort((a, b) => KPI_INFO[detalleKpi].medida(b) - KPI_INFO[detalleKpi].medida(a))
+    : [];
 
   return (
     <DashboardLayout>
       <main className="overflow-y-auto flex-1 text-white p-6 md:p-8 relative">
-        <div className="max-w-7xl mx-auto">
-          
-          <div className="mb-12 flex flex-col md:flex-row md:items-end md:justify-between gap-5">
+        <div className="w-full">
+
+          <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-5">
             <div>
-              <h1 className="text-3xl font-black text-white mb-2">Inscripciones por Sede</h1>
-              <p className="text-slate-400">Monitoreo de jugadores inscritos segmentado por campus</p>
+              <h1 className="text-3xl font-black text-white mb-2">Inscripciones</h1>
+              <p className="text-slate-400">Indicadores totales de la temporada · el desglose por campus vive en «Ver detalle por sedes»</p>
             </div>
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Temporada</label>
@@ -523,234 +869,154 @@ export default function InscripcionesSedesPage() {
             </div>
           </div>
 
-          {/* Search and Stats Section */}
-          <div className="mb-8 flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
-            <div className="relative w-full md:w-96 group">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-400 transition-colors" size={18} />
-              <input 
-                type="text" 
-                placeholder="Buscar sede..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 outline-none focus:bg-white/10 focus:border-blue-500/50 transition-all text-white placeholder-slate-400"
-              />
-            </div>
-
-            <div className="flex gap-4 w-full md:w-auto flex-wrap">
-              {/* Plantilla activa partida en normal / keepers / venta público / clinics.
-                  Se oculta en la última temporada (ver `ocultarActivos`). */}
-              {!ocultarActivos && (
-              <div className="flex-1 md:flex-none bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <div className="bg-sky-500/20 p-1.5 rounded-lg">
-                    <Users size={16} className="text-sky-400" />
-                  </div>
-                  <p className="text-[10px] uppercase tracking-wider text-sky-400 font-bold">Jugadores Activos</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'Sedes', value: activosSedes, tone: 'text-sky-400', title: undefined as string | undefined, cfg: { title: 'Jugadores Activos · Sedes', filtro: 'activos' as const, clinics: 0 as const, grupo: 'normal' as const } },
-                    { label: 'Keepers', value: activosKeepers, tone: 'text-cyan-300', title: 'Keepers y porteros', cfg: { title: 'Jugadores Activos · Keepers/Porteros', filtro: 'activos' as const, clinics: 0 as const, grupo: 'keepers' as const } },
-                    { label: 'Futsal', value: activosFutsal, tone: 'text-fuchsia-300', title: 'Sedes de futsal / categorías futsal (cuentan como sede normal)', cfg: { title: 'Jugadores Activos · Futsal', filtro: 'activos' as const, clinics: 0 as const, grupo: 'futsal' as const } },
-                    { label: 'Clinics F.', value: activosClinicsFutsal, tone: 'text-slate-300', title: 'Clinics Futsal (sede futsal + categoría clinics)', cfg: { title: 'Jugadores Activos · Clinics Futsal', filtro: 'activos' as const, grupo: 'clinicsfutsal' as const } },
-                    { label: 'Venta púb.', value: activosVentaPublico, tone: 'text-slate-300', title: 'Registros de venta al público (no cuentan en el total de sedes)', cfg: { title: 'Jugadores Activos · Venta al Público', filtro: 'activos' as const, grupo: 'ventapublico' as const } },
-                    { label: 'Clinics', value: activosClinics, tone: 'text-slate-300', title: undefined, cfg: { title: 'Jugadores Activos · Clinics', filtro: 'activos' as const, clinics: 1 as const } },
-                  ].map((seg) => (
-                    <button
-                      key={seg.label}
-                      type="button"
-                      title={seg.title}
-                      onClick={() => setModal({ subtitle: temporadaNombre, ...seg.cfg })}
-                      className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
-                    >
-                      <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">{seg.label}</p>
-                      <p className={`text-lg font-black ${seg.tone}`}>{seg.value}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              )}
-              <div className="flex-1 md:flex-none bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl min-w-[210px]">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <div className="bg-emerald-500/20 p-1.5 rounded-lg">
-                    <UserCheck size={16} className="text-emerald-400" />
-                  </div>
-                  <p className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Total Inscritos</p>
-                  <span className="text-[9px] text-slate-500 italic">incluye becados</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <AreaInscritos
-                    label="Sedes"
-                    tone="text-emerald-400"
-                    total={inscritosNormal}
-                    nuevas={inscritosNormal - reinscritosNormal}
-                    reinsc={reinscritosNormal}
-                    onTotal={() => setModal({ title: 'Inscritos · Sedes', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'normal' })}
-                    onNuevas={() => setModal({ title: 'Inscripciones Nuevas · Sedes', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'nueva' })}
-                    onReinsc={() => setModal({ title: 'Reinscripciones · Sedes', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'reinscripcion' })}
-                  />
-                  <AreaInscritos
-                    label="Keepers"
-                    tone="text-cyan-300"
-                    total={inscritosKeepers}
-                    nuevas={inscritosKeepers - reinscritosKeepers}
-                    reinsc={reinscritosKeepers}
-                    onTotal={() => setModal({ title: 'Inscritos · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'keepers' })}
-                    onNuevas={() => setModal({ title: 'Inscripciones Nuevas · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'nueva' })}
-                    onReinsc={() => setModal({ title: 'Reinscripciones · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'reinscripcion' })}
-                  />
-                  <AreaInscritos
-                    label="Futsal"
-                    tone="text-fuchsia-300"
-                    total={inscritosFutsal}
-                    nuevas={inscritosFutsal - reinscritosFutsal}
-                    reinsc={reinscritosFutsal}
-                    onTotal={() => setModal({ title: 'Inscritos · Futsal', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'futsal' })}
-                    onNuevas={() => setModal({ title: 'Inscripciones Nuevas · Futsal', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'nueva' })}
-                    onReinsc={() => setModal({ title: 'Reinscripciones · Futsal', subtitle: temporadaNombre, filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'reinscripcion' })}
-                  />
-                </div>
-                {/* Avance de inscripción sobre la plantilla elegible (normal + keepers + futsal). */}
-                <div className="mt-2">
-                  <Meter
-                    valor={inscritosSedes}
-                    total={activosElegibles}
-                    etiqueta={`${inscritosSedes} de ${activosElegibles} activos`}
-                  />
-                </div>
-              </div>
-              <BecadosKpi
-                rebanadas={rebanadasBecas(becasTotal, inscritosSedes, coloresBeca)}
-                inscritos={inscritosSedes}
-                nuevas={grupoBecados(becasNuevas, inscritosSedes - reinscritosSedes, coloresBeca, {
-                  keepers: becadosNuevasKeepers,
-                  futsal: becadosNuevasFutsal,
-                  clinicsFutsal: becadosNuevasClinicsFutsal,
-                })}
-                reinsc={grupoBecados(becasReinsc, reinscritosSedes, coloresBeca, {
-                  keepers: becadosReinscKeepers,
-                  futsal: becadosReinscFutsal,
-                  clinicsFutsal: becadosReinscClinicsFutsal,
-                })}
-                detalleCompleto={becasTotal}
-                onRebanada={(etiqueta) => setModal({
-                  title: etiqueta === 'Sin beca' ? 'Inscritos sin beca' : `Becados · ${etiqueta}`,
-                  subtitle: temporadaNombre,
-                  filtro: etiqueta === 'Sin beca' ? 'inscritos' : 'becados',
-                  clinics: 0,
-                })}
-                onNuevas={() => setModal({ title: 'Becados · Inscripciones Nuevas', subtitle: temporadaNombre, filtro: 'becados', clinics: 0, tipoInscripcion: 'nueva' })}
-                onReinsc={() => setModal({ title: 'Becados · Reinscripciones', subtitle: temporadaNombre, filtro: 'becados', clinics: 0, tipoInscripcion: 'reinscripcion' })}
-              />
-              <div className="flex-1 md:flex-none bg-rose-500/10 border border-rose-500/20 px-4 py-2 rounded-xl">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <div className="bg-rose-500/20 p-1.5 rounded-lg">
-                    <Users size={16} className="text-rose-400" />
-                  </div>
-                  <p className="text-[10px] uppercase tracking-wider text-rose-400 font-bold">Total Bajas</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setModal({ title: 'Bajas · Sedes', subtitle: temporadaNombre, filtro: 'bajas', grupo: 'normal' })}
-                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
-                  >
-                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Sedes</p>
-                    <p className="text-lg font-black text-rose-400">{bajasNormal}</p>
-                  </button>
-                  <button
-                    type="button"
-                    title="Keepers/porteros dados de baja"
-                    onClick={() => setModal({ title: 'Bajas · Keepers/Porteros', subtitle: temporadaNombre, filtro: 'bajas', grupo: 'keepers' })}
-                    className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
-                  >
-                    <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Keepers</p>
-                    <p className="text-lg font-black text-cyan-300">{bajasKeepers}</p>
-                  </button>
-                    <button
-                      type="button"
-                      title="Futsal dados de baja"
-                      onClick={() => setModal({ title: 'Bajas · Futsal', subtitle: temporadaNombre, filtro: 'bajas', grupo: 'futsal' })}
-                      className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
-                    >
-                      <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Futsal</p>
-                      <p className="text-lg font-black text-fuchsia-300">{bajasFutsal}</p>
-                    </button>
-                    <button
-                      type="button"
-                      title="Clinics Futsal dados de baja"
-                      onClick={() => setModal({ title: 'Bajas · Clinics Futsal', subtitle: temporadaNombre, filtro: 'bajas', grupo: 'clinicsfutsal' })}
-                      className="bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg px-2 py-1 text-left transition-all"
-                    >
-                      <p className="text-[8px] uppercase font-black text-slate-400 tracking-wider">Clinics F.</p>
-                      <p className="text-lg font-black text-rose-300">{bajasClinicsFutsal}</p>
-                    </button>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModal({ title: 'Con Pagos sin Inscripción', subtitle: temporadaNombre, filtro: 'sin-inscripcion' })}
-                title="Pagaron mensualidad de los meses de la temporada pero no la inscripción"
-                className="flex-1 md:flex-none bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 px-4 py-2 rounded-xl flex items-center gap-3 text-left transition-all cursor-pointer"
-              >
-                <div className="bg-amber-500/20 p-2 rounded-lg">
-                  <AlertTriangle size={18} className="text-amber-400" />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-amber-400 font-bold">Sin Inscripción</p>
-                  <p className="text-xl font-bold">{sedes.reduce((acc, curr) => acc + (curr.SinInscripcion || 0), 0)}</p>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Sedes Grid */}
+          {/* ── KPIs a pantalla completa (el desglose por sede se abre desde cada panel) ── */}
           {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {[...Array(8)].map((_, i) => (
-                <div key={i} className="h-40 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
-              ))}
-            </div>
-          ) : filteredSedes.length > 0 ? (
-            <div className="space-y-12">
-              {/* Active Sedes */}
-              {sedesWithInscritos.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-4 mb-8">
-                    <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400/80 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">Sedes con Jugadores</h2>
-                    <div className="h-px flex-1 bg-gradient-to-r from-blue-500/20 to-transparent" />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {sedesWithInscritos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} temporadaNombre={temporadaNombre} ocultarActivos={ocultarActivos} onOpenPlayers={setModal} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Inactive Sedes */}
-              {sedesWithoutInscritos.length > 0 && (
-                <div className="pt-8">
-                  <div className="flex items-center gap-4 mb-8">
-                    <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500/80 bg-white/5 px-3 py-1 rounded-full border border-white/10">Sin Jugadores</h2>
-                    <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-50 hover:opacity-100 transition-all duration-500">
-                    {sedesWithoutInscritos.map((sede) => (
-                      <SedeCard key={sede.IdSede} sede={sede} temporadaId={temporadaId} temporadaNombre={temporadaNombre} ocultarActivos={ocultarActivos} onOpenPlayers={setModal} />
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+                <div className="xl:col-span-7 h-96 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+                <div className="xl:col-span-5 h-96 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-5">
+                <div className="md:col-span-2 xl:col-span-5 h-72 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+                <div className="xl:col-span-4 h-72 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+                <div className="xl:col-span-3 h-72 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+              </div>
             </div>
           ) : (
-            <div className="text-center py-20 bg-white/5 rounded-3xl border border-dashed border-white/20">
-              <MapPin size={48} className="mx-auto text-slate-500 mb-4 opacity-20" />
-              <h3 className="text-xl font-bold text-slate-300">No se encontraron sedes</h3>
-              <p className="text-slate-500 mt-2">Prueba con un término de búsqueda diferente</p>
+            <div className="space-y-5">
+              {/* Fila protagonista: inscritos (la pregunta principal) y su reparto de becas. */}
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+                <div className="xl:col-span-7">
+                  <TarjetaInscritos a={totales} abrir={abrirGlobal} verSedes={() => setDetalleKpi('inscritos')} />
+                </div>
+                <div className="xl:col-span-5">
+                  <TarjetaBecados a={totales} colores={coloresBeca} abrir={abrirGlobal} verSedes={() => setDetalleKpi('becados')} />
+                </div>
+              </div>
+              {/* Segunda fila: plantilla activa, bajas y la alerta de sin inscripción.
+                  "Activos" se oculta en la temporada en curso (ver `esTemporadaActiva`)
+                  y las otras dos tarjetas se ensanchan para ocupar su lugar. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-5">
+                {!esTemporadaActiva && (
+                  <div className="md:col-span-2 xl:col-span-5">
+                    <TarjetaActivos a={totales} abrir={abrirGlobal} verSedes={() => setDetalleKpi('activos')} />
+                  </div>
+                )}
+                <div className={esTemporadaActiva ? 'xl:col-span-7' : 'xl:col-span-4'}>
+                  <TarjetaBajas a={totales} abrir={abrirGlobal} verSedes={() => setDetalleKpi('bajas')} />
+                </div>
+                <div className={esTemporadaActiva ? 'xl:col-span-5' : 'xl:col-span-3'}>
+                  <TarjetaSinInscripcion a={totales} abrir={abrirGlobal} verSedes={() => setDetalleKpi('sin-inscripcion')} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Solo aparece si hay algo mal capturado: una sede de keepers no debería
+              tener a nadie que no sea portero. Estos quedan fuera de los conteos de
+              arriba, así que sin este aviso serían invisibles. */}
+          {!isLoading && fueraDeLugar.length > 0 && (
+            <div className="mt-6 bg-red-500/10 border border-red-500/40 rounded-2xl px-4 py-3">
+              <p className="text-xs text-red-300 font-black uppercase tracking-wider flex items-center gap-2 mb-2">
+                <AlertTriangle size={14} className="text-red-400" />
+                No son porteros
+              </p>
+              <p className="text-[11px] text-slate-400 mb-2">
+                Dados de alta en una sede de keepers con categoría que no es de portero. No se cuentan en ningún indicador.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {fueraDeLugar.map((s) => (
+                  <button
+                    key={s.IdSede}
+                    type="button"
+                    onClick={() => setModal({
+                      title: 'No son porteros',
+                      subtitle: [s.Sede, temporadaNombre].filter(Boolean).join(' · '),
+                      filtro: 'fuera-de-lugar',
+                      sedeId: s.IdSede,
+                      categoriaHref: categoriaHref(s),
+                    })}
+                    className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 rounded-lg px-2.5 py-1.5 transition-all"
+                  >
+                    <span className="text-[10px] font-bold text-red-200">{s.Sede}</span>
+                    <span className="text-sm font-black text-red-400">{s.FueraDeLugar}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
+
+        {/* ── Modal: el mismo KPI, dividido por sedes ── */}
+        {detalleKpi && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[120] p-4">
+            <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+              {/* Header */}
+              <div className="p-5 border-b border-white/5 flex items-center justify-between bg-white/5">
+                <div className="flex items-center gap-4">
+                  <div className="bg-blue-600/20 p-2.5 rounded-xl border border-blue-500/20">
+                    <MapPin size={20} className="text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-white">{KPI_INFO[detalleKpi].titulo} · Detalle por sedes</h3>
+                    <p className="text-xs text-slate-400">{temporadaNombre}</p>
+                  </div>
+                </div>
+                <button onClick={() => setDetalleKpi(null)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-5">
+                {sedesDetalle.length === 0 ? (
+                  <div className="h-56 flex flex-col items-center justify-center gap-3 text-slate-500">
+                    <MapPin size={44} className="opacity-20" />
+                    <p className="text-lg font-black">Sin registros</p>
+                    <p className="text-sm opacity-60">Ninguna sede tiene datos de este indicador.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                    {sedesDetalle.map((sede) => (
+                      <div
+                        key={sede.IdSede}
+                        className={`bg-white/5 border border-white/10 rounded-2xl p-4 ${
+                          KPI_INFO[detalleKpi].medida(sede) === 0 ? 'opacity-50 hover:opacity-100 transition-opacity' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="bg-blue-500/10 text-blue-400 p-2 rounded-xl border border-blue-500/10 flex-shrink-0">
+                              <MapPin size={15} />
+                            </div>
+                            <h4 className="text-sm font-black text-white truncate">{sede.Sede}</h4>
+                            {(sede.EsClinics || 0) === 1 && (
+                              <span className="text-[9px] font-black uppercase tracking-widest text-sky-300 bg-sky-500/10 border border-sky-500/25 px-2 py-0.5 rounded-md flex-shrink-0">Clinics</span>
+                            )}
+                          </div>
+                          <Link
+                            href={categoriaHref(sede)}
+                            className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors flex-shrink-0"
+                          >
+                            <span className="text-[9px] font-black uppercase tracking-widest">Ver Categorías</span>
+                            <ChevronRight size={13} />
+                          </Link>
+                        </div>
+                        {tarjetaDe(detalleKpi, calcularAgregados([sede]), abrirSede(sede))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center text-[11px] text-slate-500 px-6">
+                <p>{sedesDetalle.length} sede(s) · clic en cualquier cifra para ver a los jugadores</p>
+                <p>Las sedes sin registros de este indicador aparecen atenuadas al final</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <PlayersModal
           config={modal}
@@ -761,163 +1027,5 @@ export default function InscripcionesSedesPage() {
         />
       </main>
     </DashboardLayout>
-  );
-}
-
-function SedeCard({
-  sede,
-  temporadaId,
-  temporadaNombre,
-  ocultarActivos,
-  onOpenPlayers,
-}: {
-  sede: SedeSummary;
-  temporadaId: number | null;
-  temporadaNombre?: string;
-  /** En la última temporada no se muestra la fila de plantilla activa. */
-  ocultarActivos: boolean;
-  onOpenPlayers: (config: PlayersModalConfig) => void;
-}) {
-  const categoriaHref = `/inscripciones/${sede.IdSede}${temporadaId ? `?temporada=${temporadaId}` : ''}`;
-  const becados = sede.BecasDetail ? sede.BecasDetail.split(',').filter(Boolean).length : 0;
-  const sinInscripcion = sede.SinInscripcion || 0;
-
-  /* Las tres filas abren el modal, así que la tarjeta ya no puede ser un <Link>
-     envolvente (no se pueden anidar botones dentro de un enlace). El acceso al
-     drill-down por categorías queda en el encabezado y en el pie. */
-  const open = (filtro: PlayersModalConfig['filtro'], title: string) =>
-    onOpenPlayers({
-      title,
-      subtitle: [sede.Sede, temporadaNombre].filter(Boolean).join(' · '),
-      filtro,
-      sedeId: sede.IdSede,
-      /* La vista por categorías se arma con los inscritos, así que la liga no
-         corresponde para el corte de "sin inscripción". */
-      categoriaHref: filtro === 'sin-inscripcion' ? undefined : categoriaHref,
-    });
-
-  const rowClass =
-    'w-full text-left bg-white/[0.03] hover:bg-white/[0.07] p-3 rounded-lg border border-white/5 hover:border-white/15 transition-all cursor-pointer';
-
-  return (
-    <div className="group relative bg-white/5 hover:bg-white/[0.08] border border-white/10 hover:border-blue-500/30 rounded-2xl transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden h-full backdrop-blur-sm">
-      <div className="absolute -inset-24 bg-blue-600/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
-
-      <div className="p-5 relative z-10 h-full flex flex-col">
-        <Link href={categoriaHref} className="block">
-          <div className="mb-4 flex justify-between items-center">
-            <div className="bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 border border-blue-500/10">
-              <MapPin size={18} />
-            </div>
-            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-              Sede
-            </div>
-          </div>
-
-          <h3 className="text-lg font-black mb-4 text-slate-200 group-hover:text-white transition-colors line-clamp-1 tracking-tight">
-            {sede.Sede}
-          </h3>
-        </Link>
-
-        <div className="space-y-2">
-          {!ocultarActivos && (
-            <button type="button" onClick={() => open('activos', 'Jugadores Activos')} className={rowClass}>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
-                  <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
-                  Jugadores Activos
-                </span>
-                <span className="text-xl font-black text-sky-400">{sede.Activos}</span>
-              </div>
-            </button>
-          )}
-
-          <button type="button" onClick={() => open('inscritos', 'Jugadores Inscritos')} className={rowClass}>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                Jugadores Inscritos
-              </span>
-              <span className="text-xl font-black text-emerald-400">{sede.Inscritos}</span>
-            </div>
-            <p className="text-[9px] text-slate-500 italic mt-0.5 ml-3.5 leading-tight">incluye becados</p>
-            {/* Avance de inscripción de esta sede sobre su plantilla activa */}
-            <div className="mt-2">
-              <Meter size="xs" valor={sede.Inscritos} total={sede.Activos} etiqueta={`de ${sede.Activos} activos`} />
-            </div>
-          </button>
-
-          <button type="button" onClick={() => open('becados', 'Jugadores Becados')} className={`${rowClass} flex flex-col`}>
-            <div className="w-full flex justify-between items-center">
-              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
-                Jugadores Becados
-              </span>
-              <span className="text-xl font-black text-purple-400">{becados}</span>
-            </div>
-            {sede.BecasDetail && (
-              <p className="text-[10px] text-purple-300/80 font-semibold mt-1 self-start ml-3.5 leading-tight">
-                {formatBecasDetail(sede.BecasDetail)}
-              </p>
-            )}
-          </button>
-
-          <button type="button" onClick={() => open('bajas', 'Jugadores Baja')} className={rowClass}>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
-                <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-                Jugadores Baja
-              </span>
-              <span className="text-xl font-black text-rose-400">{sede.Bajas || 0}</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => open('sin-inscripcion', 'Con Pagos sin Inscripción')}
-            title="Pagaron mensualidad de los meses de la temporada pero no la inscripción"
-            className={`${rowClass} ${sinInscripcion > 0 ? 'ring-1 ring-amber-500/25' : ''}`}
-          >
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-slate-400 flex items-center gap-2 font-medium uppercase tracking-wider">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
-                Con Pagos sin Inscripción
-              </span>
-              <span className="text-xl font-black text-amber-400">{sinInscripcion}</span>
-            </div>
-          </button>
-
-          {/* Solo aparece si hay algo mal capturado: una sede de keepers no debería
-              tener a nadie que no sea portero. Estos quedan fuera de los conteos de
-              arriba, así que sin este aviso serían invisibles. */}
-          {(sede.FueraDeLugar || 0) > 0 && (
-            <button
-              type="button"
-              onClick={() => open('fuera-de-lugar', 'No son porteros')}
-              title="Están dados de alta en esta sede de keepers pero su categoría no es de portero. No se cuentan en ningún indicador de la sede."
-              className={`${rowClass} ring-1 ring-red-500/40 bg-red-500/10`}
-            >
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-red-300 flex items-center gap-2 font-medium uppercase tracking-wider">
-                  <AlertTriangle size={13} className="text-red-400 flex-shrink-0" />
-                  No son porteros
-                </span>
-                <span className="text-xl font-black text-red-400">{sede.FueraDeLugar}</span>
-              </div>
-            </button>
-          )}
-        </div>
-
-        <Link
-          href={categoriaHref}
-          className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-blue-400 hover:text-blue-300 transition-colors"
-        >
-          <span className="text-[10px] font-black uppercase tracking-widest">Ver Categorías</span>
-          <ChevronRight size={14} />
-        </Link>
-      </div>
-
-      <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-    </div>
   );
 }
