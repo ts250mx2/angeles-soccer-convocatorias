@@ -23,21 +23,25 @@ export async function GET(request: Request) {
             );
         }
 
+        /* Invitar es traer a alguien de FUERA de la categoría. Los de la categoría ya
+           vienen sembrados en la convocatoria, así que ofrecerlos aquí solo llenaba la
+           lista de nombres que no hacía falta invitar. */
         const query = `
             SELECT IdJugador, Jugador, Categoria
             FROM tblJugadores
             WHERE Status = 0
+            AND Categoria <> ?
             AND IdJugador NOT IN (
                 SELECT IdJugador
                 FROM tblDetalleConvocatorias
                 WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?
             )
-            ORDER BY Jugador ASC
+            ORDER BY Categoria ASC, Jugador ASC
         `;
 
         const [rows] = (await pool.query(
             query,
-            [seasonId, leagueId, categoria, color],
+            [categoria, seasonId, leagueId, categoria, color],
         )) as [FilaDisponible[], unknown];
 
         /* Todos se pueden invitar. Los que traen adeudo o no tienen inscripción salen
