@@ -11,6 +11,11 @@ import BecasDonut, {
   SIN_BECA_COLOR, BECA_RAMPA, OTRAS_BECAS_COLOR, MAX_NIVELES, type Rebanada,
 } from '@/components/BecasDonut';
 import { GRUPO_COLOR, VerSedesBtn, BarraComposicion, TileGrupo, PanelHeader } from '@/components/KpiPanel';
+import GraficaPastel from '@/components/GraficaPastel';
+
+/** Colores del reparto por tipo de inscripción; los mismos de sus dos botones. */
+const NUEVAS_COLOR = '#34d399';   // emerald-400
+const REINSC_COLOR = '#fbbf24';   // amber-400
 
 interface SedeSummary {
   IdSede: number;
@@ -190,6 +195,7 @@ interface Agregados {
   inscritosSedes: number;
   inscritosKeepers: number;
   inscritosFutsal: number;
+  inscritosClinicsFutsal: number;
   inscritosNormal: number;
   reinscritosSedes: number;
   reinscritosKeepers: number;
@@ -243,12 +249,15 @@ function calcularAgregados(lista: SedeSummary[]): Agregados {
   const inscritosSedes = sumaPorTipo(0, s => s.Inscritos);
   const inscritosKeepers = sumaPorTipo(0, s => s.InscritosKeepers);
   const inscritosFutsal = sumaPorTipo(0, s => s.InscritosFutsal);
-  const inscritosClinicsFutsal = sumTodos(s => s.InscritosClinicsFutsal);
+  /* Los restandos se miden en el MISMO alcance que la base (sedes no-clinics). Con
+     sumTodos se restaban clinics futsal de sedes de clinics, que la base nunca incluyó:
+     al reducir el cálculo a una sola sede eso dejaba "Sedes" en negativo. */
+  const inscritosClinicsFutsal = sumaPorTipo(0, s => s.InscritosClinicsFutsal);
   const inscritosNormal = inscritosSedes - inscritosKeepers - inscritosFutsal - inscritosClinicsFutsal;
   // Reinscritos por área (ya tenían inscripción antes); "nuevas" = inscritos - reinscritos.
   const reinscritosKeepers = sumaPorTipo(0, s => s.ReinscritosKeepers);
   const reinscritosFutsal = sumaPorTipo(0, s => s.ReinscritosFutsal);
-  const reinscritosClinicsFutsal = sumTodos(s => s.ReinscritosClinicsFutsal);
+  const reinscritosClinicsFutsal = sumaPorTipo(0, s => s.ReinscritosClinicsFutsal);
   const reinscritosSedes = sumaPorTipo(0, s => s.Reinscritos);
   const reinscritosNormal = reinscritosSedes - reinscritosKeepers - reinscritosFutsal - reinscritosClinicsFutsal;
   /* Becas del KPI: se juntan solo las de sedes normales, que es de donde salen las
@@ -273,7 +282,7 @@ function calcularAgregados(lista: SedeSummary[]): Agregados {
      cociente se pasaba de 100%. */
   const plantillaElegible = sumaPorTipo(0, s => s.Plantilla)
     - sumaPorTipo(0, s => s.PlantillaVentaPublico)
-    - sumTodos(s => s.PlantillaClinicsFutsal);
+    - sumaPorTipo(0, s => s.PlantillaClinicsFutsal);
   const plantillaKeepers = sumaPorTipo(0, s => s.PlantillaKeepers);
   // Bajas separando keepers, futsal y clinics futsal.
   const bajasKeepers = sumTodos(s => s.BajasKeepers);
@@ -283,7 +292,7 @@ function calcularAgregados(lista: SedeSummary[]): Agregados {
 
   return {
     activosSedes, activosKeepers, activosFutsal, activosClinicsFutsal, activosVentaPublico, activosClinics,
-    inscritosSedes, inscritosKeepers, inscritosFutsal, inscritosNormal,
+    inscritosSedes, inscritosKeepers, inscritosFutsal, inscritosClinicsFutsal, inscritosNormal,
     reinscritosSedes, reinscritosKeepers, reinscritosFutsal, reinscritosNormal,
     becasTotal, becasNuevas, becasReinsc,
     becadosNuevasKeepers, becadosNuevasFutsal, becadosNuevasClinicsFutsal,
@@ -452,6 +461,7 @@ function AreaInscritos({ label, color, total, nuevas, reinsc, pctDelTotal, barra
   onReinsc: () => void;
 }) {
   const den = nuevas + reinsc;
+  const pct = (n: number) => (den > 0 ? Math.round((n / den) * 100) : 0);
   return (
     <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 flex flex-col gap-2.5">
       <button type="button" onClick={onTotal} className="text-left group">
@@ -464,20 +474,24 @@ function AreaInscritos({ label, color, total, nuevas, reinsc, pctDelTotal, barra
           {pctDelTotal !== undefined && <span className="text-[10px] font-bold text-slate-500 tabular-nums">{pctDelTotal}% del total</span>}
         </span>
       </button>
-      <div>
-        {/* Reparto nuevas/reinscripciones: la barra y las dos cifras cuentan lo mismo. */}
-        {den > 0 && (
-          <div className="h-1.5 rounded-full overflow-hidden flex bg-white/5">
-            <div className="bg-emerald-400" style={{ width: `${(nuevas / den) * 100}%` }} />
-            <div className="bg-amber-400" style={{ width: `${(reinsc / den) * 100}%` }} />
-          </div>
-        )}
-        <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+      {/* Reparto nuevas/reinscripciones: el pastel y las dos cifras cuentan lo mismo.
+          El pastel da la proporción de un vistazo y los botones el valor exacto. */}
+      <div className="flex items-center gap-2.5">
+        <GraficaPastel
+          tamano={46}
+          unidad={`inscritos de ${label}`}
+          total={den}
+          rebanadas={[
+            { etiqueta: 'Nuevas', cantidad: nuevas, color: NUEVAS_COLOR },
+            { etiqueta: 'Reinscripciones', cantidad: reinsc, color: REINSC_COLOR },
+          ]}
+        />
+        <div className="grid grid-cols-2 gap-1.5 flex-1 min-w-0">
           <button
             type="button"
             onClick={onNuevas}
-            title="Inscripciones nuevas: es la primera inscripción histórica del jugador"
-            className="bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/20 rounded-lg px-2 py-1 text-left transition-all"
+            title={`Inscripciones nuevas de ${label}: es la primera inscripción histórica del jugador. ${nuevas} de ${den} (${pct(nuevas)}%).`}
+            className="bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/20 rounded-lg px-2 py-1 text-left transition-all overflow-hidden"
           >
             <p className="text-[9px] uppercase font-black text-emerald-300/80 tracking-wider leading-none">Nuevas</p>
             <p className="text-lg font-black text-emerald-300 leading-tight tabular-nums">{nuevas}</p>
@@ -485,8 +499,8 @@ function AreaInscritos({ label, color, total, nuevas, reinsc, pctDelTotal, barra
           <button
             type="button"
             onClick={onReinsc}
-            title="Reinscripciones: el jugador ya tenía inscripción en una temporada anterior"
-            className="bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/20 rounded-lg px-2 py-1 text-left transition-all"
+            title={`Reinscripciones de ${label}: el jugador ya tenía inscripción en una temporada anterior. ${reinsc} de ${den} (${pct(reinsc)}%).`}
+            className="bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/20 rounded-lg px-2 py-1 text-left transition-all overflow-hidden"
           >
             <p className="text-[9px] uppercase font-black text-amber-300/80 tracking-wider leading-none">Reinsc.</p>
             <p className="text-lg font-black text-amber-300 leading-tight tabular-nums">{reinsc}</p>
@@ -544,6 +558,62 @@ function TarjetaInscritos({ a, abrir, verSedes }: { a: Agregados; abrir: Abrir; 
   const total = a.inscritosSedes;
   const pctDe = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
   const avance = a.plantillaElegible > 0 ? Math.round((total / a.plantillaElegible) * 100) : 0;
+
+  /* Las tres áreas alimentan a la vez el pastel de composición, su leyenda y las
+     tarjetas de abajo. Al salir de una sola lista, las tres vistas no pueden discrepar. */
+  const areas: {
+    label: string; color: string; total: number; nuevas: number; reinsc: number;
+    barra?: { base: number; sufijo: string };
+    cfgTotal: PlayersModalConfig; cfgNuevas: PlayersModalConfig; cfgReinsc: PlayersModalConfig;
+  }[] = [
+    {
+      label: 'Sedes', color: GRUPO_COLOR.sedes,
+      total: a.inscritosNormal,
+      nuevas: a.inscritosNormal - a.reinscritosNormal,
+      reinsc: a.reinscritosNormal,
+      cfgTotal: { title: 'Inscritos · Sedes', filtro: 'inscritos', clinics: 0, grupo: 'normal' },
+      cfgNuevas: { title: 'Inscripciones Nuevas · Sedes', filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'nueva' },
+      cfgReinsc: { title: 'Reinscripciones · Sedes', filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'reinscripcion' },
+    },
+    {
+      label: 'Keepers', color: GRUPO_COLOR.keepers,
+      total: a.inscritosKeepers,
+      nuevas: a.inscritosKeepers - a.reinscritosKeepers,
+      reinsc: a.reinscritosKeepers,
+      barra: { base: a.plantillaKeepers, sufijo: 'keepers' },
+      cfgTotal: { title: 'Inscritos · Keepers/Porteros', filtro: 'inscritos', clinics: 0, grupo: 'keepers' },
+      cfgNuevas: { title: 'Inscripciones Nuevas · Keepers/Porteros', filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'nueva' },
+      cfgReinsc: { title: 'Reinscripciones · Keepers/Porteros', filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'reinscripcion' },
+    },
+    {
+      label: 'Futsal', color: GRUPO_COLOR.futsal,
+      total: a.inscritosFutsal,
+      nuevas: a.inscritosFutsal - a.reinscritosFutsal,
+      reinsc: a.reinscritosFutsal,
+      cfgTotal: { title: 'Inscritos · Futsal', filtro: 'inscritos', clinics: 0, grupo: 'futsal' },
+      cfgNuevas: { title: 'Inscripciones Nuevas · Futsal', filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'nueva' },
+      cfgReinsc: { title: 'Reinscripciones · Futsal', filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'reinscripcion' },
+    },
+  ];
+
+  /* Rebanadas del pastel: las tres áreas más el resto que el panel no detalla (los
+     clinics futsal, que quedan fuera del adeudo). Sin ese cuarto pedazo el pastel
+     mostraría un hueco sin explicación, porque las tres áreas no suman el total. */
+  const composicion: { label: string; color: string; total: number; cfg: PlayersModalConfig }[] = [
+    ...areas.map((x) => ({ label: x.label, color: x.color, total: x.total, cfg: x.cfgTotal })),
+    ...(a.inscritosClinicsFutsal > 0
+      ? [{
+          label: 'Clinics F.',
+          color: GRUPO_COLOR.clinicsFutsal,
+          total: a.inscritosClinicsFutsal,
+          /* clinics: 0 no es opcional aquí: la cifra solo cuenta sedes no-clinics, así
+             que sin él el listado abriría un universo más amplio que el que el pastel
+             está repartiendo. Sus tres hermanas ya lo llevan. */
+          cfg: { title: 'Inscritos · Clinics Futsal', filtro: 'inscritos' as const, clinics: 0 as const, grupo: 'clinicsfutsal' as const },
+        }]
+      : []),
+  ];
+
   return (
     <div className="h-full bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 flex flex-col">
       <PanelHeader
@@ -566,51 +636,53 @@ function TarjetaInscritos({ a, abrir, verSedes }: { a: Agregados; abrir: Abrir; 
         />
       </div>
 
-      {/* Composición del total por área, con los colores fijos de grupo. */}
-      <BarraComposicion
-        className="mt-4"
-        partes={[
-          { etiqueta: 'Sedes', cantidad: a.inscritosNormal, color: GRUPO_COLOR.sedes },
-          { etiqueta: 'Keepers', cantidad: a.inscritosKeepers, color: GRUPO_COLOR.keepers },
-          { etiqueta: 'Futsal', cantidad: a.inscritosFutsal, color: GRUPO_COLOR.futsal },
-        ]}
-      />
+      {/* Composición del total por área. Va en pastel y no en barra porque son tres
+          segmentos y la pregunta es de reparto; el número exacto y el porcentaje van
+          escritos al lado, que es donde se comparan los valores parecidos. */}
+      <div className="flex items-center gap-4 mt-4">
+        <GraficaPastel
+          tamano={104}
+          unidad="inscritos"
+          total={total}
+          rebanadas={composicion.map((x) => ({ etiqueta: x.label, cantidad: x.total, color: x.color }))}
+        />
+        <div className="min-w-0 flex-1 space-y-1">
+          {composicion.map((x) => (
+            <button
+              key={x.label}
+              type="button"
+              onClick={() => abrir(x.cfg)}
+              title={`${x.label}: ${x.total} de ${total} inscritos (${pctDe(x.total)}%). Clic para ver a los jugadores.`}
+              className="w-full flex items-center gap-2 text-left rounded-lg px-1.5 py-1 hover:bg-white/10 transition-colors"
+            >
+              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: x.color }} />
+              <span className="text-[11px] font-bold text-slate-300 truncate w-16">{x.label}</span>
+              <span className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                <span className="block h-full rounded-full" style={{ width: `${pctDe(x.total)}%`, backgroundColor: x.color }} />
+              </span>
+              <span className="text-xs font-black text-white tabular-nums">{x.total}</span>
+              <span className="text-[10px] text-slate-500 tabular-nums w-8 text-right">{pctDe(x.total)}%</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 flex-1 content-start">
-        <AreaInscritos
-          label="Sedes"
-          color={GRUPO_COLOR.sedes}
-          total={a.inscritosNormal}
-          nuevas={a.inscritosNormal - a.reinscritosNormal}
-          reinsc={a.reinscritosNormal}
-          pctDelTotal={pctDe(a.inscritosNormal)}
-          onTotal={() => abrir({ title: 'Inscritos · Sedes', filtro: 'inscritos', clinics: 0, grupo: 'normal' })}
-          onNuevas={() => abrir({ title: 'Inscripciones Nuevas · Sedes', filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'nueva' })}
-          onReinsc={() => abrir({ title: 'Reinscripciones · Sedes', filtro: 'inscritos', clinics: 0, grupo: 'normal', tipoInscripcion: 'reinscripcion' })}
-        />
-        <AreaInscritos
-          label="Keepers"
-          color={GRUPO_COLOR.keepers}
-          total={a.inscritosKeepers}
-          nuevas={a.inscritosKeepers - a.reinscritosKeepers}
-          reinsc={a.reinscritosKeepers}
-          pctDelTotal={pctDe(a.inscritosKeepers)}
-          barra={{ base: a.plantillaKeepers, sufijo: 'keepers' }}
-          onTotal={() => abrir({ title: 'Inscritos · Keepers/Porteros', filtro: 'inscritos', clinics: 0, grupo: 'keepers' })}
-          onNuevas={() => abrir({ title: 'Inscripciones Nuevas · Keepers/Porteros', filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'nueva' })}
-          onReinsc={() => abrir({ title: 'Reinscripciones · Keepers/Porteros', filtro: 'inscritos', clinics: 0, grupo: 'keepers', tipoInscripcion: 'reinscripcion' })}
-        />
-        <AreaInscritos
-          label="Futsal"
-          color={GRUPO_COLOR.futsal}
-          total={a.inscritosFutsal}
-          nuevas={a.inscritosFutsal - a.reinscritosFutsal}
-          reinsc={a.reinscritosFutsal}
-          pctDelTotal={pctDe(a.inscritosFutsal)}
-          onTotal={() => abrir({ title: 'Inscritos · Futsal', filtro: 'inscritos', clinics: 0, grupo: 'futsal' })}
-          onNuevas={() => abrir({ title: 'Inscripciones Nuevas · Futsal', filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'nueva' })}
-          onReinsc={() => abrir({ title: 'Reinscripciones · Futsal', filtro: 'inscritos', clinics: 0, grupo: 'futsal', tipoInscripcion: 'reinscripcion' })}
-        />
+        {areas.map((x) => (
+          <AreaInscritos
+            key={x.label}
+            label={x.label}
+            color={x.color}
+            total={x.total}
+            nuevas={x.nuevas}
+            reinsc={x.reinsc}
+            pctDelTotal={pctDe(x.total)}
+            barra={x.barra}
+            onTotal={() => abrir(x.cfgTotal)}
+            onNuevas={() => abrir(x.cfgNuevas)}
+            onReinsc={() => abrir(x.cfgReinsc)}
+          />
+        ))}
       </div>
       {verSedes && <VerSedesBtn onClick={verSedes} />}
     </div>
