@@ -20,7 +20,8 @@ export interface JugadorConvocatoria {
   EsConvocado: number;
   EsEliminado: number;
   EsInvitado: number;
-  Beca: string | null;
+  /** Porcentaje de BecaLigas, el descuento que aplica a ligas y copas. */
+  Beca: string | number | null;
   PagoJugador: number;
   CXC: number;
   /** Tiene inscripción pagada en la temporada. */

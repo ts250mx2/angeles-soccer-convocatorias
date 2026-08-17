@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { sqlFueraDeConvocatorias } from '@/lib/convocatorias-excluidas';
 
-export async function GET(request: Request) {
+export async function GET() {
     try {
         // Get current season
         const [seasonRows] = await pool.query(
             'SELECT IdTemporada FROM tblTemporadas WHERE EsActiva = 1 LIMIT 1'
-        );
+        ) as unknown as [Array<{ IdTemporada: number }>, unknown];
 
         if (!Array.isArray(seasonRows) || seasonRows.length === 0) {
             return NextResponse.json(
@@ -15,12 +16,12 @@ export async function GET(request: Request) {
             );
         }
 
-        const currentSeasonId = (seasonRows[0] as any).IdTemporada;
+        const currentSeasonId = seasonRows[0].IdTemporada;
 
         /* Quien tiene acceso a Convocatorias ve TODAS las de la temporada, no solo las
            suyas. Antes se filtraba por IdProfesor a quien no fuera administrador, y eso
            dejaba a un entrenador sin manera de ver el resto del torneo. */
-        const queryParams: any[] = [currentSeasonId];
+        const queryParams: unknown[] = [currentSeasonId];
 
         const query = `
             SELECT 
@@ -64,6 +65,11 @@ export async function GET(request: Request) {
                 AND A.Categoria = PAGOS.Categoria
                 AND A.Color = PAGOS.Color
             WHERE A.IdTemporada = ? AND A.Status = 0
+              -- Ligas y categorías que no se convocan desde este módulo: ver
+              -- @/lib/convocatorias-excluidas. Las filas siguen en la base; lo que se
+              -- va es su presencia en esta pantalla.
+              AND NOT ${sqlFueraDeConvocatorias('C.Liga')}
+              AND NOT ${sqlFueraDeConvocatorias('A.Categoria')}
             GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, A.Color, A.IdProfesor, U.Usuario, B.Temporada, C.Liga, 
                      A.FechaInicio, A.FechaFin, A.Cerrada, A.CostoLiga, A.CostoProfesor, A.CostoArbitro,
                      A.CantidadJornadas, A.Eliminatoria, PAGOS.TotalPagos

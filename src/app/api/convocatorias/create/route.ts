@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { crearConvocatoria } from '@/lib/convocatorias-crear';
+import { fueraDeConvocatorias } from '@/lib/convocatorias-excluidas';
 
 export async function POST(request: Request) {
     try {
@@ -13,21 +14,20 @@ export async function POST(request: Request) {
             );
         }
 
-        /* Clinics no juega liga ni copa. El selector de categorías ya no las ofrece, pero
-           eso es comodidad de pantalla: quien decide es el servidor, y aquí se corta
-           tanto por categoría como por liga. */
+        /* Hay ligas y categorías que no se convocan desde aquí (clinics, INTERASE). Los
+           selectores ya no las ofrecen, pero eso es comodidad de pantalla: quien decide
+           es el servidor, y aquí se corta tanto por categoría como por liga. */
         const [ligas] = await pool.query(
             'SELECT Liga FROM tblLigas WHERE IdLiga = ?',
             [leagueId]
         ) as unknown as [Array<{ Liga: string | null }>, unknown];
         const nombreLiga = String(ligas[0]?.Liga ?? '');
-        const esClinics = (t: string) => t.toUpperCase().includes('CLINIC');
 
-        if (esClinics(String(categoria)) || esClinics(nombreLiga)) {
+        if (fueraDeConvocatorias(categoria) || fueraDeConvocatorias(nombreLiga)) {
             return NextResponse.json(
                 {
                     success: false,
-                    message: 'Clinics no juega liga ni copa, así que no se le pueden crear convocatorias.',
+                    message: 'Esa liga o categoría no se convoca desde este módulo, así que no se le pueden crear convocatorias.',
                 },
                 { status: 409 }
             );

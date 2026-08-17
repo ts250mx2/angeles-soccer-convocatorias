@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { crearConvocatoria, sincronizarPagados } from '@/lib/convocatorias-crear';
-import { ES_CLINICS_CATEGORIA } from '@/lib/jugador-filtros';
+import { sqlFueraDeConvocatorias } from '@/lib/convocatorias-excluidas';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,9 +21,10 @@ export const dynamic = 'force-dynamic';
  *    estatus. Una convocatoria eliminada existe: se eliminó a propósito y no debe
  *    resucitar sola en la siguiente visita.
  *  - Se trabaja únicamente sobre la temporada activa, que es la que la pantalla muestra.
- *  - Clinics queda fuera, tanto por categoría como por liga: no juega liga ni copa. Si
- *    aparece un pago de ese tipo a nombre de un jugador de clinics, es una captura
- *    equivocada, y crear la convocatoria solo propagaría el error.
+ *  - Las ligas y categorías que no se convocan desde este módulo (clinics, INTERASE)
+ *    quedan fuera, tanto por categoría como por liga: ver @/lib/convocatorias-excluidas.
+ *    Si aparece un pago de ese tipo, crear la convocatoria solo la haría reaparecer en
+ *    cada visita.
  * Es idempotente: correrlo dos veces no duplica nada.
  */
 
@@ -85,8 +86,8 @@ export async function POST() {
                AND PR.IdTipoProducto IN (${TIPO_PRODUCTO_LIGA}, ${TIPO_PRODUCTO_COPA})
                AND PR.IdLiga IS NOT NULL
                AND COALESCE(TRIM(J.Categoria), '') <> ''
-               AND NOT ${ES_CLINICS_CATEGORIA}
-               AND UPPER(L.Liga) NOT LIKE '%CLINIC%'
+               AND NOT ${sqlFueraDeConvocatorias('J.Categoria')}
+               AND NOT ${sqlFueraDeConvocatorias('L.Liga')}
                AND NOT EXISTS (
                    SELECT 1 FROM tblConvocatorias C
                    WHERE C.IdTemporada = P.IdTemporada

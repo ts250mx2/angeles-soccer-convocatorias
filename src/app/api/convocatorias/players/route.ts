@@ -25,8 +25,9 @@ export async function GET(request: Request) {
 
         const selectQuery = `
             SELECT A.IdJugador, B.Jugador, B.Categoria, A.Precio, A.EsConvocado, A.EsEliminado,
-                   -- Beca del jugador, normalizada: '', '0' y NULL son "sin beca".
-                   COALESCE(NULLIF(TRIM(B.Beca), ''), '0') AS Beca,
+                   -- La beca que aplica aquí es BecaLigas, no la de mensualidades: son
+                   -- descuentos distintos y un jugador puede tener uno sin el otro.
+                   COALESCE(B.BecaLigas, 0) AS Beca,
                    CASE WHEN A.Categoria <> B.Categoria THEN 1 ELSE 0 END AS EsInvitado,
                    CASE WHEN A.EsConvocado = 1 THEN COALESCE(PAGOS.TotalPago, 0) ELSE 0 END AS PagoJugador,
                    CASE WHEN A.EsConvocado = 1 THEN (A.Precio - COALESCE(PAGOS.TotalPago, 0)) ELSE 0 END AS CXC

@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { ES_CLINICS_CATEGORIA } from '@/lib/jugador-filtros';
+import { sqlFueraDeConvocatorias } from '@/lib/convocatorias-excluidas';
 
 /**
  * Categorías que se pueden convocar.
  *
- * Clinics queda fuera: no juega liga ni copa, así que ofrecerla en el alta solo permite
- * crear convocatorias que nadie va a usar. Es el mismo criterio con el que la creación
- * automática por ligas y copas pagadas las descarta.
+ * Las categorías que no se convocan desde aquí (clinics, INTERASE) quedan fuera:
+ * ofrecerlas en el alta solo permite crear convocatorias que nadie va a usar. Es el
+ * mismo criterio con el que la creación automática por ligas y copas pagadas las
+ * descarta. Ver @/lib/convocatorias-excluidas.
  */
 export async function GET() {
     try {
@@ -15,7 +16,7 @@ export async function GET() {
             SELECT DISTINCT Categoria AS Categoria
             FROM tblJugadores J
             WHERE J.Categoria IS NOT NULL AND J.Categoria != ''
-              AND NOT ${ES_CLINICS_CATEGORIA}
+              AND NOT ${sqlFueraDeConvocatorias('J.Categoria')}
             ORDER BY Categoria ASC
         `;
 

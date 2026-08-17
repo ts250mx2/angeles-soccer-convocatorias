@@ -204,6 +204,12 @@ export const SECCIONES: SeccionManual[] = [
                 alt: 'Jugadores de la categoría 2011FC en vista de tarjetas, cada uno con su botón verde Convocar y un botón de precio.',
                 pie: 'Al abrir la convocatoria salen todos los jugadores de la categoría. Se convoca uno por uno con el botón verde.',
             },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Qué no aparece aquí',
+                texto: '**Clinics** e **INTERASE** no se convocan desde este módulo: no salen en el listado, no se ofrecen al crear y la creación automática por pagos los salta. Sus cobros siguen intactos y se consultan en **Pagos de Copas y Ligas**.',
+            },
             { tipo: 'subtitulo', texto: 'Precios, pagos y saldo' },
             {
                 tipo: 'parrafo',

@@ -104,8 +104,13 @@ export async function sincronizarPagados(
                AND PR.IdTipoProducto IN (3, 4)
              GROUP BY P.IdJugador
          ) PAG ON PAG.IdJugador = D.IdJugador
+         INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
          SET D.EsConvocado = 1,
-             D.Precio = COALESCE(NULLIF(D.Precio, 0), PAG.Precio, 0)
+             D.Precio = COALESCE(
+                 NULLIF(D.Precio, 0),
+                 ROUND(PAG.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2),
+                 0
+             )
          WHERE D.IdTemporada = ? AND D.IdLiga = ?
            AND D.EsConvocado = 0 AND D.EsEliminado = 0`,
         [seasonId, leagueId, seasonId, leagueId],
