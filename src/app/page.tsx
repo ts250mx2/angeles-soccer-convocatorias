@@ -1,6 +1,9 @@
 "use client";
 import { useRouter } from 'next/navigation';
-import { Search, ChevronDown, History, Info, LayoutGrid, List } from 'lucide-react';
+import {
+  Search, ChevronDown, History, Info, LayoutGrid, List,
+  X, FileSpreadsheet, FileText, UserPlus, Loader2,
+} from 'lucide-react';
 import { useRef } from 'react';
 import { useUser } from '@/contexts/user-context';
 import { useEffect, useState } from 'react';
@@ -57,6 +60,19 @@ interface ConvocatoriaSummary {
 /** URL del escudo de la liga, o null si esa copa o liga no tiene foto cargada. */
 const fotoLiga = (item: Pick<ConvocatoriaSummary, 'IdLiga' | 'TieneFoto' | 'FotoVersion'>): string | null =>
   item.TieneFoto === 1 ? `/api/copas-ligas/foto/${item.IdLiga}?v=${item.FotoVersion ?? '0'}` : null;
+
+const moneda = (n: number): string =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
+
+/** Una de las cuatro cifras del encabezado de la convocatoria. */
+function CifraConvocatoria({ etiqueta, valor, clase }: { etiqueta: string; valor: string; clase: string }) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{etiqueta}</p>
+      <p className={`text-base md:text-lg font-black leading-tight tabular-nums ${clase}`}>{valor}</p>
+    </div>
+  );
+}
 
 export default function Home() {
   const router = useRouter();
@@ -744,7 +760,12 @@ export default function Home() {
 
     if (abriendo) {
       setBusquedaJugador('');
-      setShowOnlyConvocados(item.JugadoresConvocados > 0);
+      /* Siempre apagado al abrir: la pantalla se usa para convocar, y eso se hace desde
+         la plantilla completa. Antes se encendía solo cuando la convocatoria ya tenía
+         gente dentro, y entonces abrir una convocatoria a medias escondía justo a los
+         que faltaban por convocar. Filtrar a los convocados es el paso final, y para
+         eso está el interruptor. */
+      setShowOnlyConvocados(false);
     }
 
     try {
@@ -2120,35 +2141,41 @@ export default function Home() {
 
       {/* Players Modal */}
       {isPlayersModalOpen && selectedConvocatoria && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0f172a] backdrop-blur-sm rounded-lg w-full max-w-6xl h-full md:h-auto max-h-screen md:max-h-[90vh] overflow-hidden shadow-lg flex flex-col">
-            <div className="p-4 md:p-6 border-b border-white/10">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-3 min-w-0">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-50 p-2 md:p-4">
+          <div className="bg-[#0f172a] rounded-2xl w-full max-w-6xl h-full md:h-auto max-h-screen md:max-h-[92vh] overflow-hidden shadow-2xl border border-white/10 flex flex-col">
+
+            {/* ── Encabezado fijo: identidad, cifras, filtros y avisos ──
+                Vive FUERA del área que hace scroll, así que al bajar por la lista de
+                jugadores siguen a la vista el buscador, la alerta y las cifras. Lo único
+                que se desplaza es la tabla, que además deja sus encabezados pegados. */}
+            <div className="flex-shrink-0 border-b border-white/10 bg-white/[0.03]">
+
+              <div className="flex items-start justify-between gap-3 p-4 md:px-5 md:pt-5 md:pb-4">
+                <div className="flex items-center gap-3 md:gap-4 min-w-0">
                   {fotoLiga(selectedConvocatoria) && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={fotoLiga(selectedConvocatoria)!}
                       alt=""
-                      className="w-20 h-20 md:w-24 md:h-24 rounded-xl object-contain bg-slate-950/50 border border-white/10 flex-shrink-0"
+                      className="w-16 h-16 md:w-20 md:h-20 rounded-2xl object-contain bg-slate-950/50 border border-white/10 flex-shrink-0"
                     />
                   )}
                   <div className="min-w-0">
                     {/* La liga en pequeño arriba y la categoría grande: dentro del modal
                         el torneo ya se da por sabido, lo que se consulta es la categoría. */}
-                    <p className="text-[11px] md:text-xs font-bold text-blue-300 uppercase tracking-wide">
+                    <p className="text-[10px] md:text-[11px] font-black text-blue-300 uppercase tracking-[0.15em] truncate">
                       {selectedConvocatoria.Liga}
                     </p>
-                    <h3 className="text-2xl md:text-3xl font-black text-white leading-none tracking-tight flex flex-wrap items-center gap-2">
+                    <h3 className="text-2xl md:text-3xl font-black text-white leading-none tracking-tight flex flex-wrap items-center gap-2 mt-1">
                       {selectedConvocatoria.Categoria}
                       {selectedConvocatoria.Color && (
-                        <span className="text-xs font-normal text-slate-400 bg-white/10 px-2 py-1 rounded border border-white/10">
+                        <span className="text-[10px] font-bold text-slate-300 bg-white/10 px-2 py-1 rounded-md border border-white/10 uppercase tracking-wider">
                           {selectedConvocatoria.Color}
                         </span>
                       )}
                     </h3>
-                    <p className="text-xs md:text-sm text-slate-300 mt-1">
-                      {formatDate(selectedConvocatoria.FechaInicio)} - {formatDate(selectedConvocatoria.FechaFin)}
+                    <p className="text-[11px] md:text-xs text-slate-400 mt-1.5">
+                      {formatDate(selectedConvocatoria.FechaInicio)} — {formatDate(selectedConvocatoria.FechaFin)}
                     </p>
                   </div>
                 </div>
@@ -2159,34 +2186,35 @@ export default function Home() {
                     setPlayers([]);
                     await fetchConvocatorias();
                   }}
-                  className="text-slate-500 hover:text-slate-300 transition-colors p-1"
+                  title="Cerrar"
+                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-all flex-shrink-0"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X size={20} />
                 </button>
               </div>
 
-              <div className="flex flex-col lg:flex-row gap-4 lg:items-center mt-4">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full lg:w-auto">
-                  <div className="text-xs md:text-sm font-medium text-slate-300 bg-white/10 px-3 py-2 rounded-lg text-center">
-                    Conv.: <span className="text-white font-bold">{recordCount}</span>
-                  </div>
-                  <div className="text-xs md:text-sm font-medium text-slate-300 bg-blue-500/10 px-3 py-2 rounded-lg text-center">
-                    Total: <span className="text-blue-300 font-bold text-[10px] md:text-xs">
-                      {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPrice)}
-                    </span>
-                  </div>
-                  <div className="text-xs md:text-sm font-medium text-slate-300 bg-emerald-500/10 px-3 py-2 rounded-lg text-center">
-                    Pagado: <span className="text-emerald-300 font-bold text-[10px] md:text-xs">
-                      {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalPagos)}
-                    </span>
-                  </div>
-                  <div className="text-xs md:text-sm font-medium text-slate-300 bg-rose-500/10 px-3 py-2 rounded-lg text-center">
-                    CXC: <span className="text-rose-300 font-bold text-[10px] md:text-xs">
-                      {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(totalCXC)}
-                    </span>
-                  </div>
+              {/* Las cifras de la convocatoria, arriba y en una sola línea. */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-4 md:px-5">
+                <CifraConvocatoria etiqueta="Convocados" valor={String(recordCount)} clase="text-white" />
+                <CifraConvocatoria etiqueta="Total" valor={moneda(totalPrice)} clase="text-blue-300" />
+                <CifraConvocatoria etiqueta="Pagado" valor={moneda(totalPagos)} clase="text-emerald-300" />
+                <CifraConvocatoria etiqueta="Por cobrar" valor={moneda(totalCXC)} clase="text-rose-300" />
+              </div>
+
+              {/* Buscador, filtros y acciones */}
+              <div className="flex flex-col lg:flex-row lg:items-center gap-3 p-4 md:px-5 md:py-4">
+                <div className="relative flex-1 min-w-[220px]">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Buscar jugador por nombre, ID o categoría..."
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-24 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-blue-500/60 focus:bg-white/[0.07] transition-all"
+                    value={busquedaJugador}
+                    onChange={(e) => setBusquedaJugador(e.target.value)}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-500 tabular-nums">
+                    {sortedPlayers.length}/{players.length}
+                  </span>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 md:gap-4">
@@ -2197,8 +2225,8 @@ export default function Home() {
                       checked={showOnlyConvocados}
                       onChange={(e) => setShowOnlyConvocados(e.target.checked)}
                     />
-                    <div className="w-10 h-5 bg-white/15 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-white/20 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-300 whitespace-nowrap">Solo Convocados</span>
+                    <div className="w-10 h-5 bg-white/15 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500/60 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-white/20 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 transition-colors"></div>
+                    <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-300 whitespace-nowrap">Solo convocados</span>
                   </label>
 
                   <label className="relative inline-flex items-center cursor-pointer group" title="Deja solo a los jugadores con algún porcentaje de beca">
@@ -2208,69 +2236,69 @@ export default function Home() {
                       checked={showOnlyBecados}
                       onChange={(e) => setShowOnlyBecados(e.target.checked)}
                     />
-                    <div className="w-10 h-5 bg-white/15 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-white/20 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                    <div className="w-10 h-5 bg-white/15 peer-focus-visible:ring-2 peer-focus-visible:ring-purple-500/60 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-white/20 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600 transition-colors"></div>
                     <span className="ml-2 text-[10px] md:text-xs font-semibold text-slate-300 whitespace-nowrap">Solo becados</span>
                   </label>
                 </div>
 
                 <div className="flex gap-2 w-full lg:w-auto">
-                  <button onClick={exportPlayersToExcel} className="flex-1 lg:flex-none bg-green-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg shadow-sm">Excel</button>
-                  <button onClick={exportPlayersToPDF} className="flex-1 lg:flex-none bg-red-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg shadow-sm">PDF</button>
-                  <button onClick={handleOpenInviteModal} className="flex-[2] lg:flex-none bg-purple-600 text-white text-[10px] font-bold py-2 px-4 rounded-lg shadow-sm">+ Invitar</button>
+                  <button
+                    onClick={exportPlayersToExcel}
+                    className="flex-1 lg:flex-none inline-flex items-center justify-center gap-1.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/30 text-emerald-200 text-[11px] font-bold py-2 px-3 rounded-xl transition-colors"
+                  >
+                    <FileSpreadsheet size={13} /> Excel
+                  </button>
+                  <button
+                    onClick={exportPlayersToPDF}
+                    className="flex-1 lg:flex-none inline-flex items-center justify-center gap-1.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/30 text-blue-200 text-[11px] font-bold py-2 px-3 rounded-xl transition-colors"
+                  >
+                    <FileText size={13} /> PDF
+                  </button>
+                  <button
+                    onClick={handleOpenInviteModal}
+                    className="flex-[2] lg:flex-none inline-flex items-center justify-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold py-2 px-4 rounded-xl transition-colors shadow-sm"
+                  >
+                    <UserPlus size={13} /> Invitar
+                  </button>
                 </div>
-
               </div>
+
+              {/* Aquí está toda la categoría. Los que traen adeudo o no tienen
+                  inscripción salen en ámbar: se pueden convocar, pero conviene saberlo. */}
+              {sinAlCorriente > 0 && (
+                <div className="mx-4 md:mx-5 mb-4 flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-400/25 text-amber-200">
+                  <Info size={15} className="flex-shrink-0 mt-0.5 text-amber-400" />
+                  <p className="text-[11px] font-semibold leading-relaxed">
+                    {sinAlCorriente} jugador{sinAlCorriente !== 1 ? 'es' : ''} de la categoría
+                    {sinAlCorriente !== 1 ? ' tienen' : ' tiene'} adeudo o no
+                    {sinAlCorriente !== 1 ? ' tienen' : ' tiene'} inscripción pagada en la temporada
+                    (marcados en ámbar). Se pueden convocar igual.
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="flex-1 overflow-auto p-4 md:p-6 bg-white/5">
+            {/* ── Lo único que se desplaza: la lista ──
+                min-h-0 es lo que le permite encogerse dentro del flex y darle a la tabla
+                una altura contra la cual desplazarse; sin él, el hijo crecería y el
+                scroll se saldría del modal. */}
+            <div className="flex-1 min-h-0 p-4 md:p-5 bg-white/5 flex flex-col">
               {isLoadingPlayers ? (
-                <div className="flex items-center justify-center py-12">
-                  <svg className="animate-spin h-8 w-8 text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-400">
+                  <Loader2 size={30} className="animate-spin text-blue-400" />
+                  <p className="text-sm font-bold">Cargando jugadores...</p>
                 </div>
               ) : (
-                <>
-                  {/* Un solo buscador: nombre, id o categoría. */}
-                  <div className="mb-4 flex flex-wrap items-center gap-3">
-                    <input
-                      type="text"
-                      placeholder="Buscar jugador por nombre, ID o categoría..."
-                      className="flex-1 min-w-[240px] bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500 shadow-sm"
-                      value={busquedaJugador}
-                      onChange={(e) => setBusquedaJugador(e.target.value)}
-                    />
-                    <span className="text-xs text-slate-400 font-semibold">
-                      {sortedPlayers.length} de {players.length} jugador{players.length !== 1 ? 'es' : ''}
-                    </span>
-                  </div>
-
-                  {/* Aquí está toda la categoría. Los que traen adeudo o no tienen
-                      inscripción salen en ámbar: se pueden convocar, pero conviene saberlo. */}
-                  {sinAlCorriente > 0 && (
-                    <div className="mb-4 flex items-start gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-400/20 text-amber-200">
-                      <Info size={15} className="flex-shrink-0 mt-0.5 text-amber-400" />
-                      <p className="text-xs font-semibold leading-relaxed">
-                        {sinAlCorriente} jugador{sinAlCorriente !== 1 ? 'es' : ''} de la categoría
-                        {sinAlCorriente !== 1 ? ' tienen' : ' tiene'} adeudo o no
-                        {sinAlCorriente !== 1 ? ' tienen' : ' tiene'} inscripción pagada en la temporada
-                        (marcados en ámbar). Se pueden convocar igual.
-                      </p>
-                    </div>
-                  )}
-
-                  <ConvocatoriaPlayersTable
-                    players={sortedPlayers}
-                    sortConfig={playerSortConfig}
-                    onSort={handlePlayerSort}
-                    onConvocar={handleConvocarPlayer}
-                    onQuitar={handleQuitarPlayer}
-                    onPrecio={handleUpdatePrice}
-                    onHistorial={abrirHistorialPagos}
-                    onPagosConvocatoria={fetchPlayerPayments}
-                  />
-                </>
+                <ConvocatoriaPlayersTable
+                  players={sortedPlayers}
+                  sortConfig={playerSortConfig}
+                  onSort={handlePlayerSort}
+                  onConvocar={handleConvocarPlayer}
+                  onQuitar={handleQuitarPlayer}
+                  onPrecio={handleUpdatePrice}
+                  onHistorial={abrirHistorialPagos}
+                  onPagosConvocatoria={fetchPlayerPayments}
+                />
               )}
             </div>
           </div>

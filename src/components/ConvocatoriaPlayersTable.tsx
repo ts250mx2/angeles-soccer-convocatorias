@@ -100,10 +100,17 @@ export default function ConvocatoriaPlayersTable({
     );
   }
 
+  /* Este div es EL contenedor de scroll, en los dos ejes a la vez, y por eso los
+     encabezados `sticky` se quedan pegados al bajar. Antes había dos divs anidados
+     —uno con overflow-hidden y otro con overflow-x-auto— y el sticky se medía contra
+     un cuadro que nunca se desplazaba en vertical, así que no hacía nada: quien
+     scrolleaba perdía de vista los títulos de las columnas.
+
+     Necesita un padre con altura acotada (flex-1 + min-h-0) para tener contra qué
+     desplazarse. */
   return (
-    <div className="rounded-2xl border border-slate-200 shadow-sm bg-white overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-separate border-spacing-0">
+    <div className="flex-1 min-h-0 rounded-2xl border border-slate-200 shadow-sm bg-white overflow-auto">
+      <table className="min-w-full border-separate border-spacing-0">
           <thead>
             <tr>
               {COLUMNAS.map(({ key, label, alinea }) => (
@@ -292,8 +299,7 @@ export default function ConvocatoriaPlayersTable({
               );
             })}
           </tbody>
-        </table>
-      </div>
+      </table>
     </div>
   );
 }
