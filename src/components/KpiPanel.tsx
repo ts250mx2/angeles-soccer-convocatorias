@@ -92,7 +92,7 @@ export function TileGrupo({ label, valor, color, pct, title, onClick }: {
 }
 
 /** Encabezado común de panel: icono y título a la izquierda, cifra protagonista a la derecha. */
-export function PanelHeader({ icono, iconoClase, titulo, tituloClase, subtitulo, valor, nota, notaClase }: {
+export function PanelHeader({ icono, iconoClase, titulo, tituloClase, subtitulo, valor, nota, notaClase, ayuda }: {
   icono: React.ReactNode;
   iconoClase: string;
   titulo: string;
@@ -102,6 +102,8 @@ export function PanelHeader({ icono, iconoClase, titulo, tituloClase, subtitulo,
   /** Renglón chico bajo la cifra: el contexto del número (%, base, unidad). */
   nota?: string;
   notaClase?: string;
+  /** Explicación al pasar el mouse: qué cuenta exactamente esta cifra. */
+  ayuda?: string;
 }) {
   /* El bloque de la cifra NO lleva flex-shrink-0: con él, una nota larga fijaba un
      ancho intocable que aplastaba al título hasta desbordarlo (el panel mide la mitad
@@ -120,7 +122,7 @@ export function PanelHeader({ icono, iconoClase, titulo, tituloClase, subtitulo,
           <p className="text-xs text-slate-400 leading-snug break-words">{subtitulo}</p>
         </div>
       </div>
-      <div className="text-right">
+      <div className="text-right" title={ayuda}>
         <p className="text-4xl xl:text-5xl font-black text-white tabular-nums leading-none">{valor}</p>
         {nota && <p className={`text-[10px] font-bold uppercase tracking-wider mt-1 leading-tight ${notaClase ?? 'text-slate-500'}`}>{nota}</p>}
       </div>

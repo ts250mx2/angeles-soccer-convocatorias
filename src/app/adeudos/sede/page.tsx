@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  MapPin, UserCheck, UserMinus, ChevronRight, ChevronDown, CalendarRange, History, CalendarClock, Brain,
+  MapPin, UserCheck, UserMinus, ChevronRight, ChevronDown, ChevronUp, CalendarRange, History, CalendarClock, Brain,
   AlertTriangle, X,
 } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
@@ -41,6 +41,8 @@ interface SedeSummary {
   ActualAlCorriente: number;
   ActualKeepers: number;
   ActualKeepersDebe: number;
+  ActualKeepersSinPagos: number;
+  ActualKeepersBecadosSinPagos: number;
   ActualBecadosSinInscripcion: number;
   ActualDebeInscripcion: number;
   /** Activos del grupo normal sin inscripción de esta temporada (fuera del adeudo). */
@@ -54,6 +56,8 @@ interface SedeSummary {
   AnteriorAlCorriente: number;
   AnteriorKeepers: number;
   AnteriorKeepersDebe: number;
+  AnteriorKeepersSinPagos: number;
+  AnteriorKeepersBecadosSinPagos: number;
   AnteriorBecadosSinInscripcion: number;
   AnteriorPosiblesBajas: number;
   AnteriorDebeInscripcion: number;
@@ -77,12 +81,14 @@ const MESES_CORTOS = [
  * En la temporada en curso la inscripción ya no es adeudo (los no inscritos salen del
  * cálculo y van a "Sin inscripción"), así que ahí se omite `inscripcion`.
  */
-function DesgloseAdeudo({ inscripcion = 0, meses, onInscripcion, onMes, size = 'sm' }: {
+function DesgloseAdeudo({ inscripcion = 0, meses, onInscripcion, onMes, size = 'sm', temporada = 'la temporada' }: {
   inscripcion?: number;
   meses: DebeMes[];
   onInscripcion?: () => void;
   onMes: (mes: number) => void;
   size?: 'sm' | 'xs';
+  /** Cómo nombrar la temporada en las explicaciones de cada chip. */
+  temporada?: string;
 }) {
   const conAdeudo = meses.filter((m) => m.cantidad > 0);
   if (inscripcion === 0 && conAdeudo.length === 0) return null;
@@ -97,7 +103,7 @@ function DesgloseAdeudo({ inscripcion = 0, meses, onInscripcion, onMes, size = '
         <button
           type="button"
           onClick={onInscripcion}
-          title={`${inscripcion} deben la inscripción`}
+          title={`${inscripcion} jugador(es) no pagaron la inscripción de ${temporada}.`}
           className={`${chip} font-black bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-colors`}
         >
           Insc. {inscripcion}
@@ -108,7 +114,7 @@ function DesgloseAdeudo({ inscripcion = 0, meses, onInscripcion, onMes, size = '
           key={m.mes}
           type="button"
           onClick={() => onMes(m.mes)}
-          title={`${m.cantidad} deben ${MESES_CORTOS[m.mes - 1]}`}
+          title={`${m.cantidad} jugador(es) no han pagado ${MESES_CORTOS[m.mes - 1]} de ${temporada}, que ya venció.`}
           className={`${chip} font-black bg-orange-500/15 text-orange-300 border border-orange-500/30 hover:bg-orange-500/30 transition-colors`}
         >
           {MESES_CORTOS[m.mes - 1]} {m.cantidad}
@@ -181,7 +187,12 @@ interface DatosAdeudo {
   debe: number;
   alCorriente: number;
   keepers: number;
+  /** Porteros que ya empezaron a pagar y traen un mes ya vencido sin pagar. */
   keepersDebe: number;
+  /** Porteros sin una sola mensualidad pagada de la temporada. */
+  keepersSinPagos: number;
+  /** Porteros con beca 100% y sin un solo pago registrado. */
+  keepersBecadosSinPagos: number;
   becadosSinInsc: number;
   futsalSinPagos: number;
   futsal1Mes: number;
@@ -199,6 +210,8 @@ const datosAnterior = (lista: SedeSummary[]): DatosAdeudo => ({
   alCorriente: sumDe(lista, s => s.AnteriorAlCorriente),
   keepers: sumDe(lista, s => s.AnteriorKeepers),
   keepersDebe: sumDe(lista, s => s.AnteriorKeepersDebe),
+  keepersSinPagos: sumDe(lista, s => s.AnteriorKeepersSinPagos),
+  keepersBecadosSinPagos: sumDe(lista, s => s.AnteriorKeepersBecadosSinPagos),
   becadosSinInsc: sumDe(lista, s => s.AnteriorBecadosSinInscripcion),
   futsalSinPagos: sumDe(lista, s => s.AnteriorFutsalSinPagos),
   futsal1Mes: sumDe(lista, s => s.AnteriorFutsal1Mes),
@@ -215,6 +228,8 @@ const datosActual = (lista: SedeSummary[]): DatosAdeudo => ({
   alCorriente: sumDe(lista, s => s.ActualAlCorriente),
   keepers: sumDe(lista, s => s.ActualKeepers),
   keepersDebe: sumDe(lista, s => s.ActualKeepersDebe),
+  keepersSinPagos: sumDe(lista, s => s.ActualKeepersSinPagos),
+  keepersBecadosSinPagos: sumDe(lista, s => s.ActualKeepersBecadosSinPagos),
   becadosSinInsc: sumDe(lista, s => s.ActualBecadosSinInscripcion),
   futsalSinPagos: sumDe(lista, s => s.ActualFutsalSinPagos),
   futsal1Mes: sumDe(lista, s => s.ActualFutsal1Mes),
@@ -231,6 +246,14 @@ const hayAdeudo = (d: DatosAdeudo) =>
   d.debe + d.alCorriente + d.keepers + d.becadosSinInsc
     + d.futsalSinPagos + d.futsal1Mes + d.futsal2Meses + d.futsal3Mas
     + d.posiblesBajas + d.sinInscripcion > 0;
+
+/**
+ * Porteros al corriente: los que quedan tras apartar a los tres cortes con nombre
+ * propio. Son los que ya empezaron a pagar y están al día (los becados con pagos
+ * también caen aquí, porque nunca deben).
+ */
+const keepersAlCorriente = (d: DatosAdeudo) =>
+  Math.max(0, d.keepers - d.keepersDebe - d.keepersSinPagos - d.keepersBecadosSinPagos);
 
 /* ¿La sede tiene algo en los segmentos que la tarjeta de plantilla MUESTRA? Se filtra
    con esto y no con el total del API (s.Bajas incluye los dummies de venta al público,
@@ -254,17 +277,20 @@ function TarjetaPlantilla({ modo, d, abrir, pie }: {
   // "Jugadores Baja" (singular) es el título histórico de los modales de bajas.
   const titulo = esActivos ? 'Jugadores Activos' : 'Jugadores Baja';
   const filtro = modo;
+  // Los textos de ayuda cambian de sujeto entre activos y bajas, pero describen el
+  // mismo reparto de grupos.
+  const q = esActivos ? 'Jugadores vigentes' : 'Jugadores dados de baja';
   const partes: { label: string; valor: number; color: string; title?: string; cfg: AdeudosModalConfig }[] = [
-    { label: 'Sedes', valor: d.sedes, color: GRUPO_COLOR.sedes, cfg: { title: `${titulo} · Sedes`, filtro, grupo: 'normal' } },
-    { label: 'Keepers', valor: d.keepers, color: GRUPO_COLOR.keepers, cfg: { title: `${titulo} · Keepers/Porteros`, filtro, grupo: 'keepers' } },
-    { label: 'Futsal', valor: d.futsal, color: GRUPO_COLOR.futsal, title: 'Futsal: cuenta en los adeudos como sede normal', cfg: { title: `${titulo} · Futsal`, filtro, grupo: 'futsal' } },
+    { label: 'Sedes', valor: d.sedes, color: GRUPO_COLOR.sedes, title: `${q} de sedes normales. Son los únicos que entran en el cálculo de adeudo de arriba.`, cfg: { title: `${titulo} · Sedes`, filtro, grupo: 'normal' } },
+    { label: 'Keepers', valor: d.keepers, color: GRUPO_COLOR.keepers, title: `${q} de sedes de keepers o con categoría de portero. Tienen su propia regla: no vuelven a pagar inscripción cada temporada.`, cfg: { title: `${titulo} · Keepers/Porteros`, filtro, grupo: 'keepers' } },
+    { label: 'Futsal', valor: d.futsal, color: GRUPO_COLOR.futsal, title: `${q} de futsal. Cuentan en los adeudos como sede normal, pero se reportan aparte por meses pagados.`, cfg: { title: `${titulo} · Futsal`, filtro, grupo: 'futsal' } },
   ];
   if (esActivos) {
-    partes.push({ label: 'Venta púb.', valor: d.ventaPublico, color: GRUPO_COLOR.ventaPublico, title: 'Venta al público: no entra en los adeudos', cfg: { title: `${titulo} · Venta al Público`, filtro, grupo: 'ventapublico' } });
+    partes.push({ label: 'Venta púb.', valor: d.ventaPublico, color: GRUPO_COLOR.ventaPublico, title: 'Registros de venta al público (no son jugadores inscritos). No entran en los adeudos.', cfg: { title: `${titulo} · Venta al Público`, filtro, grupo: 'ventapublico' } });
   }
   partes.push(
-    { label: 'Clinics', valor: d.clinics, color: GRUPO_COLOR.clinics, title: 'Clinics no entra en los adeudos', cfg: { title: `${titulo} · Clinics`, filtro, grupo: 'excluido' } },
-    { label: 'Clinics F.', valor: d.clinicsFutsal, color: GRUPO_COLOR.clinicsFutsal, title: 'Clinics Futsal no entra en los adeudos', cfg: { title: `${titulo} · Clinics Futsal`, filtro, grupo: 'clinicsfutsal' } },
+    { label: 'Clinics', valor: d.clinics, color: GRUPO_COLOR.clinics, title: `${q} de sedes de clinics. No manejan inscripción ni mensualidad, así que no entran en los adeudos.`, cfg: { title: `${titulo} · Clinics`, filtro, grupo: 'excluido' } },
+    { label: 'Clinics F.', valor: d.clinicsFutsal, color: GRUPO_COLOR.clinicsFutsal, title: `${q} de clinics futsal (sede de futsal con categoría de clinics). Tampoco entran en los adeudos.`, cfg: { title: `${titulo} · Clinics Futsal`, filtro, grupo: 'clinicsfutsal' } },
   );
   const total = partes.reduce((s, p) => s + p.valor, 0);
   const pctDe = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
@@ -279,9 +305,14 @@ function TarjetaPlantilla({ modo, d, abrir, pie }: {
         iconoClase={esActivos ? 'bg-emerald-500/20 border-emerald-500/30' : 'bg-rose-500/20 border-rose-500/30'}
         titulo={esActivos ? 'Jugadores Activos' : 'Jugadores Bajas'}
         tituloClase={esActivos ? 'text-emerald-400' : 'text-rose-400'}
-        subtitulo={esActivos ? 'Plantilla vigente registrada en las sedes' : 'Jugadores dados de baja'}
+        subtitulo={esActivos
+          ? 'Jugadores dados de alta que siguen vigentes: no se les ha dado de baja ni se han eliminado'
+          : 'Jugadores que fueron dados de baja y ya no cuentan como plantilla'}
         valor={total}
         nota="jugadores"
+        ayuda={esActivos
+          ? 'Toda la gente con registro vigente en el sistema, hayan pagado o no. Es la base sobre la que se calculan los adeudos: los jugadores eliminados o dados de baja no aparecen aquí.'
+          : 'Jugadores marcados como baja. Ya no se les exige inscripción ni mensualidad, por eso no aparecen en ningún corte de adeudo.'}
       />
       <BarraComposicion
         className="mt-4"
@@ -305,7 +336,7 @@ function TarjetaPlantilla({ modo, d, abrir, pie }: {
  * adeudo", con la barra deuda/al-corriente del grupo normal, porteros, becados,
  * futsal y —según la temporada— sin inscripción o posibles bajas.
  */
-function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, onToggleDescartar, pie }: {
+function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, onToggleDescartar, pie, colapso }: {
   variante: 'anterior' | 'actual';
   caption: string;
   d: DatosAdeudo;
@@ -314,28 +345,98 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
   descartarPB?: boolean;
   onToggleDescartar?: () => void;
   pie?: React.ReactNode;
+  /** Si se provee, la tarjeta se puede plegar; cerrada se reduce a una barra. */
+  colapso?: { abierta: boolean; onToggle: () => void };
 }) {
   const esAnterior = variante === 'anterior';
   const suf = esAnterior ? ' · Temporada Anterior' : ' · Esta Temporada';
+  // Sujeto de los textos de ayuda: la temporada de la que habla esta tarjeta.
+  const T = esAnterior ? 'esa temporada' : 'esta temporada';
+  const titulo = esAnterior ? 'Adeudos Temporada Anterior' : 'Adeudos Esta Temporada';
+  const tituloClase = esAnterior ? 'text-amber-400' : 'text-blue-400';
+  const icono = esAnterior
+    ? <History size={20} className="text-amber-400" />
+    : <CalendarClock size={20} className="text-blue-400" />;
+  const iconoClase = esAnterior ? 'bg-amber-500/20 border-amber-500/30' : 'bg-blue-500/20 border-blue-500/30';
   const base = d.debe + d.alCorriente;
   const pctDebe = base > 0 ? Math.round((d.debe / base) * 100) : 0;
   const btn = 'text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed';
+  const porterosCorriente = keepersAlCorriente(d);
+
+  /* Plegada: se reduce a una barra con el titulo y la cifra de cabecera, y el resto
+     ni siquiera se monta. Asi la pagina arranca enfocada en la temporada en curso,
+     que es la que se consulta a diario. */
+  if (colapso && !colapso.abierta) {
+    return (
+      <button
+        type="button"
+        onClick={colapso.onToggle}
+        /* El descarte de posibles bajas se recuerda entre sesiones y recorta este
+           mismo número, así que plegada la tarjeta tiene que confesarlo: si no, la
+           cifra se lee como el adeudo completo y el control para quitarlo vive
+           dentro de lo que está oculto. */
+        title={descartarPB
+          ? `${caption}: la cifra EXCLUYE a los posibles bajas (filtro activo). Expande la tarjeta para verlos o quitar el descarte.`
+          : `Ver el detalle de adeudos de ${caption}`}
+        className={`w-full border rounded-2xl px-5 py-3.5 flex items-center justify-between gap-4 transition-all ${
+          esAnterior
+            ? 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/15 hover:border-amber-500/40'
+            : 'bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/15 hover:border-blue-500/40'
+        }`}
+      >
+        <span className="flex items-center gap-3 min-w-0">
+          <span className={`p-2 rounded-xl border flex-shrink-0 ${iconoClase}`}>{icono}</span>
+          <span className="min-w-0 text-left">
+            <span className={`block text-[11px] uppercase tracking-widest font-black ${tituloClase}`}>{titulo}</span>
+            <span className="block text-xs text-slate-400 truncate">{caption}</span>
+          </span>
+        </span>
+        <span className="flex items-center gap-4 flex-shrink-0">
+          {!disabled && descartarPB && (
+            <span className="hidden sm:inline text-[9px] font-black uppercase tracking-wider text-red-200 bg-red-500/20 border border-red-500/40 rounded-md px-2 py-1">
+              Sin posibles bajas
+            </span>
+          )}
+          {!disabled && (
+            <span className="text-right">
+              <span className="block text-2xl font-black text-rose-400 tabular-nums leading-none">{d.debe}</span>
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-0.5">con adeudo</span>
+            </span>
+          )}
+          <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-blue-300">
+            Expandir <ChevronDown size={14} />
+          </span>
+        </span>
+      </button>
+    );
+  }
 
   return (
     <div className={`h-full border rounded-2xl p-5 flex flex-col ${
       esAnterior ? 'bg-amber-500/10 border-amber-500/20' : 'bg-blue-500/10 border-blue-500/20'
     }`}>
+      {colapso && (
+        <button
+          type="button"
+          onClick={colapso.onToggle}
+          title="Volver a plegar esta tarjeta"
+          className="self-end -mt-1 mb-1 flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
+        >
+          Ocultar <ChevronUp size={13} />
+        </button>
+      )}
       <PanelHeader
-        icono={esAnterior
-          ? <History size={20} className="text-amber-400" />
-          : <CalendarClock size={20} className="text-blue-400" />}
-        iconoClase={esAnterior ? 'bg-amber-500/20 border-amber-500/30' : 'bg-blue-500/20 border-blue-500/30'}
-        titulo={esAnterior ? 'Adeudos Temporada Anterior' : 'Adeudos Esta Temporada'}
-        tituloClase={esAnterior ? 'text-amber-400' : 'text-blue-400'}
+        icono={icono}
+        iconoClase={iconoClase}
+        titulo={titulo}
+        tituloClase={tituloClase}
         subtitulo={caption}
         valor={d.debe}
         nota={base > 0 ? `con adeudo · ${pctDebe}%` : 'con adeudo'}
         notaClase="text-rose-300/90"
+        ayuda={esAnterior
+          ? `Jugadores del grupo normal (sin porteros ni futsal) que terminaron ${T} debiendo la inscripción o algún mes.`
+          : `Jugadores inscritos del grupo normal (sin porteros ni futsal) con al menos un mes ya vencido sin pagar. Los que aún no se inscriben no generan adeudo: se cuentan aparte en «Sin inscripción».`}
       />
 
       {/* Con adeudo vs al corriente del grupo normal: la misma proporción que las cifras. */}
@@ -353,6 +454,9 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
             type="button"
             onClick={() => abrir({ title: `Con Adeudo${suf}`, filtro: 'debe' })}
             disabled={disabled}
+            title={esAnterior
+              ? `Jugadores del grupo normal que terminaron ${T} debiendo la inscripción o algún mes. No incluye porteros ni futsal: cada uno tiene su propio bloque.`
+              : `Jugadores inscritos del grupo normal con al menos un mes ya vencido sin pagar. No incluye porteros ni futsal: cada uno tiene su propio bloque.`}
             className={`w-full px-3 py-2.5 hover:bg-rose-500/20 ${btn}`}
           >
             <p className="text-[10px] uppercase font-black text-rose-300/80 tracking-wider">Con adeudo</p>
@@ -361,6 +465,7 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
           {!disabled && (
             <div className="px-3 pb-2.5">
               <DesgloseAdeudo
+                temporada={T}
                 inscripcion={esAnterior ? d.insc : 0}
                 meses={d.meses}
                 onInscripcion={esAnterior ? () => abrir({ title: `Deben Inscripción${suf}`, filtro: 'pendiente-inscripcion' }) : undefined}
@@ -373,7 +478,7 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
           type="button"
           onClick={() => abrir({ title: `Al Corriente${suf}`, filtro: 'al-corriente' })}
           disabled={disabled}
-          title="Al corriente, sin contar keepers/porteros"
+          title={`Jugadores inscritos del grupo normal que no deben ningún mes vencido de ${T}. No incluye porteros ni futsal, que van en sus propios bloques.`}
           className={`h-full bg-teal-500/10 hover:bg-teal-500/25 border border-teal-500/20 rounded-xl px-3 py-2.5 ${btn}`}
         >
           <p className="text-[10px] uppercase font-black text-teal-300/80 tracking-wider">Al corriente</p>
@@ -388,7 +493,7 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
           type="button"
           onClick={() => abrir({ title: `Sin Inscripción${suf}`, filtro: 'pendiente-inscripcion' })}
           disabled={disabled}
-          title="Activos que no se han inscrito en esta temporada: quedan fuera del cálculo de adeudo"
+          title="Jugadores vigentes del grupo normal que todavía no pagan la inscripción de esta temporada. Mientras no se inscriban quedan fuera del cálculo de adeudo, por eso no aparecen en «Con adeudo»."
           className={`mt-3 w-full bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/25 rounded-xl px-3 py-2 flex items-center justify-between gap-3 ${btn}`}
         >
           <span>
@@ -399,35 +504,72 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
         </button>
       )}
 
-      {/* Porteros: su regla de adeudo es propia, por eso van aparte del grupo normal. */}
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={() => abrir({ title: `Porteros con Adeudo${suf}`, filtro: 'keepers-debe' })}
-          disabled={disabled}
-          title="Porteros con adeudo: sin inscripción (regla de portero) o con meses vencidos"
-          className={`bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/20 rounded-xl px-3 py-2 ${btn}`}
-        >
-          <p className="text-[10px] uppercase font-black text-rose-300/80 tracking-wider leading-tight">Porteros c/adeudo</p>
-          <p className="text-2xl font-black text-rose-400 tabular-nums leading-tight">{d.keepersDebe}</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => abrir({ title: `Porteros al Corriente${suf}`, filtro: 'keepers-corriente' })}
-          disabled={disabled}
-          title="Porteros al corriente: inscritos (regla de portero) y sin meses vencidos"
-          className={`bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/20 rounded-xl px-3 py-2 ${btn}`}
-        >
-          <p className="text-[10px] uppercase font-black text-cyan-300/80 tracking-wider leading-tight">Porteros al corr.</p>
-          <p className="text-2xl font-black text-cyan-300 tabular-nums leading-tight">{d.keepers - d.keepersDebe}</p>
-        </button>
+      {/* Porteros: su regla de adeudo es propia (no re-pagan inscripción cada
+          temporada), por eso van aparte del grupo normal. Los cuatro cortes son
+          excluyentes y suman el total de porteros de la sede. */}
+      <div className="mt-3 bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-2.5">
+        <p className="text-[10px] uppercase font-black text-cyan-300/90 tracking-wider mb-1.5">
+          Porteros ({d.keepers})
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5">
+          {[
+            {
+              label: 'Con adeudo',
+              valor: d.keepersDebe,
+              tono: 'text-rose-400',
+              hover: 'hover:bg-rose-500/25',
+              title: `Porteros que ya pagaron alguna mensualidad de ${T} y traen al menos un mes ya vencido sin pagar.`,
+              cfg: { title: `Porteros con Adeudo${suf}`, filtro: 'keepers-debe' as const },
+            },
+            {
+              /* El corte mide MENSUALIDADES, no inscripción: rotularlo "no inscritos"
+                 señalaba justo al revés, porque el portero no re-paga inscripción cada
+                 temporada y casi todos los de esta lista ya la tienen cubierta. El
+                 título viaja además al encabezado del PDF y del Excel. */
+              label: 'Sin pagos',
+              valor: d.keepersSinPagos,
+              tono: 'text-amber-300',
+              hover: 'hover:bg-amber-500/25',
+              title: `Porteros que no han pagado ninguna mensualidad de ${T}. Todavía no empiezan a pagar, por eso no cuentan como deudores. No tiene que ver con la inscripción: el portero no vuelve a pagarla cada temporada.`,
+              cfg: { title: `Porteros sin Pagos${suf}`, filtro: 'keepers-sin-pagos' as const },
+            },
+            {
+              label: 'Becados 100%',
+              valor: d.keepersBecadosSinPagos,
+              tono: 'text-purple-300',
+              hover: 'hover:bg-purple-500/25',
+              title: `Porteros con beca del 100% y sin un solo pago registrado en ${T}. No deben nada porque la beca cubre todo, pero tampoco hay pago capturado.`,
+              cfg: { title: `Porteros Becados 100% sin Pago${suf}`, filtro: 'keepers-becados' as const },
+            },
+            {
+              label: 'Al corriente',
+              valor: porterosCorriente,
+              tono: 'text-cyan-300',
+              hover: 'hover:bg-cyan-500/25',
+              title: `Porteros que ya empezaron a pagar y están al día con los meses vencidos de ${T}.`,
+              cfg: { title: `Porteros al Corriente${suf}`, filtro: 'keepers-corriente' as const },
+            },
+          ].map((k) => (
+            <button
+              key={k.label}
+              type="button"
+              onClick={() => abrir(k.cfg)}
+              disabled={disabled}
+              title={k.title}
+              className={`bg-white/5 ${k.hover} border border-white/10 rounded-lg px-2 py-1.5 ${btn}`}
+            >
+              <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">{k.label}</p>
+              <p className={`text-xl font-black tabular-nums leading-tight ${k.tono}`}>{k.valor}</p>
+            </button>
+          ))}
+        </div>
       </div>
 
       <button
         type="button"
         onClick={() => abrir({ title: `Becados 100% sin Inscripción${suf}`, filtro: 'becado-sin-inscripcion' })}
         disabled={disabled}
-        title="Beca 100% sin pago de inscripción: no deben, pero no están inscritos"
+        title={`Jugadores con beca del 100% que no tienen pago de inscripción registrado en ${T}. No deben dinero (su beca cubre todo), pero su inscripción no está capturada.`}
         className={`mt-3 w-full bg-purple-500/10 hover:bg-purple-500/25 border border-purple-500/20 rounded-xl px-3 py-2 flex items-center justify-between gap-3 ${btn}`}
       >
         <p className="text-[10px] uppercase font-black text-purple-300/80 tracking-wider leading-tight">Becados 100% s/inscripción</p>
@@ -436,15 +578,18 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
 
       {/* Bloque Futsal */}
       <div className="mt-3 bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-xl p-2.5">
-        <p className="text-[10px] uppercase font-black text-fuchsia-300/90 tracking-wider mb-1.5">
+        <p
+          className="text-[10px] uppercase font-black text-fuchsia-300/90 tracking-wider mb-1.5"
+          title={`El futsal no se mide por adeudo sino por cuántos meses de ${T} lleva pagados cada jugador.`}
+        >
           Futsal (Meses pagados)
         </p>
         <div className="grid grid-cols-4 gap-1.5">
           {[
-            { label: 'Sin pagos', valor: d.futsalSinPagos, title: 'Futsal sin pagos realizados', cfg: { title: `Futsal Sin Pagos${suf}`, filtro: 'futsal-sin-pagos' as const } },
-            { label: '1 mes', valor: d.futsal1Mes, title: 'Futsal con 1 mes pagado', cfg: { title: `Futsal 1 Mes${suf}`, filtro: 'futsal-1-mes' as const } },
-            { label: '2 meses', valor: d.futsal2Meses, title: 'Futsal con 2 meses pagados', cfg: { title: `Futsal 2 Meses${suf}`, filtro: 'futsal-2-meses' as const } },
-            { label: '3+', valor: d.futsal3Mas, title: 'Futsal con 3 o más meses pagados', cfg: { title: `Futsal 3+ Meses${suf}`, filtro: 'futsal-3-mas' as const } },
+            { label: 'Sin pagos', valor: d.futsalSinPagos, title: `Jugadores de futsal que no han pagado ninguna mensualidad de ${T}.`, cfg: { title: `Futsal Sin Pagos${suf}`, filtro: 'futsal-sin-pagos' as const } },
+            { label: '1 mes', valor: d.futsal1Mes, title: `Jugadores de futsal con exactamente 1 mes pagado de ${T}.`, cfg: { title: `Futsal 1 Mes${suf}`, filtro: 'futsal-1-mes' as const } },
+            { label: '2 meses', valor: d.futsal2Meses, title: `Jugadores de futsal con exactamente 2 meses pagados de ${T}.`, cfg: { title: `Futsal 2 Meses${suf}`, filtro: 'futsal-2-meses' as const } },
+            { label: '3+', valor: d.futsal3Mas, title: `Jugadores de futsal con 3 o más meses pagados de ${T}.`, cfg: { title: `Futsal 3+ Meses${suf}`, filtro: 'futsal-3-mas' as const } },
           ].map((f) => (
             <button
               key={f.label}
@@ -469,7 +614,7 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
             type="button"
             onClick={() => abrir({ title: `Posibles Bajas${suf}`, filtro: 'posible-baja' })}
             disabled={disabled}
-            title="No pagaron la inscripción ni un solo mes vencido de esa temporada"
+            title={`Jugadores que no pagaron la inscripción ni un solo mes vencido de ${T}: lo más probable es que ya no asistan. Con el check de al lado se pueden descartar del "Con adeudo".`}
             className={`flex items-center gap-2 hover:opacity-80 ${btn}`}
           >
             <UserMinus size={14} className="text-red-300" />
@@ -514,6 +659,9 @@ export default function AdeudosSedePage() {
   const [analisisOpen, setAnalisisOpen] = useState(false);
   // KPI abierto en el modal de desglose por sedes (null = cerrado).
   const [detalleKpi, setDetalleKpi] = useState<KpiClave | null>(null);
+  /* La temporada anterior arranca plegada: el día a día se consulta sobre la
+     temporada en curso, y la anterior solo se revisa cuando se va a cobrar rezago. */
+  const [anteriorAbierta, setAnteriorAbierta] = useState(false);
   // Descartar (temporal, solo este navegador) los posibles bajas de la temporada
   // anterior. Se guarda por temporada seleccionada en localStorage.
   const [descartarPB, setDescartarPB] = useState(false);
@@ -642,6 +790,9 @@ export default function AdeudosSedePage() {
             d={datosAnterior(lista)}
             abrir={esGlobal ? abrirAnteriorGlobal : abrirAnteriorSede(sede as SedeSummary)}
             disabled={!anterior}
+            /* Solo se pliega la tarjeta global; dentro del modal por sedes ya se
+               entró a propósito a ver este indicador. */
+            colapso={esGlobal ? { abierta: anteriorAbierta, onToggle: () => setAnteriorAbierta((v) => !v) } : undefined}
             descartarPB={descartarPB}
             /* El descarte es un ajuste global de la página; en las tarjetas por sede
                solo se refleja, no se cambia. Igual que el resto de la tarjeta, el pie
@@ -726,26 +877,30 @@ export default function AdeudosSedePage() {
           {/* ── KPIs a pantalla completa (el desglose por sede se abre desde cada panel) ── */}
           {isLoading ? (
             <div className="space-y-5">
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                <div className="h-[34rem] bg-white/5 rounded-2xl animate-pulse border border-white/10" />
-                <div className="h-[34rem] bg-white/5 rounded-2xl animate-pulse border border-white/10" />
-              </div>
+              {/* La temporada anterior arranca plegada, así que su hueco es una barra. */}
+              <div className="h-[4.75rem] bg-white/5 rounded-2xl animate-pulse border border-white/10" />
               <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-                <div className="xl:col-span-7 h-72 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
-                <div className="xl:col-span-5 h-72 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+                <div className="xl:col-span-7 h-[38rem] bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+                <div className="xl:col-span-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-5">
+                  <div className="h-72 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+                  <div className="h-72 bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+                </div>
               </div>
             </div>
           ) : (
             <div className="space-y-5">
-              {/* Fila protagonista: los adeudos de las dos temporadas, lado a lado. */}
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                {tarjetaDe('anterior', sedes, true)}
-                {tarjetaDe('actual', sedes, true)}
-              </div>
-              {/* Segunda fila: la plantilla sobre la que se calculan (activos y bajas). */}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-5">
-                <div className="xl:col-span-7">{tarjetaDe('activos', sedes, true)}</div>
-                <div className="xl:col-span-5">{tarjetaDe('bajas', sedes, true)}</div>
+              {/* La temporada anterior encabeza la pantalla: plegada es una barra y
+                  expandida ocupa el ancho completo, sin mover nada de lo de abajo. */}
+              {tarjetaDe('anterior', sedes, true)}
+              {/* Lo que se consulta a diario, en una sola pantalla: los adeudos de la
+                  temporada en curso a la izquierda y, a su derecha, la plantilla
+                  sobre la que se calculan (activos arriba, bajas abajo). */}
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
+                <div className="xl:col-span-7">{tarjetaDe('actual', sedes, true)}</div>
+                <div className="xl:col-span-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-5 content-start">
+                  {tarjetaDe('activos', sedes, true)}
+                  {tarjetaDe('bajas', sedes, true)}
+                </div>
               </div>
             </div>
           )}

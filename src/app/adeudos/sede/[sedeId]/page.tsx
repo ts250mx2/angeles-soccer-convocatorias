@@ -20,6 +20,8 @@ interface CategoriaSummary {
   ActualAlCorriente: number;
   ActualKeepers: number;
   ActualKeepersDebe: number;
+  ActualKeepersSinPagos: number;
+  ActualKeepersBecadosSinPagos: number;
   ActualBecadosSinInscripcion: number;
   ActualDebeInscripcion: number;
   /** Activos del grupo normal sin inscripción de esta temporada (fuera del adeudo). */
@@ -33,6 +35,8 @@ interface CategoriaSummary {
   AnteriorAlCorriente: number;
   AnteriorKeepers: number;
   AnteriorKeepersDebe: number;
+  AnteriorKeepersSinPagos: number;
+  AnteriorKeepersBecadosSinPagos: number;
   AnteriorBecadosSinInscripcion: number;
   AnteriorPosiblesBajas: number;
   AnteriorDebeInscripcion: number;
@@ -367,7 +371,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
               <button
                 type="button"
                 disabled={!anterior}
-                title="Porteros con adeudo: sin inscripción (regla de portero) o con meses vencidos"
+                title="Porteros que ya pagaron alguna mensualidad de esa temporada y traen al menos un mes ya vencido sin pagar."
                 onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Porteros con Adeudo · Temporada Anterior', filtro: 'keepers-debe', subtitle: label(anterior?.temporadaNombre) })}
                 className={`w-full ${miniBtn} bg-rose-500/5 border-rose-500/10 hover:bg-rose-500/15`}
               >
@@ -377,12 +381,32 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
               <button
                 type="button"
                 disabled={!anterior}
-                title="Porteros al corriente: inscritos (regla de portero) y sin meses vencidos"
+                title="Porteros que no pagaron ninguna mensualidad de esa temporada. No se refiere a la inscripción: el portero no vuelve a pagarla cada temporada."
+                onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Porteros sin Pagos · Temporada Anterior', filtro: 'keepers-sin-pagos', subtitle: label(anterior?.temporadaNombre) })}
+                className={`w-full ${miniBtn} bg-amber-500/5 border-amber-500/10 hover:bg-amber-500/15`}
+              >
+                <p className="text-[8px] uppercase font-black text-amber-300/70 tracking-wider leading-tight">Porteros s/pagos</p>
+                <p className="text-sm font-black text-amber-300">{categoria.AnteriorKeepersSinPagos}</p>
+              </button>
+              <button
+                type="button"
+                disabled={!anterior}
+                title="Porteros con beca del 100% y sin un solo pago registrado en esa temporada."
+                onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Porteros Becados 100% sin Pago · Temporada Anterior', filtro: 'keepers-becados', subtitle: label(anterior?.temporadaNombre) })}
+                className={`w-full ${miniBtn} bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/15`}
+              >
+                <p className="text-[8px] uppercase font-black text-purple-300/70 tracking-wider leading-tight">Porteros becados</p>
+                <p className="text-sm font-black text-purple-300">{categoria.AnteriorKeepersBecadosSinPagos}</p>
+              </button>
+              <button
+                type="button"
+                disabled={!anterior}
+                title="Porteros que ya empezaron a pagar y están al día con los meses vencidos."
                 onClick={() => onOpenPlayers({ ...base, ...scopeAnterior, title: 'Porteros al Corriente · Temporada Anterior', filtro: 'keepers-corriente', subtitle: label(anterior?.temporadaNombre) })}
                 className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
               >
                 <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider leading-tight">Porteros al corr.</p>
-                <p className="text-sm font-black text-cyan-300">{categoria.AnteriorKeepers - categoria.AnteriorKeepersDebe}</p>
+                <p className="text-sm font-black text-cyan-300">{Math.max(0, categoria.AnteriorKeepers - categoria.AnteriorKeepersDebe - categoria.AnteriorKeepersSinPagos - categoria.AnteriorKeepersBecadosSinPagos)}</p>
               </button>
             </div>
             <button
@@ -497,7 +521,7 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                title="Porteros con adeudo: sin inscripción (regla de portero) o con meses vencidos"
+                title="Porteros que ya pagaron alguna mensualidad de esta temporada y traen al menos un mes ya vencido sin pagar."
                 onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Porteros con Adeudo · Esta Temporada', filtro: 'keepers-debe', subtitle: label(actual?.temporadaNombre) })}
                 className={`w-full ${miniBtn} bg-rose-500/5 border-rose-500/10 hover:bg-rose-500/15`}
               >
@@ -506,12 +530,30 @@ function CategoriaCard({ categoria, sedeId, sedeName, actual, anterior, descarta
               </button>
               <button
                 type="button"
-                title="Porteros al corriente: inscritos (regla de portero) y sin meses vencidos"
+                title="Porteros que no han pagado ninguna mensualidad de esta temporada. No se refiere a la inscripción: el portero no vuelve a pagarla cada temporada."
+                onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Porteros sin Pagos · Esta Temporada', filtro: 'keepers-sin-pagos', subtitle: label(actual?.temporadaNombre) })}
+                className={`w-full ${miniBtn} bg-amber-500/5 border-amber-500/10 hover:bg-amber-500/15`}
+              >
+                <p className="text-[8px] uppercase font-black text-amber-300/70 tracking-wider leading-tight">Porteros s/pagos</p>
+                <p className="text-sm font-black text-amber-300">{categoria.ActualKeepersSinPagos}</p>
+              </button>
+              <button
+                type="button"
+                title="Porteros con beca del 100% y sin un solo pago registrado en esta temporada."
+                onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Porteros Becados 100% sin Pago · Esta Temporada', filtro: 'keepers-becados', subtitle: label(actual?.temporadaNombre) })}
+                className={`w-full ${miniBtn} bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/15`}
+              >
+                <p className="text-[8px] uppercase font-black text-purple-300/70 tracking-wider leading-tight">Porteros becados</p>
+                <p className="text-sm font-black text-purple-300">{categoria.ActualKeepersBecadosSinPagos}</p>
+              </button>
+              <button
+                type="button"
+                title="Porteros que ya empezaron a pagar y están al día con los meses vencidos."
                 onClick={() => onOpenPlayers({ ...base, ...scopeActual, title: 'Porteros al Corriente · Esta Temporada', filtro: 'keepers-corriente', subtitle: label(actual?.temporadaNombre) })}
                 className={`w-full ${miniBtn} bg-cyan-500/5 border-cyan-500/10 hover:bg-cyan-500/15`}
               >
                 <p className="text-[8px] uppercase font-black text-cyan-300/70 tracking-wider leading-tight">Porteros al corr.</p>
-                <p className="text-sm font-black text-cyan-300">{categoria.ActualKeepers - categoria.ActualKeepersDebe}</p>
+                <p className="text-sm font-black text-cyan-300">{Math.max(0, categoria.ActualKeepers - categoria.ActualKeepersDebe - categoria.ActualKeepersSinPagos - categoria.ActualKeepersBecadosSinPagos)}</p>
               </button>
             </div>
             <button
