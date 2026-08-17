@@ -89,7 +89,8 @@ export async function GET(request: Request) {
         const EXCLUIDO_ADEUDOS =
             `(COALESCE(S.EsClinics, 0) = 1 OR ${ES_VENTA_PUBLICO} OR ${esClinicsFutsal('S')})`;
         const CORTES_DE_ADEUDO = [
-            'debe', 'futsal-debe', 'al-corriente', 'keepers', 'keepers-debe', 'keepers-corriente',
+            'debe', 'futsal-debe', 'al-corriente', 'keepers', 'keepers-debe', 'keepers-sin-pagos',
+            'keepers-becados', 'keepers-corriente',
             'futsal-corriente',
             'futsal-sin-pagos', 'futsal-1-mes', 'futsal-2-meses', 'futsal-3-mas',
             'pendiente-inscripcion', 'pendiente-mensualidad', 'debe-mes',
@@ -398,14 +399,24 @@ export async function GET(request: Request) {
                 case 'keepers':
                     // Todos los porteros/keepers van a su grupo (no manejan mensualidad).
                     return p.Status === 0 && !!p.EsKeeperOPortero;
-                // Porteros CON adeudo: sin inscripción (regla única) o con meses vencidos.
+                /* Los porteros se parten en cuatro cortes excluyentes que suman el total
+                   del grupo, con las mismas definiciones que las tarjetas (countsByGroup):
+                   con adeudo   = ya empezaron a pagar y les falta un mes ya vencido;
+                   sin pagos    = no han pagado una sola mensualidad de la temporada;
+                   becados      = beca 100% y sin un solo pago registrado;
+                   al corriente = ya empezaron a pagar y están al día (beca incluida). */
                 case 'keepers-debe':
                     return p.Status === 0 && !!p.EsKeeperOPortero && !becado
-                        && (!p.InscripcionPagada || p.MissingCount > 0);
-                // Porteros al corriente: becado, o inscrito y sin meses vencidos.
+                        && p.PagosCount > 0 && p.MissingCount > 0;
+                case 'keepers-sin-pagos':
+                    return p.Status === 0 && !!p.EsKeeperOPortero && !becado
+                        && p.PagosCount === 0;
+                case 'keepers-becados':
+                    return p.Status === 0 && !!p.EsKeeperOPortero && becado
+                        && p.PagosCount === 0;
                 case 'keepers-corriente':
                     return p.Status === 0 && !!p.EsKeeperOPortero
-                        && (becado || (!!p.InscripcionPagada && p.MissingCount === 0));
+                        && p.PagosCount > 0 && (becado || p.MissingCount === 0);
                 case 'futsal-corriente':
                     return p.Status === 0 && !!p.InscripcionPagada
                         && !!p.EsFutsal && !p.EsKeeperOPortero

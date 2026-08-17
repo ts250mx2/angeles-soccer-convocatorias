@@ -112,8 +112,24 @@ export interface AdeudoCounts {
     alCorriente: number;
     /** Keepers/porteros activos (todos). */
     keepers: number;
-    /** Keepers/porteros CON adeudo (sin inscripción por regla única, o con meses vencidos). */
+    /**
+     * Keepers/porteros CON adeudo: ya pagaron alguna mensualidad de la temporada y
+     * les falta al menos un mes YA VENCIDO. Quien todavía no paga un solo mes no
+     * cuenta como deudor: va en `keepersSinPagos`.
+     */
     keepersDebe: number;
+    /**
+     * Keepers/porteros que no han pagado NINGUNA mensualidad de la temporada (ni de
+     * los meses por vencer). No se refiere al pago de inscripción: los porteros no
+     * la re-pagan cada temporada. En la pantalla se rotulan "Porteros no inscritos".
+     */
+    keepersSinPagos: number;
+    /**
+     * Keepers/porteros con beca del 100% y sin un solo pago de mensualidad. No deben
+     * nada (la beca cubre todo), pero tampoco hay registro de pago, así que se
+     * reportan aparte en vez de mezclarse con los que van al corriente.
+     */
+    keepersBecadosSinPagos: number;
     /** Beca 100% sin pago de inscripción. */
     becadosSinInscripcion: number;
     /** Deben absolutamente todo: sin inscripción y sin un solo mes vencido pagado. */
@@ -292,22 +308,43 @@ export async function countsByGroup(
                       AND (${ES_BECA_TOTAL} OR (${faltantesExpr}) = 0)
                  THEN 1 ELSE 0 END) as AlCorriente,
             -- Porteros/keepers: van a su propio grupo (no aparecen en el "debe" normal
-            -- ni en "al corriente"). Keepers = todos; KeepersDebe = los que deben (sin
-            -- inscripción por la regla única, o con mensualidades vencidas). Al corriente
-            -- se deriva como Keepers - KeepersDebe.
+            -- ni en "al corriente"). Se parten en tres cortes que suman Keepers:
+            --   KeepersDebe            = ya empezaron a pagar y les falta un mes vencido.
+            --   KeepersSinPagos        = no han pagado una sola mensualidad.
+            --   KeepersBecadosSinPagos = beca 100% y sin un solo pago registrado.
+            --   al corriente           = el resto (se deriva restando los tres anteriores).
+            -- Empezar a pagar se mide sobre la temporada COMPLETA (MENT), no solo sobre
+            -- los meses vencidos, para que quien pagó por adelantado no cuente como que
+            -- no ha pagado nada; es además el mismo rango que usa el modal de jugadores.
             SUM(CASE WHEN J.Status = 0
                       AND ${ES_KEEPER_O_PORTERO}
                  THEN 1 ELSE 0 END) as Keepers,
             SUM(CASE WHEN J.Status = 0
                       AND ${ES_KEEPER_O_PORTERO}
                       AND NOT ${ES_BECA_TOTAL}
-                      AND (NOT ${esInscritoExpr} OR (${faltantesExpr}) > 0)
+                      AND COALESCE(MENT.MesesPagados, 0) > 0
+                      AND (${faltantesExpr}) > 0
                  THEN 1 ELSE 0 END) as KeepersDebe,
-            -- Futsal clasificado por cantidad de meses pagados en la temporada:
-            SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) = 0 THEN 1 ELSE 0 END) as FutsalSinPagos,
-            SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) = 1 THEN 1 ELSE 0 END) as Futsal1Mes,
-            SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) = 2 THEN 1 ELSE 0 END) as Futsal2Meses,
-            SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MEN.PagosCount, 0) >= 3 THEN 1 ELSE 0 END) as Futsal3Mas,
+            SUM(CASE WHEN J.Status = 0
+                      AND ${ES_KEEPER_O_PORTERO}
+                      AND NOT ${ES_BECA_TOTAL}
+                      AND COALESCE(MENT.MesesPagados, 0) = 0
+                 THEN 1 ELSE 0 END) as KeepersSinPagos,
+            SUM(CASE WHEN J.Status = 0
+                      AND ${ES_KEEPER_O_PORTERO}
+                      AND ${ES_BECA_TOTAL}
+                      AND COALESCE(MENT.MesesPagados, 0) = 0
+                 THEN 1 ELSE 0 END) as KeepersBecadosSinPagos,
+            /* Futsal por cantidad de meses pagados de la temporada. Se mide con MENT
+               (temporada completa) y no con MEN (solo meses vencidos) por dos razones:
+               es lo que dice la etiqueta "meses pagados", y es el rango que usa el
+               endpoint de jugadores, así que la cifra y su listado coinciden. Con MEN,
+               quien pagaba por adelantado salía como "sin pagos" en la tarjeta pero no
+               aparecía en el listado de ese mismo corte. */
+            SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MENT.MesesPagados, 0) = 0 THEN 1 ELSE 0 END) as FutsalSinPagos,
+            SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MENT.MesesPagados, 0) = 1 THEN 1 ELSE 0 END) as Futsal1Mes,
+            SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MENT.MesesPagados, 0) = 2 THEN 1 ELSE 0 END) as Futsal2Meses,
+            SUM(CASE WHEN J.Status = 0 AND ${ES_FUTSAL} AND NOT ${ES_KEEPER_O_PORTERO} AND COALESCE(MENT.MesesPagados, 0) >= 3 THEN 1 ELSE 0 END) as Futsal3Mas,
             SUM(CASE WHEN J.Status = 0 AND ${ES_BECA_TOTAL} AND NOT ${ES_KEEPER_O_PORTERO} AND NOT ${esInscritoExpr}
                  THEN 1 ELSE 0 END) as BecadosSinInscripcion,
             -- Posible baja: no pagó la inscripción ni un solo mes ya vencido (sin futsal ni porteros).
@@ -363,6 +400,19 @@ export async function countsByGroup(
              GROUP BY P.IdJugador
          ) MEN ON MEN.IdJugador = J.IdJugador
          LEFT JOIN (
+             -- Mensualidades de la temporada COMPLETA (incluye los meses aún por
+             -- vencer): sirve para saber si el jugador ya empezó a pagar. Es el mismo
+             -- rango que usa el endpoint de jugadores, así que la cifra de la tarjeta
+             -- y su listado no pueden discrepar.
+             SELECT P.IdJugador, COUNT(DISTINCT P.Mes) as MesesPagados
+             FROM tblPagos P
+             INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+             WHERE PR.IdTipoProducto = 1 AND P.Status = 0
+               AND P.Anio IS NOT NULL AND P.Mes BETWEEN 1 AND 12
+               AND (P.Anio * 100 + P.Mes) BETWEEN ${m.desdeCodigo} AND ${endCode}
+             GROUP BY P.IdJugador
+         ) MENT ON MENT.IdJugador = J.IdJugador
+         LEFT JOIN (
              -- Temporada del PRIMER pago de cada jugador (para excluir a los nuevos:
              -- quien solo tiene pagos de temporadas posteriores no existía en ésta).
              SELECT IdJugador, MIN(IdTemporada) AS minTemp
@@ -391,6 +441,8 @@ export async function countsByGroup(
             alCorriente: Number(r.AlCorriente) || 0,
             keepers: Number(r.Keepers) || 0,
             keepersDebe: Number(r.KeepersDebe) || 0,
+            keepersSinPagos: Number(r.KeepersSinPagos) || 0,
+            keepersBecadosSinPagos: Number(r.KeepersBecadosSinPagos) || 0,
             becadosSinInscripcion: Number(r.BecadosSinInscripcion) || 0,
             /* Sin meses vencidos la condición "debe todos los meses" se cumpliría
                de forma vacía, así que el corte solo aplica con temporada transcurrida. */
@@ -409,7 +461,8 @@ export async function countsByGroup(
 }
 
 export const SIN_ADEUDOS: AdeudoCounts = {
-    debe: 0, alCorriente: 0, keepers: 0, keepersDebe: 0, becadosSinInscripcion: 0,
+    debe: 0, alCorriente: 0, keepers: 0, keepersDebe: 0, keepersSinPagos: 0,
+    keepersBecadosSinPagos: 0, becadosSinInscripcion: 0,
     posiblesBajas: 0, debeInscripcion: 0, sinInscripcion: 0, debeMeses: [], clinicsFutsal: 0,
     futsalSinPagos: 0, futsal1Mes: 0, futsal2Meses: 0, futsal3Mas: 0,
 };

@@ -30,6 +30,9 @@ interface SedeRow {
     ActualDebe: number;
     ActualAlCorriente: number;
     ActualKeepers: number;
+    ActualKeepersDebe?: number;
+    ActualKeepersSinPagos?: number;
+    ActualKeepersBecadosSinPagos?: number;
     ActualBecadosSinInscripcion: number;
     ActualDebeInscripcion: number;
     ActualSinInscripcion?: number;
@@ -41,6 +44,9 @@ interface SedeRow {
     AnteriorDebe: number;
     AnteriorAlCorriente: number;
     AnteriorKeepers: number;
+    AnteriorKeepersDebe?: number;
+    AnteriorKeepersSinPagos?: number;
+    AnteriorKeepersBecadosSinPagos?: number;
     AnteriorBecadosSinInscripcion: number;
     AnteriorPosiblesBajas: number;
     AnteriorDebeInscripcion: number;
@@ -89,6 +95,9 @@ function construirDatos(sedes: SedeRow[], actualNombre: string, anteriorNombre: 
     const antDebe = total(sedes, (s) => s.AnteriorDebe);
     const antAlCorriente = total(sedes, (s) => s.AnteriorAlCorriente);
     const antKeepers = total(sedes, (s) => s.AnteriorKeepers);
+    const antKeepersDebe = total(sedes, (s) => s.AnteriorKeepersDebe);
+    const antKeepersSinPagos = total(sedes, (s) => s.AnteriorKeepersSinPagos);
+    const antKeepersBecados = total(sedes, (s) => s.AnteriorKeepersBecadosSinPagos);
     const antBecados = total(sedes, (s) => s.AnteriorBecadosSinInscripcion);
     const antPosiblesBajas = total(sedes, (s) => s.AnteriorPosiblesBajas);
     const antInsc = total(sedes, (s) => s.AnteriorDebeInscripcion);
@@ -102,6 +111,9 @@ function construirDatos(sedes: SedeRow[], actualNombre: string, anteriorNombre: 
     const actDebe = total(sedes, (s) => s.ActualDebe);
     const actAlCorriente = total(sedes, (s) => s.ActualAlCorriente);
     const actKeepers = total(sedes, (s) => s.ActualKeepers);
+    const actKeepersDebe = total(sedes, (s) => s.ActualKeepersDebe);
+    const actKeepersSinPagos = total(sedes, (s) => s.ActualKeepersSinPagos);
+    const actKeepersBecados = total(sedes, (s) => s.ActualKeepersBecadosSinPagos);
     const actBecados = total(sedes, (s) => s.ActualBecadosSinInscripcion);
     const actSinInsc = total(sedes, (s) => s.ActualSinInscripcion);
     const actMeses = totalMeses(sedes, (s) => s.ActualDebeMeses);
@@ -127,7 +139,7 @@ function construirDatos(sedes: SedeRow[], actualNombre: string, anteriorNombre: 
         lineas.push(`- Con adeudo (sedes): ${antDebe}`);
         lineas.push(`- Desglose de lo adeudado: ${desgloseTexto(antInsc, antMeses)}`);
         lineas.push(`- Al corriente (sedes): ${antAlCorriente}`);
-        lineas.push(`- Porteros al corriente: ${antKeepers}`);
+        lineas.push(`- Porteros (${antKeepers} en total): con adeudo ${antKeepersDebe}, sin ninguna mensualidad pagada ${antKeepersSinPagos}, becados 100% sin pago ${antKeepersBecados}, al corriente ${Math.max(0, antKeepers - antKeepersDebe - antKeepersSinPagos - antKeepersBecados)}`);
         lineas.push(`- Futsal (meses pagados): Sin pagos: ${antFutsalSinPagos}, 1 mes: ${antFutsal1Mes}, 2 meses: ${antFutsal2Meses}, 3+: ${antFutsal3Mas}`);
         lineas.push(`- Becados 100% sin inscripción: ${antBecados}`);
         lineas.push(`- Posibles bajas (no pagaron inscripción ni un solo mes): ${antPosiblesBajas}`);
@@ -142,7 +154,7 @@ function construirDatos(sedes: SedeRow[], actualNombre: string, anteriorNombre: 
     lineas.push(`- Desglose de lo adeudado: ${desgloseTexto(0, actMeses)}`);
     lineas.push(`- Sin inscripción (activos que aún no se inscriben): ${actSinInsc}`);
     lineas.push(`- Al corriente (sedes): ${actAlCorriente}`);
-    lineas.push(`- Porteros al corriente: ${actKeepers}`);
+    lineas.push(`- Porteros (${actKeepers} en total): con adeudo ${actKeepersDebe}, sin ninguna mensualidad pagada ${actKeepersSinPagos}, becados 100% sin pago ${actKeepersBecados}, al corriente ${Math.max(0, actKeepers - actKeepersDebe - actKeepersSinPagos - actKeepersBecados)}`);
     lineas.push(`- Futsal (meses pagados): Sin pagos: ${actFutsalSinPagos}, 1 mes: ${actFutsal1Mes}, 2 meses: ${actFutsal2Meses}, 3+: ${actFutsal3Mas}`);
     lineas.push(`- Becados 100% sin inscripción: ${actBecados}`);
     lineas.push('');
@@ -171,7 +183,7 @@ Glosario de conceptos que recibirás:
 - "Con adeudo": jugadores activos que deben una o más mensualidades ya vencidas y/o la inscripción. En la TEMPORADA ANTERIOR incluye la inscripción; en la TEMPORADA EN CURSO solo cuentan los ya inscritos y solo por mensualidades.
 - "Sin inscripción" (solo temporada en curso): jugadores activos que aún no se inscriben. No generan adeudo todavía, pero son riesgo de no continuidad y la prioridad comercial más clara.
 - "Al corriente": jugadores activos que están al día (no incluye keepers/porteros ni futsal, que se reportan aparte).
-- "Porteros al corriente" (keepers): tienen una regla especial: una sola inscripción de portero vale para todas las temporadas.
+- "Porteros" (keepers): tienen regla propia (una sola inscripción de portero vale para todas las temporadas), así que su adeudo se mide solo por mensualidades y se parte en cuatro grupos que suman el total: "con adeudo" = ya empezaron a pagar y traen al menos un mes ya vencido sin pagar; "sin ninguna mensualidad pagada" = todavía no empiezan a pagar; "becados 100% sin pago" = su beca cubre todo y no hay pago capturado; "al corriente" = ya pagan y están al día.
 - "Futsal": cuenta dentro de los adeudos igual que una sede normal, pero se reporta por separado.
 - "Becados 100% sin inscripción": beca total; no deben dinero pero no están formalmente inscritos.
 - "Posibles bajas": jugadores que no pagaron ni la inscripción ni un solo mes vencido de esa temporada; son los candidatos más probables a darse de baja.
