@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { crearConvocatoria, sincronizarPagados } from '@/lib/convocatorias-crear';
+import { crearConvocatoria, sincronizarPagados, sincronizarPrecios } from '@/lib/convocatorias-crear';
 import { sqlFueraDeConvocatorias } from '@/lib/convocatorias-excluidas';
 
 export const dynamic = 'force-dynamic';
@@ -68,8 +68,11 @@ export async function POST() {
         )) as unknown as [Array<{ IdLiga: number }>, unknown];
 
         let convocadosPorPago = 0;
+        let preciosActualizados = 0;
         for (const l of ligas) {
             convocadosPorPago += await sincronizarPagados(pool, temporada.IdTemporada, l.IdLiga);
+            // El precio del sistema manda: un cambio de tarifa o de beca se refleja aquí.
+            preciosActualizados += await sincronizarPrecios(pool, temporada.IdTemporada, l.IdLiga);
         }
 
         /* Ligas y copas pagadas de la temporada que todavía no tienen convocatoria.
@@ -99,7 +102,8 @@ export async function POST() {
         )) as unknown as [Faltante[], unknown];
 
         if (faltantes.length === 0) {
-            return NextResponse.json({ success: true, creadas: 0, convocadosPorPago, detalle: [] });
+            return NextResponse.json({ success: true, creadas: 0, convocadosPorPago,
+            preciosActualizados, detalle: [] });
         }
 
         /* Todo o nada: si una falla a media lista, no se queda medio poblada. El alta
@@ -133,6 +137,7 @@ export async function POST() {
             success: true,
             creadas: faltantes.length,
             convocadosPorPago,
+            preciosActualizados,
             detalle: faltantes.map((f) => ({ IdLiga: f.IdLiga, Categoria: f.Categoria })),
         });
     } catch (error) {

@@ -89,6 +89,43 @@ export async function crearConvocatoria(db: Ejecutor, c: NuevaConvocatoria): Pro
  * Corre sobre toda la liga de la temporada, no solo sobre la categoría recién creada,
  * porque los pagos siguen entrando después del alta.
  */
+/**
+ * Pone el precio de cada convocado al del producto de la liga, con su BecaLigas aplicada.
+ *
+ * El precio del sistema manda. Antes solo se escribía al convocar, así que un cambio de
+ * tarifa o de beca dejaba a los ya convocados con el importe viejo y el saldo salía mal
+ * sin que nada lo delatara.
+ *
+ * OJO: esto pisa los precios ajustados a mano. Es a propósito —se pidió que el precio
+ * refleje el del sistema— pero significa que un ajuste manual dura hasta la siguiente
+ * visita a la pantalla.
+ *
+ * Solo toca a los convocados: quien no lo está va en 0 por convención, y ahí se queda.
+ */
+export async function sincronizarPrecios(
+    db: Ejecutor,
+    seasonId: number | string,
+    leagueId: number | string,
+): Promise<number> {
+    const [res] = await db.query(
+        `UPDATE tblDetalleConvocatorias D
+         INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
+         INNER JOIN (
+             SELECT IdLiga, MAX(Precio) AS Precio
+             FROM tblProductos
+             WHERE IdLiga = ? AND IdTipoProducto IN (3, 4)
+             GROUP BY IdLiga
+         ) PR ON PR.IdLiga = D.IdLiga
+         SET D.Precio = ROUND(
+                 PR.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2)
+         WHERE D.IdTemporada = ? AND D.IdLiga = ? AND D.EsConvocado = 1
+           AND D.Precio <> ROUND(
+                 PR.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2)`,
+        [leagueId, seasonId, leagueId],
+    );
+    return (res as { affectedRows?: number }).affectedRows ?? 0;
+}
+
 export async function sincronizarPagados(
     db: Ejecutor,
     seasonId: number | string,
