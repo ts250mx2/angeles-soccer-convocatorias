@@ -721,11 +721,20 @@ export default function Home() {
   };
 
   const handleNavigateToConvocatoria = async (item: ConvocatoriaSummary) => {
+    /* Esta misma función refresca la lista después de convocar, y ahí NO debe tocar los
+       filtros: el usuario ya eligió qué está viendo. Solo al abrir se decide el estado
+       inicial; si no, convocar al primero prendía "Solo Convocados" y desaparecía del
+       modal la gente que faltaba por convocar. */
+    const abriendo = !isPlayersModalOpen;
+
     setSelectedConvocatoria(item);
     setIsPlayersModalOpen(true);
     setIsLoadingPlayers(true);
-    setBusquedaJugador('');
-    setShowOnlyConvocados(item.JugadoresConvocados > 0);
+
+    if (abriendo) {
+      setBusquedaJugador('');
+      setShowOnlyConvocados(item.JugadoresConvocados > 0);
+    }
 
     try {
       const response = await fetch(
