@@ -7,9 +7,26 @@ import DashboardLayout from "@/components/DashboardLayout";
 import {
   ShoppingCart, Search, RefreshCw, Calendar, X,
   Wallet, CreditCard, Receipt, MapPin, TrendingUp,
+  FileDown, FileSpreadsheet, Loader2,
 } from "lucide-react";
+import { exportVentasToPdf, exportVentasToExcel, type TotalesPeriodo } from "@/lib/ventas-export";
 
 type Period = "today" | "yesterday" | "week" | "month" | "all";
+
+/** Botón de exportación; mismo estilo que el resto de la plataforma. */
+const EXP_BTN = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed";
+const EXP_PDF = `${EXP_BTN} bg-blue-600/15 hover:bg-blue-600/25 border-blue-500/30 text-blue-200`;
+const EXP_XLS = `${EXP_BTN} bg-emerald-600/15 hover:bg-emerald-600/25 border-emerald-500/30 text-emerald-200`;
+
+/** Tope de filas que pide la exportación (la tabla en pantalla usa el de la API). */
+const TOPE_EXPORT = 20000;
+
+const ETIQUETA_PERIODO: Record<Exclude<Period, "all">, string> = {
+  today: "Hoy",
+  yesterday: "Ayer",
+  week: "Esta semana",
+  month: "Este mes",
+};
 
 interface Sale {
   IdVenta: number;
@@ -34,6 +51,13 @@ interface Sede {
   Sede: string;
 }
 
+/** Cuánto entró por cada forma de pago en TODO el período, no solo en lo listado. */
+interface ResumenFormaPago {
+  FormaPago: string;
+  Ventas: number;
+  Total: number;
+}
+
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n);
 
@@ -44,6 +68,11 @@ export default function VentasPage() {
 
   // Sales List State
   const [sales, setSales] = useState<Sale[]>([]);
+  /* El listado viene topado, así que los KPIs y el conteo salen de este resumen, que
+     el servidor calcula sobre el período completo. */
+  const [resumen, setResumen] = useState<ResumenFormaPago[]>([]);
+  const [totalVentas, setTotalVentas] = useState(0);
+  const [totalImporte, setTotalImporte] = useState(0);
   const [sedes, setSedes] = useState<Sede[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -57,6 +86,7 @@ export default function VentasPage() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [pendingFrom, setPendingFrom] = useState("");
   const [pendingTo, setPendingTo] = useState("");
+  const [exportando, setExportando] = useState(false);
 
   useEffect(() => {
     if (isInitialized && !user) router.push("/login");
@@ -89,6 +119,9 @@ export default function VentasPage() {
       const json = await res.json();
       if (json.success) {
         setSales(json.data);
+        setResumen(Array.isArray(json.resumen) ? json.resumen : []);
+        setTotalVentas(Number(json.totalVentas) || 0);
+        setTotalImporte(Number(json.totalImporte) || 0);
         setLastUpdated(new Date());
       }
     } catch (e) {
@@ -124,11 +157,86 @@ export default function VentasPage() {
     fetchSales();
   };
 
-  // KPIs Calculations
-  const totalRecaudado = sales.reduce((acc, s) => acc + s.Total, 0);
-  const totalEfectivo = sales.filter(s => s.FormaPago === "EFECTIVO").reduce((acc, s) => acc + s.Total, 0);
-  const totalTarjeta = sales.filter(s => s.FormaPago === "TARJETA").reduce((acc, s) => acc + s.Total, 0);
-  const totalTransferencia = sales.filter(s => s.FormaPago === "TRANSFERENCIA").reduce((acc, s) => acc + s.Total, 0);
+  /* Qué está viendo el usuario, en una línea: es el subtítulo del documento, así
+     que quien lo reciba sabe con qué filtros se sacó y no lo confunde con "todo". */
+  const etiquetaPeriodo =
+    period === "all"
+      ? (dateFrom && dateTo ? `Del ${dateFrom} al ${dateTo}` : "Rango de fechas")
+      : ETIQUETA_PERIODO[period];
+  const nombreSede = selectedSedeFilter
+    ? (sedes.find((s) => String(s.IdSede) === selectedSedeFilter)?.Sede ?? "Sede")
+    : "Todas las sedes";
+  const subtituloExport = [
+    etiquetaPeriodo,
+    nombreSede,
+    searchQuery.trim() ? `Búsqueda: "${searchQuery.trim()}"` : null,
+    season ? `Temporada ${season}` : null,
+  ].filter(Boolean).join(" · ");
+
+  const puedeExportar = !isLoading && sales.length > 0;
+
+  /* La tabla muestra solo las 200 ventas más recientes, pero un documento sí debe
+     traer el período completo: se vuelve a pedir con los mismos filtros y un tope
+     alto. Si aun así viniera recortado, el subtítulo lo dice en vez de callarlo. */
+  const cargarParaExportar = useCallback(async (): Promise<{ filas: Sale[]; totales: TotalesPeriodo }> => {
+    const params = new URLSearchParams({ period, limit: String(TOPE_EXPORT) });
+    if (selectedSedeFilter) params.set("idSede", selectedSedeFilter);
+    if (searchQuery) params.set("q", searchQuery);
+    if (period === "all" && dateFrom && dateTo) {
+      params.set("dateFrom", dateFrom);
+      params.set("dateTo", dateTo);
+    }
+    const comoTotales = (r: ResumenFormaPago[], ventas: number, importe: number): TotalesPeriodo => ({
+      ventas,
+      importe,
+      formas: r.map((x) => ({ forma: x.FormaPago, movimientos: x.Ventas, total: x.Total })),
+    });
+    try {
+      const res = await fetch(`/api/ventas?${params}`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        /* Los totales salen del resumen del servidor, que no lleva tope: si se
+           calcularan sobre las filas —que sí lo llevan— el documento reportaría
+           menos dinero del que hay y contradiría a los indicadores de la pantalla. */
+        return {
+          filas: json.data,
+          totales: comoTotales(
+            Array.isArray(json.resumen) ? json.resumen : [],
+            Number(json.totalVentas) || 0,
+            Number(json.totalImporte) || 0,
+          ),
+        };
+      }
+    } catch (e) {
+      console.error("Error loading sales for export:", e);
+    }
+    /* Si la recarga falla se exporta lo que ya está en pantalla, pero con los totales
+       del último resumen bueno: corresponden a estos mismos filtros. */
+    return { filas: sales, totales: comoTotales(resumen, totalVentas, totalImporte) };
+  }, [period, selectedSedeFilter, searchQuery, dateFrom, dateTo, sales, resumen, totalVentas, totalImporte]);
+
+  const exportar = async (formato: "pdf" | "excel") => {
+    setExportando(true);
+    try {
+      const { filas, totales } = await cargarParaExportar();
+      if (formato === "pdf") exportVentasToPdf(filas, subtituloExport, totales);
+      else await exportVentasToExcel(filas, subtituloExport, totales);
+    } finally {
+      setExportando(false);
+    }
+  };
+
+  /* KPIs del período COMPLETO. Antes se sumaban las filas de la tabla, que vienen
+     topadas: con más ventas que el tope, la pantalla reportaba una fracción del
+     dinero real y no coincidía con el documento exportado. */
+  const importeDe = (forma: string) =>
+    resumen.filter(r => r.FormaPago === forma).reduce((acc, r) => acc + r.Total, 0);
+  const totalRecaudado = totalImporte;
+  const totalEfectivo = importeDe("EFECTIVO");
+  const totalTarjeta = importeDe("TARJETA");
+  const totalTransferencia = importeDe("TRANSFERENCIA");
+  // La tabla se quedó corta respecto de lo que hay en el período.
+  const listadoRecortado = totalVentas > sales.length;
 
   return (
     <DashboardLayout>
@@ -147,10 +255,27 @@ export default function VentasPage() {
           </div>
           <div className="flex items-center gap-3">
             {lastUpdated && (
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-slate-500 hidden sm:inline">
                 Act. {lastUpdated.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
+            {/* Bajan lo mismo que se ve en la tabla, con los filtros ya aplicados. */}
+            <button
+              onClick={() => exportar("pdf")}
+              disabled={!puedeExportar || exportando}
+              title="Descargar en PDF: totales del período completo y el detalle de las ventas más recientes"
+              className={EXP_PDF}
+            >
+              {exportando ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} PDF
+            </button>
+            <button
+              onClick={() => exportar("excel")}
+              disabled={!puedeExportar || exportando}
+              title="Descargar en Excel: totales del período completo y el detalle, con los filtros aplicados"
+              className={EXP_XLS}
+            >
+              {exportando ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} Excel
+            </button>
             <button
               onClick={fetchSales}
               disabled={isLoading}
@@ -167,7 +292,7 @@ export default function VentasPage() {
           {/* KPI CARDS */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: "Ventas Totales", value: fmt(totalRecaudado), desc: `${sales.length} transacciones`, icon: <TrendingUp size={16} className="text-emerald-400" />, bg: "bg-emerald-500/10 border-emerald-500/20" },
+              { label: "Ventas Totales", value: fmt(totalRecaudado), desc: `${totalVentas.toLocaleString("es-MX")} transacciones`, icon: <TrendingUp size={16} className="text-emerald-400" />, bg: "bg-emerald-500/10 border-emerald-500/20" },
               { label: "Efectivo", value: fmt(totalEfectivo), desc: "Colección física", icon: <Wallet size={16} className="text-blue-400" />, bg: "bg-blue-500/10 border-blue-500/20" },
               { label: "Tarjeta", value: fmt(totalTarjeta), desc: "Pagos terminal", icon: <CreditCard size={16} className="text-purple-400" />, bg: "bg-purple-500/10 border-purple-500/20" },
               { label: "Transferencia", value: fmt(totalTransferencia), desc: "Depósitos bancarios", icon: <Receipt size={16} className="text-amber-400" />, bg: "bg-amber-500/10 border-amber-500/20" }
@@ -262,7 +387,15 @@ export default function VentasPage() {
                 </div>
                 <div className="flex gap-3 mt-6">
                   <button onClick={() => setShowDatePicker(false)} className="flex-1 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-bold hover:bg-white/5 transition-all">Cancelar</button>
-                  <button onClick={applyCustomDates} className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-black transition-all shadow-lg shadow-blue-500/20">Aplicar</button>
+                  {/* Sin las dos fechas la API no filtra por fecha y devolveria el
+                      historico completo, rotulado como si fuera un rango. */}
+                  <button
+                    onClick={applyCustomDates}
+                    disabled={!pendingFrom || !pendingTo}
+                    className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-black transition-all shadow-lg shadow-blue-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Aplicar
+                  </button>
                 </div>
               </div>
             </div>
@@ -282,6 +415,17 @@ export default function VentasPage() {
             </div>
           ) : (
             <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+              {/* La tabla viene topada a propósito; decirlo evita que se lea como si
+                  fueran todas las ventas del período. Los KPIs de arriba y la
+                  exportación sí cubren el período completo. */}
+              {listadoRecortado && (
+                <p className="px-5 py-2.5 text-[11px] text-amber-200 bg-amber-500/10 border-b border-amber-500/20">
+                  Mostrando las {sales.length.toLocaleString("es-MX")} ventas más recientes de{" "}
+                  {totalVentas.toLocaleString("es-MX")}. Los indicadores de arriba y los totales de
+                  PDF y Excel sí cubren el período completo; en los documentos el detalle también
+                  se acota, y ellos mismos lo indican.
+                </p>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>

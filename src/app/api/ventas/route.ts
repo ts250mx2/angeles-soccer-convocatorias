@@ -41,6 +41,37 @@ export async function GET(request: Request) {
         const period = searchParams.get('period') || 'default';
         const dateFrom = searchParams.get('dateFrom');
         const dateTo = searchParams.get('dateTo');
+        /* Tope de filas. La pantalla pide las 200 más recientes (lo de siempre); la
+           exportación pide muchas más, porque un documento truncado en silencio se
+           lee como si fuera el historial completo. Se acota a un máximo duro para
+           que un parámetro manipulado no pueda pedir la tabla entera. */
+        const TOPE_MAX = 20000;
+        const limitParam = Number(searchParams.get('limit'));
+        const limit = Number.isFinite(limitParam) && limitParam > 0
+            ? Math.min(Math.floor(limitParam), TOPE_MAX)
+            : 200;
+
+        /* El WHERE se arma una sola vez y lo usan las dos consultas: el listado (que va
+           topado) y el resumen (que NO lo está). Así los KPIs de la pantalla cuentan el
+           período completo aunque la tabla muestre solo las más recientes; si el resumen
+           se sacara de las filas topadas, la pantalla mentiría en cuanto el período
+           pasara del tope. */
+        const filtros: string[] = ['P.Status = 0'];
+        const filtroParams: (string | number)[] = [];
+
+        if (idSede) {
+            filtros.push('P.IdSedePago = ?');
+            filtroParams.push(idSede);
+        }
+        if (buyerName.trim()) {
+            filtros.push('P.Jugador LIKE ?');
+            filtroParams.push(`%${buyerName.trim()}%`);
+        }
+        const dateFilter = buildVentasDateFilter(period, dateFrom, dateTo);
+        filtros.push(dateFilter.clause);
+        filtroParams.push(...dateFilter.params);
+
+        const where = filtros.join(' AND ');
 
         let query = `
             SELECT
@@ -64,28 +95,47 @@ export async function GET(request: Request) {
             FROM tblPagos P
             INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
             LEFT JOIN tblSedes S ON P.IdSedePago = S.IdSede
-            WHERE P.Status = 0
+            WHERE ${where}
         `;
-        const params: any[] = [];
 
-        if (idSede) {
-            query += ' AND P.IdSedePago = ?';
-            params.push(idSede);
-        }
+        // `limit` es un entero ya acotado arriba, no el texto de la petición.
+        query += ` ORDER BY P.FechaPago DESC, P.IdPago DESC LIMIT ${limit}`;
 
-        if (buyerName.trim()) {
-            query += ' AND P.Jugador LIKE ?';
-            params.push(`%${buyerName.trim()}%`);
-        }
+        const [rows] = await pool.query(query, filtroParams);
 
-        const dateFilter = buildVentasDateFilter(period, dateFrom, dateTo);
-        query += ` AND ${dateFilter.clause}`;
-        params.push(...dateFilter.params);
+        /* Resumen del período COMPLETO (sin LIMIT): de aquí salen los KPIs y el conteo
+           real, para que la pantalla no reporte solo lo que alcanzó a listar. */
+        const [resumenRows] = (await pool.query(
+            `SELECT
+                COALESCE(NULLIF(TRIM(P.FormaPago), ''), 'SIN FORMA') AS FormaPago,
+                COUNT(*) AS Ventas,
+                COALESCE(SUM(P.Pago), 0) AS Total
+             FROM tblPagos P
+             INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
+             WHERE ${where}
+             GROUP BY COALESCE(NULLIF(TRIM(P.FormaPago), ''), 'SIN FORMA')
+             ORDER BY Total DESC`,
+            filtroParams,
+        )) as unknown as [{ FormaPago: string; Ventas: number; Total: number }[], unknown];
 
-        query += ' ORDER BY P.FechaPago DESC, P.IdPago DESC LIMIT 200';
+        const resumen = resumenRows.map((r) => ({
+            FormaPago: String(r.FormaPago),
+            Ventas: Number(r.Ventas) || 0,
+            Total: Number(r.Total) || 0,
+        }));
+        const totalVentas = resumen.reduce((s, r) => s + r.Ventas, 0);
+        const totalImporte = resumen.reduce((s, r) => s + r.Total, 0);
 
-        const [rows] = await pool.query(query, params);
-        return NextResponse.json({ success: true, data: rows });
+        return NextResponse.json({
+            success: true,
+            data: rows,
+            // Con qué tope se sirvió el listado y cuánto hay en realidad: quien consume
+            // puede decir "mostrando N de M" en vez de callar el recorte.
+            limite: limit,
+            resumen,
+            totalVentas,
+            totalImporte,
+        });
     } catch (error) {
         console.error('Error fetching sales:', error);
         return NextResponse.json(
