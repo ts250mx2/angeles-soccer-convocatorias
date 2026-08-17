@@ -17,17 +17,10 @@ export async function GET(request: Request) {
 
         const currentSeasonId = (seasonRows[0] as any).IdTemporada;
 
-        const { searchParams } = new URL(request.url);
-        const userId = searchParams.get('userId');
-        const adminLevel = parseInt(searchParams.get('adminLevel') || '0');
-
-        let filterClause = '';
+        /* Quien tiene acceso a Convocatorias ve TODAS las de la temporada, no solo las
+           suyas. Antes se filtraba por IdProfesor a quien no fuera administrador, y eso
+           dejaba a un entrenador sin manera de ver el resto del torneo. */
         const queryParams: any[] = [currentSeasonId];
-
-        if (adminLevel < 2 && userId) {
-            filterClause = ' AND A.IdProfesor = ?';
-            queryParams.push(userId);
-        }
 
         const query = `
             SELECT 
@@ -70,7 +63,7 @@ export async function GET(request: Request) {
                 AND A.IdLiga = PAGOS.IdLiga 
                 AND A.Categoria = PAGOS.Categoria
                 AND A.Color = PAGOS.Color
-            WHERE A.IdTemporada = ? AND A.Status = 0 ${filterClause}
+            WHERE A.IdTemporada = ? AND A.Status = 0
             GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, A.Color, A.IdProfesor, U.Usuario, B.Temporada, C.Liga, 
                      A.FechaInicio, A.FechaFin, A.Cerrada, A.CostoLiga, A.CostoProfesor, A.CostoArbitro,
                      A.CantidadJornadas, A.Eliminatoria, PAGOS.TotalPagos
