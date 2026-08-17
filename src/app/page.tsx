@@ -53,6 +53,11 @@ interface ConvocatoriaSummary {
 export default function Home() {
   const router = useRouter();
   const { user, season, seasonId, setSeason, isInitialized } = useUser();
+
+  /* Poder abrir la pantalla ES el permiso: quien llega aquí ya pasó el filtro de páginas
+     de su perfil. Adentro no hay un segundo nivel, así que da de alta, edita y ve la
+     tarjeta completa. */
+  const puedeEditar = !!user;
   const [convocatorias, setConvocatorias] = useState<ConvocatoriaSummary[]>([]);
   const [leagues, setLeagues] = useState<any[]>([]);
   const [profesores, setProfesores] = useState<any[]>([]);
@@ -154,7 +159,7 @@ export default function Home() {
    * carga igual y a lo sumo faltará alguna convocatoria por capturar a mano.
    */
   const autogenerarConvocatorias = async () => {
-    if (Number(user?.AdminConvocatorias ?? 0) < 1) return;
+    if (!puedeEditar) return;
     try {
       await fetch('/api/convocatorias/autogenerar', { method: 'POST' });
     } catch (error) {
@@ -1056,7 +1061,7 @@ export default function Home() {
                     Ver Cerradas
                   </span>
                 </label>
-                {(user?.AdminConvocatorias ?? 0) >= 1 && (
+                {puedeEditar && (
                   <div className="flex gap-2 w-full sm:w-auto">
                     <button
                       onClick={exportToExcel}
@@ -1080,9 +1085,9 @@ export default function Home() {
                 )}
                 <button
                   onClick={() => setIsCreateModalOpen(true)}
-                  disabled={!user || (user.AdminConvocatorias ?? 0) < 1}
+                  disabled={!puedeEditar}
                   className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  title={!user || (user.AdminConvocatorias ?? 0) < 1 ? "No tienes permisos para crear convocatorias" : ""}
+                  title={!puedeEditar ? "Inicia sesión para crear convocatorias" : ""}
                 >
                   + Nueva Convocatoria
                 </button>
@@ -1200,7 +1205,7 @@ export default function Home() {
                           )}
                         </div>
                       </th>
-                      {(user?.AdminConvocatorias ?? 0) >= 1 && (
+                      {puedeEditar && (
                         <>
                           <th
                             className="py-3 px-4 text-center font-semibold text-xs uppercase tracking-wider cursor-pointer hover:bg-slate-600 transition-colors select-none"
@@ -1310,7 +1315,7 @@ export default function Home() {
                               </span>
                             )}
                           </td>
-                          {(user?.AdminConvocatorias ?? 0) >= 1 && (
+                          {puedeEditar && (
                             <>
                               <td className="py-2 px-4 text-center text-xs font-bold text-blue-300">
                                 {item.JugadoresConvocados}
@@ -1350,7 +1355,7 @@ export default function Home() {
                                   >
                                     Convocar
                                   </button>
-                                  {(user?.AdminConvocatorias ?? 0) >= 1 && (
+                                  {puedeEditar && (
                                     <>
                                       <button
                                         onClick={() => handleOpenEditModal(item)}
@@ -1370,7 +1375,7 @@ export default function Home() {
                               ) : (
                                 <span className="text-slate-500 text-xs font-medium px-2">Cerrada</span>
                               )}
-                              {(user?.AdminConvocatorias ?? 0) >= 1 && (
+                              {puedeEditar && (
                                 <button
                                   onClick={() => handleDeleteConvocatoria(item)}
                                   className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
@@ -1458,7 +1463,7 @@ export default function Home() {
                         )}
                       </div>
 
-                      {(user?.AdminConvocatorias ?? 0) >= 1 && (
+                      {puedeEditar && (
                         <div className="grid grid-cols-2 gap-2 mb-3 p-2 bg-white/5 rounded-lg">
                           <div className="col-span-2 grid grid-cols-3 gap-1 mb-2 pb-2 border-b border-white/10">
                             <div>
@@ -1515,7 +1520,7 @@ export default function Home() {
                         </div>
                       )}
 
-                      {(!user || (user.AdminConvocatorias ?? 0) < 1) && (
+                      {(!puedeEditar) && (
                         <div className="mb-3 p-2 bg-white/5 rounded-lg">
                            <div className="text-[9px] text-slate-500 uppercase font-bold">Periodo</div>
                            <div className="text-[10px] text-slate-300 font-bold">{formatDate(item.FechaInicio)} - {formatDate(item.FechaFin)}</div>
@@ -1531,7 +1536,7 @@ export default function Home() {
                             >
                               Convocar
                             </button>
-                            {(user?.AdminConvocatorias ?? 0) >= 1 && (
+                            {puedeEditar && (
                               <>
                                 <button
                                   onClick={() => handleOpenEditModal(item)}
@@ -1551,7 +1556,7 @@ export default function Home() {
                         ) : (
                           <div className="w-full text-center py-2 text-slate-500 font-medium text-xs">Esta convocatoria está cerrada</div>
                         )}
-                        {(user?.AdminConvocatorias ?? 0) >= 1 && (
+                        {puedeEditar && (
                           <button
                             onClick={() => handleDeleteConvocatoria(item)}
                             className="w-full bg-rose-500/15 hover:bg-red-200 text-rose-300 text-[10px] font-bold py-1.5 rounded-lg transition-colors mt-0.5"
