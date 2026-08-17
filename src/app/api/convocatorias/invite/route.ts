@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { estadoEnTemporada, advertenciaConvocatoria } from '@/lib/convocatoria-elegibilidad';
 
+/**
+ * Invita a un jugador a una convocatoria y lo deja YA CONVOCADO.
+ *
+ * Invitar a alguien y después tener que convocarlo era un paso de más: quien busca a un
+ * jugador en el modal de invitados lo está metiendo al torneo, no dejándolo en espera.
+ * Por eso la fila nace con EsConvocado = 1 y con el precio de la liga, igual que si se
+ * hubiera usado el botón Convocar.
+ *
+ * Ni la inscripción ni el adeudo lo impiden: el estado viaja de regreso solo para
+ * avisar a quien invita.
+ */
 export async function POST(request: Request) {
     try {
         const { seasonId, leagueId, playerId, categoria, color } = await request.json();
@@ -13,23 +24,31 @@ export async function POST(request: Request) {
             );
         }
 
-        /* Igual que convoke: invitar no está condicionado a la inscripción ni al adeudo.
-           El estado viaja de regreso solo para avisar. */
         const estados = await estadoEnTemporada(Number(seasonId), [Number(playerId)]);
         const advertencia = advertenciaConvocatoria(estados.get(Number(playerId)));
 
-        const insertQuery = `
-            INSERT INTO tblDetalleConvocatorias(IdJugador, IdTemporada, IdLiga, Precio, EsConvocado, EsEliminado, Categoria, Color) 
-            SELECT IdJugador, ?, ?, 0, 0, 0, ?, ?
-            FROM tblJugadores 
-            WHERE IdJugador = ?
-        `;
+        /* El precio del sistema, el mismo que aplica el botón Convocar. Si la liga no
+           tiene producto capturado, el jugador entra convocado en cero y el precio se
+           ajusta después: bloquear la invitación por un dato del catálogo dejaría al
+           entrenador sin poder armar su equipo. */
+        const [precios] = (await pool.query(
+            'SELECT Precio FROM tblProductos WHERE IdLiga = ?',
+            [leagueId]
+        )) as [Array<{ Precio: number | null }>, unknown];
+        const precio = Number(precios[0]?.Precio) || 0;
 
-        await pool.query(insertQuery, [seasonId, leagueId, categoria, color, playerId]);
+        await pool.query(
+            `INSERT INTO tblDetalleConvocatorias
+                (IdJugador, IdTemporada, IdLiga, Precio, EsConvocado, EsEliminado, Categoria, Color)
+             SELECT IdJugador, ?, ?, ?, 1, 0, ?, ?
+             FROM tblJugadores
+             WHERE IdJugador = ?`,
+            [seasonId, leagueId, precio, categoria, color, playerId]
+        );
 
         return NextResponse.json({
             success: true,
-            message: 'Jugador invitado exitosamente',
+            message: 'Jugador invitado y convocado',
             advertencia,
         });
     } catch (error) {

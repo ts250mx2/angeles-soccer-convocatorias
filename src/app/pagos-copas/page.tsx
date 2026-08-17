@@ -51,7 +51,16 @@ interface ProductSummary {
   /** Pagaron este torneo y hoy deben algo en la temporada en curso. */
   JugadoresConAdeudo: number;
   Deudores: Deudor[];
+  /** Escudo del torneo. Vive en la liga, así que varios conceptos lo comparten. */
+  IdLiga: number | null;
+  TieneFoto: number;
+  /** Sello para romper el caché del navegador cuando la foto cambia. */
+  FotoVersion: string | null;
 }
+
+/** URL del escudo del torneo, o null si su copa o liga no tiene foto cargada. */
+const fotoTorneo = (p: Pick<ProductSummary, 'IdLiga' | 'TieneFoto' | 'FotoVersion'>): string | null =>
+  p.TieneFoto === 1 && p.IdLiga ? `/api/copas-ligas/foto/${p.IdLiga}?v=${p.FotoVersion ?? '0'}` : null;
 
 /** Torneo que el servidor cree que pertenece a la temporada anterior. */
 interface SugerenciaProducto {
@@ -552,18 +561,32 @@ export default function PagosCopasPage() {
                   <div className={`absolute -inset-24 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none ${estilo.halo}`} />
 
                   <div className="relative z-10">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className={`p-2.5 rounded-xl border shadow-sm ${estilo.icono}`}>
-                        <Trophy size={20} />
-                      </div>
-                      <span className={`text-[9px] font-black uppercase tracking-[0.15em] px-2 py-1 rounded-md border ${estilo.chip}`}>
-                        {p.TipoProducto}
-                      </span>
-                    </div>
+                    {/* Escudo grande a la izquierda y el nombre del torneo a su derecha.
+                        Cuando no hay foto va el icono de siempre, del mismo tamaño, para
+                        que la cuadrícula no se desalinee entre tarjetas con y sin ella. */}
+                    <div className="flex items-start gap-3 mb-4">
+                      {fotoTorneo(p) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={fotoTorneo(p)!}
+                          alt=""
+                          className="w-[72px] h-[72px] rounded-xl object-contain bg-slate-950/60 border border-white/10 shadow-sm flex-shrink-0"
+                        />
+                      ) : (
+                        <div className={`w-[72px] h-[72px] flex items-center justify-center rounded-xl border shadow-sm flex-shrink-0 ${estilo.icono}`}>
+                          <Trophy size={30} />
+                        </div>
+                      )}
 
-                    <h3 className={`text-base font-black text-white mb-4 line-clamp-2 leading-tight transition-colors ${estilo.titulo}`}>
-                      {p.Producto}
-                    </h3>
+                      <div className="min-w-0 flex-1">
+                        <span className={`inline-block text-[9px] font-black uppercase tracking-[0.15em] px-2 py-1 rounded-md border ${estilo.chip}`}>
+                          {p.TipoProducto}
+                        </span>
+                        <h3 className={`text-base font-black text-white mt-1.5 line-clamp-3 leading-tight transition-colors ${estilo.titulo}`}>
+                          {p.Producto}
+                        </h3>
+                      </div>
+                    </div>
 
                     <div className="space-y-3">
                       <div className="flex justify-between items-end">

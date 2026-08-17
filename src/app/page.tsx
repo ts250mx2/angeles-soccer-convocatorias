@@ -48,7 +48,15 @@ interface ConvocatoriaSummary {
   CostoArbitro?: number;
   CantidadJornadas?: number | null;
   Eliminatoria?: string | null;
+  /** Escudo del torneo, del catálogo de Copas y Ligas. */
+  TieneFoto?: number;
+  /** Sello para romper el caché del navegador cuando la foto cambia. */
+  FotoVersion?: string | null;
 }
+
+/** URL del escudo de la liga, o null si esa copa o liga no tiene foto cargada. */
+const fotoLiga = (item: Pick<ConvocatoriaSummary, 'IdLiga' | 'TieneFoto' | 'FotoVersion'>): string | null =>
+  item.TieneFoto === 1 ? `/api/copas-ligas/foto/${item.IdLiga}?v=${item.FotoVersion ?? '0'}` : null;
 
 export default function Home() {
   const router = useRouter();
@@ -126,7 +134,10 @@ export default function Home() {
   const [playerSearchQuery, setPlayerSearchQuery] = useState<string>('');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const [showClosed, setShowClosed] = useState(false);
-  const [showOnlyConvocados, setShowOnlyConvocados] = useState(true);
+  /* Arranca en false: al abrir una convocatoria se ve la plantilla completa, que es
+     desde donde se convoca. Filtrar a los ya convocados es lo que se hace al final,
+     para revisar la lista cerrada. */
+  const [showOnlyConvocados, setShowOnlyConvocados] = useState(false);
   const [showOnlyBecados, setShowOnlyBecados] = useState(false);
   const [summarySearchQuery, setSummarySearchQuery] = useState('');
   /* Tarjetas por defecto: es como se leía esta pantalla y la tabla queda de apoyo
@@ -1036,7 +1047,12 @@ export default function Home() {
 
       const data = await response.json();
       if (data.success) {
-        alert('Jugador invitado exitosamente');
+        // Invitar ya convoca; la advertencia de adeudo o inscripción se informa aparte.
+        alert(
+          data.advertencia
+            ? `Jugador invitado y convocado.\n\nOJO: ${data.advertencia}`
+            : 'Jugador invitado y convocado'
+        );
         setIsInviteModalOpen(false);
         setSelectedPlayerId('');
         // Refresh players list
@@ -1287,9 +1303,21 @@ export default function Home() {
                           key={`${item.IdTemporada}-${item.IdLiga}-${item.Categoria}-${index}`}
                           className="hover:bg-white/5 hover:shadow-sm transition-all duration-200"
                         >
-                          <td className="py-2 px-4 text-xs font-medium">{item.Liga}</td>
+                          <td className="py-2 px-4 text-xs font-medium">
+                            <span className="flex items-center gap-2">
+                              {fotoLiga(item) && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={fotoLiga(item)!}
+                                  alt=""
+                                  className="w-6 h-6 rounded object-contain bg-slate-950/50 border border-white/10 flex-shrink-0"
+                                />
+                              )}
+                              {item.Liga}
+                            </span>
+                          </td>
                           <td className="py-2 px-4 text-xs font-medium text-slate-300">{item.Profesor || '-'}</td>
-                          <td className="py-2 px-4 text-xs font-semibold">{item.Categoria}</td>
+                          <td className="py-2 px-4 text-sm font-black text-white">{item.Categoria}</td>
                           <td className="py-2 px-4 text-xs font-medium text-slate-300 italic">
                             {item.Color || '-'}
                           </td>
@@ -1446,10 +1474,32 @@ export default function Home() {
                       )}
                       
                       <div className="mb-3">
-                        <div className="text-[9px] md:text-[8px] font-bold text-blue-300 uppercase mb-0.5">{item.Liga}</div>
-                        <h4 className="text-base md:text-sm font-bold text-white leading-tight">{item.Categoria}</h4>
-                        <div className="text-xs md:text-[11px] text-slate-400 flex items-center gap-1 mt-1">
-                          <span className="font-medium">Profesor:</span> {item.Profesor || '-'}
+                        {/* Escudo grande a la izquierda y, a su derecha, los tres datos
+                            que identifican la convocatoria: torneo, categoría y profesor.
+                            En una cuadrícula de tarjetas la imagen se reconoce antes que
+                            el texto, y la categoría es lo que el entrenador busca. */}
+                        <div className="flex items-start gap-3">
+                          {fotoLiga(item) && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={fotoLiga(item)!}
+                              alt=""
+                              className="w-20 h-20 md:w-[72px] md:h-[72px] rounded-xl object-contain bg-slate-950/50 border border-white/10 flex-shrink-0"
+                            />
+                          )}
+                          {/* pr-14 deja libre la esquina donde va la insignia
+                              Activa/Cerrada, que está posicionada por encima. */}
+                          <div className="min-w-0 flex-1 pr-14">
+                            <div className="text-[10px] md:text-[9px] font-bold text-blue-300 uppercase leading-tight truncate">
+                              {item.Liga}
+                            </div>
+                            <h4 className="text-2xl md:text-xl font-black text-white leading-none tracking-tight mt-0.5">
+                              {item.Categoria}
+                            </h4>
+                            <div className="text-xs md:text-[11px] text-slate-400 flex items-center gap-1 mt-1.5">
+                              <span className="font-medium">Profesor:</span> {item.Profesor || '-'}
+                            </div>
+                          </div>
                         </div>
                         {item.Color && (
                           <div className="text-[10px] md:text-[9px] text-slate-500 mt-0.5 italic">Color: {item.Color}</div>
@@ -2074,20 +2124,33 @@ export default function Home() {
           <div className="bg-[#0f172a] backdrop-blur-sm rounded-lg w-full max-w-6xl h-full md:h-auto max-h-screen md:max-h-[90vh] overflow-hidden shadow-lg flex flex-col">
             <div className="p-4 md:p-6 border-b border-white/10">
               <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-xl md:text-2xl font-bold text-white flex flex-wrap items-center gap-2 md:gap-3">
-                    {selectedConvocatoria.Liga}
-                    <span className="hidden md:inline text-slate-600">/</span>
-                    {selectedConvocatoria.Categoria}
-                    {selectedConvocatoria.Color && (
-                      <span className="text-xs font-normal text-slate-400 bg-white/10 px-2 py-1 rounded border">
-                        {selectedConvocatoria.Color}
-                      </span>
-                    )}
-                  </h3>
-                  <p className="text-xs md:text-sm text-slate-300 mt-1">
-                    {formatDate(selectedConvocatoria.FechaInicio)} - {formatDate(selectedConvocatoria.FechaFin)}
-                  </p>
+                <div className="flex items-center gap-3 min-w-0">
+                  {fotoLiga(selectedConvocatoria) && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={fotoLiga(selectedConvocatoria)!}
+                      alt=""
+                      className="w-20 h-20 md:w-24 md:h-24 rounded-xl object-contain bg-slate-950/50 border border-white/10 flex-shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    {/* La liga en pequeño arriba y la categoría grande: dentro del modal
+                        el torneo ya se da por sabido, lo que se consulta es la categoría. */}
+                    <p className="text-[11px] md:text-xs font-bold text-blue-300 uppercase tracking-wide">
+                      {selectedConvocatoria.Liga}
+                    </p>
+                    <h3 className="text-2xl md:text-3xl font-black text-white leading-none tracking-tight flex flex-wrap items-center gap-2">
+                      {selectedConvocatoria.Categoria}
+                      {selectedConvocatoria.Color && (
+                        <span className="text-xs font-normal text-slate-400 bg-white/10 px-2 py-1 rounded border border-white/10">
+                          {selectedConvocatoria.Color}
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-xs md:text-sm text-slate-300 mt-1">
+                      {formatDate(selectedConvocatoria.FechaInicio)} - {formatDate(selectedConvocatoria.FechaFin)}
+                    </p>
+                  </div>
                 </div>
                 <button
                   onClick={async () => {

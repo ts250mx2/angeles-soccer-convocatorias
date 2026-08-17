@@ -13,6 +13,9 @@ interface FilaProducto {
     TotalRecaudado: number;
     CantidadPagos: number;
     CantidadJugadores: number;
+    IdLiga: number | null;
+    TieneFoto: number;
+    FotoVersion: string | null;
 }
 
 /** Un deudor tal como lo consume la pantalla. */
@@ -102,12 +105,21 @@ export async function GET(request: Request) {
                 END AS TipoProducto,
                 COALESCE(SUM(P.Pago), 0) AS TotalRecaudado,
                 COUNT(DISTINCT P.IdPago) AS CantidadPagos,
-                COUNT(DISTINCT P.IdJugador) AS CantidadJugadores
+                COUNT(DISTINCT P.IdJugador) AS CantidadJugadores,
+                /* Escudo del torneo, del catálogo de Copas y Ligas. La foto vive en la
+                   liga, no en el producto, así que varios conceptos de la misma copa
+                   comparten imagen. Solo viaja si la hay y cuándo cambió: la imagen la
+                   pide el navegador a /api/copas-ligas/foto. */
+                PR.IdLiga,
+                CASE WHEN L.Foto IS NOT NULL AND L.Foto <> '' THEN 1 ELSE 0 END AS TieneFoto,
+                DATE_FORMAT(L.FechaAct, '%Y%m%d%H%i%s') AS FotoVersion
             FROM tblProductos PR
             LEFT JOIN tblTiposProductos TP ON PR.IdTipoProducto = TP.IdTipoProducto
+            LEFT JOIN tblLigas L ON L.IdLiga = PR.IdLiga
             LEFT JOIN tblPagos P ON PR.IdProducto = P.IdProducto AND P.IdTemporada = ? AND P.Status = 0
             WHERE PR.IdTipoProducto IN (3, 4) AND ${filtroClinics}
-            GROUP BY PR.IdProducto, PR.Producto, PR.IdTipoProducto, TP.TipoProducto
+            GROUP BY PR.IdProducto, PR.Producto, PR.IdTipoProducto, TP.TipoProducto,
+                     PR.IdLiga, TieneFoto, FotoVersion
             -- Sin un solo pago en la temporada, el torneo no se muestra: el catálogo
             -- arrastra productos de años anteriores y llenaban la pantalla de tarjetas
             -- en cero. Se filtra por número de pagos y no por importe, porque un pago

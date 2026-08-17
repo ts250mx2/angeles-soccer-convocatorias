@@ -31,9 +31,13 @@ export async function GET() {
                 A.Color,
                 A.IdProfesor,
                 U.Usuario AS Profesor,
-                B.Temporada, 
-                C.Liga, 
-                A.FechaInicio, 
+                B.Temporada,
+                C.Liga,
+                -- Escudo del torneo (catálogo de Copas y Ligas). Solo viaja si lo hay y
+                -- cuándo cambió; la imagen la pide el navegador a /api/copas-ligas/foto.
+                CASE WHEN C.Foto IS NOT NULL AND C.Foto <> '' THEN 1 ELSE 0 END AS TieneFoto,
+                DATE_FORMAT(C.FechaAct, '%Y%m%d%H%i%s') AS FotoVersion,
+                A.FechaInicio,
                 A.FechaFin, 
                 A.Cerrada, 
                 A.CostoLiga,
@@ -70,7 +74,8 @@ export async function GET() {
               -- va es su presencia en esta pantalla.
               AND NOT ${sqlFueraDeConvocatorias('C.Liga')}
               AND NOT ${sqlFueraDeConvocatorias('A.Categoria')}
-            GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, A.Color, A.IdProfesor, U.Usuario, B.Temporada, C.Liga, 
+            GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, A.Color, A.IdProfesor, U.Usuario, B.Temporada, C.Liga,
+                     TieneFoto, FotoVersion,
                      A.FechaInicio, A.FechaFin, A.Cerrada, A.CostoLiga, A.CostoProfesor, A.CostoArbitro,
                      A.CantidadJornadas, A.Eliminatoria, PAGOS.TotalPagos
             ORDER BY C.Liga ASC, A.Categoria ASC
