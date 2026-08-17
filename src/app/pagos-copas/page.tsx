@@ -954,11 +954,22 @@ export default function PagosCopasPage() {
               className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 outline-none"
             >
               <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
-                <div className="flex items-center gap-4">
-                  <div className={`p-3 rounded-2xl border ${estiloDe(selectedProduct.IdTipoProducto).icono}`}>
-                    <TrendingUp size={24} />
-                  </div>
-                  <div>
+                <div className="flex items-center gap-4 min-w-0">
+                  {/* El escudo del torneo cuando lo hay; si no, el icono de siempre, del
+                      mismo tamaño para que el encabezado no cambie de altura. */}
+                  {fotoTorneo(selectedProduct) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={fotoTorneo(selectedProduct)!}
+                      alt=""
+                      className="w-14 h-14 rounded-2xl object-contain bg-slate-950/60 border border-white/10 flex-shrink-0"
+                    />
+                  ) : (
+                    <div className={`w-14 h-14 flex items-center justify-center rounded-2xl border flex-shrink-0 ${estiloDe(selectedProduct.IdTipoProducto).icono}`}>
+                      <TrendingUp size={24} />
+                    </div>
+                  )}
+                  <div className="min-w-0">
                     <h3 className="text-xl font-black text-white">{selectedProduct.Producto}</h3>
                     <p className="text-xs text-slate-400 uppercase font-bold tracking-widest">
                       {selectedProduct.TipoProducto} · Desglose por Categoría
@@ -1069,13 +1080,24 @@ export default function PagosCopasPage() {
               className="bg-[#0f172a] border border-white/15 rounded-3xl w-full max-w-2xl max-h-[75vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 outline-none"
             >
               <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/5">
-                <div className="flex items-center gap-4">
-                  <div className="bg-purple-600/20 p-2.5 rounded-xl border border-purple-500/20">
-                    <User size={20} className="text-purple-400" />
-                  </div>
-                  <div>
+                <div className="flex items-center gap-4 min-w-0">
+                  {/* Mismo escudo que el modal anterior: al bajar del torneo a una
+                      categoría no debe perderse de vista de qué torneo se trata. */}
+                  {selectedProduct && fotoTorneo(selectedProduct) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={fotoTorneo(selectedProduct)!}
+                      alt=""
+                      className="w-12 h-12 rounded-xl object-contain bg-slate-950/60 border border-white/10 flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 flex items-center justify-center bg-purple-600/20 rounded-xl border border-purple-500/20 flex-shrink-0">
+                      <User size={20} className="text-purple-400" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
                     <h3 className="text-lg font-black text-white">{selectedCategory}</h3>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{selectedProduct?.Producto}</p>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest truncate">{selectedProduct?.Producto}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
