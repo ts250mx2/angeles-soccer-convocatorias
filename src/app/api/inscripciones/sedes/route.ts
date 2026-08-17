@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { JUGADORES_DE_TEMPORADA_SQL, MENSUALIDADES_EN_TEMPORADA_SQL, INSCRIPCION_PREVIA_SQL, TIPO_PRODUCTO_INSCRIPCION } from '@/lib/temporada';
-import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal, esFueraDeLugarKeeper } from '@/lib/jugador-filtros';
+import { ES_VENTA_PUBLICO, esKeeperOPortero, esFutsal, esClinicsFutsal, esFueraDeLugarKeeper, inscritoEnTemporada, keeperInscritoEnTemporada } from '@/lib/jugador-filtros';
 
 /** Jugadores con inscripción de CUALQUIER temporada (regla keeper). */
 const CUALQUIER_INSCRIPCION_SQL = `
@@ -81,16 +81,12 @@ export async function GET(request: Request) {
         const ES_KEEPER = esKeeperOPortero('S');
         const ES_FUTSAL = esFutsal('S');
         const ES_CLINICS_FUTSAL = esClinicsFutsal('S');
-        /* Keeper inscrito EN LA TEMPORADA: pagó su inscripción (INS) o alguna mensualidad
-           de sus meses (MEN). La regla histórica de keeper —cualquier inscripción de
-           cualquier temporada, KINS— daba el mismo número en todas las temporadas, así
-           que no servía para medir el avance de ninguna. */
-        const KEEPER_INSCRITO_TEMPORADA =
-            `(${ES_KEEPER} AND (INS.IdJugador IS NOT NULL OR MEN.IdJugador IS NOT NULL))`;
         /* El total usa la MISMA regla que el desglose. Si el total contara keepers por
-           la regla vieja y el desglose por la nueva, "normal = total − keepers − futsal"
-           saldría inflado por la diferencia. */
-        const INSCRITO = `(INS.IdJugador IS NOT NULL OR ${KEEPER_INSCRITO_TEMPORADA})`;
+           una regla y el desglose por otra, "normal = total − keepers − futsal" saldría
+           inflado por la diferencia. La regla vive en jugador-filtros para que la Lista
+           de Jugadores cuente exactamente lo mismo que esta pantalla. */
+        const KEEPER_INSCRITO_TEMPORADA = keeperInscritoEnTemporada('S');
+        const INSCRITO = inscritoEnTemporada('S');
         /** Tiene beca: mismo criterio que el GROUP_CONCAT de becas, en un solo lugar. */
         const BECADO = `(J.Beca IS NOT NULL AND J.Beca != '0' AND J.Beca != '')`;
         /* Una sede de keepers solo debe mostrar porteros. Quien no lo sea queda fuera

@@ -33,6 +33,24 @@ type FiltroBeca = "todos" | "becados" | "sin-beca";
 type FiltroEstatus = "activos" | "bajas" | "todos";
 type FiltroPago = "todos" | EstadoPago;
 type OrdenKey = "Jugador" | "SedeNombre" | "Categoria" | "Edad" | "MesesDebe";
+/** Indicadores de arriba; cada uno es un atajo a su propia lista de jugadores. */
+type KpiJugadores = "total" | "inscritos" | "becados" | "adeudo" | "sin-inscripcion";
+
+/**
+ * ¿El jugador está inscrito en la temporada?
+ *
+ * `Inscrito` ya viene de la API con la MISMA regla que la pantalla de Inscripciones:
+ * pagó la inscripción de la temporada o, si es portero, arrancó en ella. La beca del
+ * 100% NO cuenta por sí sola: allá tampoco cuenta, y el número tiene que coincidir.
+ */
+const estaInscrito = (j: JugadorListaRow): boolean => j.Inscrito === 1;
+
+/**
+ * Los que además entran en el padrón de aquella pantalla. El indicador se cuenta sobre
+ * éstos para dar exactamente su mismo número.
+ */
+const cuentaComoInscrito = (j: JugadorListaRow): boolean =>
+  j.Inscrito === 1 && j.EnPadronInscritos === 1;
 
 const ETIQUETA_PAGO: Record<FiltroPago, string> = {
   todos: "Todos",
@@ -68,6 +86,10 @@ export default function JugadoresPage() {
   const [sedeFiltro, setSedeFiltro] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState("");
   const [becaFiltro, setBecaFiltro] = useState<FiltroBeca>("todos");
+  /* Corte de inscripción. No va en el desplegable de "Situación" porque no es
+     excluyente con él: un inscrito puede además traer adeudo. Se enciende y se apaga
+     desde su indicador, y "Limpiar" lo devuelve a todos. */
+  const [inscripcionFiltro, setInscripcionFiltro] = useState<"todos" | "inscritos">("todos");
   const [estatusFiltro, setEstatusFiltro] = useState<FiltroEstatus>("activos");
   const [pagoFiltro, setPagoFiltro] = useState<FiltroPago>("todos");
   const [orden, setOrden] = useState<{ key: OrdenKey; dir: "asc" | "desc" } | null>(null);
@@ -136,17 +158,29 @@ export default function JugadoresPage() {
     return [...new Set(base.map((f) => f.Categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   }, [filas, sedeFiltro]);
 
-  const filtrados = useMemo(() => {
+  /* Base del reporte: sede, categoría, estatus y búsqueda, SIN los cortes de beca y
+     situación de pago. Los indicadores se cuentan sobre esta base para que sigan
+     diciendo lo mismo cuando uno de ellos está seleccionado; contándolos sobre la lista
+     ya filtrada, elegir "Con adeudo" dejaría los otros tres en cero y el drilldown no
+     tendría a dónde volver. */
+  const base = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    let out = filas.filter((f) => {
+    return filas.filter((f) => {
       if (estatusFiltro === "activos" && f.Status !== 0) return false;
       if (estatusFiltro === "bajas" && f.Status !== 2) return false;
       if (sedeFiltro && f.SedeNombre !== sedeFiltro) return false;
       if (categoriaFiltro && f.Categoria !== categoriaFiltro) return false;
+      if (q && !f.Jugador.toLowerCase().includes(q) && String(f.IdJugador) !== q) return false;
+      return true;
+    });
+  }, [filas, busqueda, sedeFiltro, categoriaFiltro, estatusFiltro]);
+
+  const filtrados = useMemo(() => {
+    let out = base.filter((f) => {
       if (becaFiltro === "becados" && becaPct(f.Beca) === 0) return false;
       if (becaFiltro === "sin-beca" && becaPct(f.Beca) > 0) return false;
+      if (inscripcionFiltro === "inscritos" && !cuentaComoInscrito(f)) return false;
       if (pagoFiltro !== "todos" && estadoPago(f) !== pagoFiltro) return false;
-      if (q && !f.Jugador.toLowerCase().includes(q) && String(f.IdJugador) !== q) return false;
       return true;
     });
 
@@ -159,18 +193,52 @@ export default function JugadoresPage() {
       });
     }
     return out;
-  }, [filas, busqueda, sedeFiltro, categoriaFiltro, becaFiltro, estatusFiltro, pagoFiltro, orden]);
+  }, [base, becaFiltro, inscripcionFiltro, pagoFiltro, orden]);
 
   const kpis = useMemo(() => ({
-    total: filtrados.length,
-    becados: filtrados.filter((f) => becaPct(f.Beca) > 0).length,
-    conAdeudo: filtrados.filter((f) => estadoPago(f) === "adeudo").length,
-    sinInscripcion: filtrados.filter((f) => estadoPago(f) === "sin-inscripcion").length,
-  }), [filtrados]);
+    total: base.length,
+    inscritos: base.filter(cuentaComoInscrito).length,
+    becados: base.filter((f) => becaPct(f.Beca) > 0).length,
+    conAdeudo: base.filter((f) => estadoPago(f) === "adeudo").length,
+    sinInscripcion: base.filter((f) => estadoPago(f) === "sin-inscripcion").length,
+  }), [base]);
+
+  /**
+   * Indicador seleccionado. Se deduce de los filtros en lugar de guardarse aparte: así
+   * los desplegables y las tarjetas nunca se contradicen. Si el usuario arma con los
+   * desplegables una combinación que ninguna tarjeta representa, no se resalta ninguna.
+   */
+  const kpiActivo: KpiJugadores | null = useMemo(() => {
+    if (inscripcionFiltro === "inscritos") {
+      // El corte de inscripción manda: si además hay otro filtro, ninguna tarjeta
+      // representa esa combinación y no se resalta ninguna.
+      return becaFiltro === "todos" && pagoFiltro === "todos" ? "inscritos" : null;
+    }
+    if (becaFiltro === "becados" && pagoFiltro === "todos") return "becados";
+    if (becaFiltro === "todos" && pagoFiltro === "adeudo") return "adeudo";
+    if (becaFiltro === "todos" && pagoFiltro === "sin-inscripcion") return "sin-inscripcion";
+    if (becaFiltro === "todos" && pagoFiltro === "todos") return "total";
+    return null;
+  }, [becaFiltro, inscripcionFiltro, pagoFiltro]);
+
+  /* Un solo corte a la vez: la tarjeta promete un número y la tabla debe entregar ese
+     mismo número, así que elegir un indicador reemplaza al anterior en vez de sumarse.
+     Volver a tocar el que ya está activo (o tocar el total) deshace el drilldown. */
+  const seleccionarKpi = (kpi: KpiJugadores) => {
+    if (kpi === "total" || kpiActivo === kpi) {
+      setBecaFiltro("todos");
+      setPagoFiltro("todos");
+      setInscripcionFiltro("todos");
+      return;
+    }
+    setInscripcionFiltro(kpi === "inscritos" ? "inscritos" : "todos");
+    setBecaFiltro(kpi === "becados" ? "becados" : "todos");
+    setPagoFiltro(kpi === "becados" || kpi === "inscritos" ? "todos" : kpi);
+  };
 
   const hayFiltros = Boolean(
     busqueda || sedeFiltro || categoriaFiltro || becaFiltro !== "todos" ||
-    estatusFiltro !== "activos" || pagoFiltro !== "todos",
+    estatusFiltro !== "activos" || pagoFiltro !== "todos" || inscripcionFiltro !== "todos",
   );
 
   const limpiarFiltros = () => {
@@ -180,6 +248,7 @@ export default function JugadoresPage() {
     setBecaFiltro("todos");
     setEstatusFiltro("activos");
     setPagoFiltro("todos");
+    setInscripcionFiltro("todos");
   };
 
   const subtituloExport = useMemo(() => {
@@ -187,11 +256,12 @@ export default function JugadoresPage() {
     if (sedeFiltro) partes.push(sedeFiltro);
     if (categoriaFiltro) partes.push(categoriaFiltro);
     if (becaFiltro !== "todos") partes.push(becaFiltro === "becados" ? "Solo becados" : "Sin beca");
+    if (inscripcionFiltro === "inscritos") partes.push("Solo inscritos");
     if (estatusFiltro !== "todos") partes.push(estatusFiltro === "activos" ? "Activos" : "Bajas");
     if (pagoFiltro !== "todos") partes.push(ETIQUETA_PAGO[pagoFiltro]);
     if (busqueda.trim()) partes.push(`Búsqueda: ${busqueda.trim()}`);
     return partes.filter(Boolean).join(" · ");
-  }, [temporadaNombre, sedeFiltro, categoriaFiltro, becaFiltro, estatusFiltro, pagoFiltro, busqueda]);
+  }, [temporadaNombre, sedeFiltro, categoriaFiltro, becaFiltro, inscripcionFiltro, estatusFiltro, pagoFiltro, busqueda]);
 
   const exportar = async (formato: "pdf" | "excel") => {
     if (filtrados.length === 0) return;
@@ -274,13 +344,56 @@ export default function JugadoresPage() {
               </div>
             </div>
 
-            {/* KPIs del corte visible */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-              <Kpi etiqueta="Jugadores mostrados" valor={kpis.total} clase="text-white" />
-              <Kpi etiqueta="Becados" valor={kpis.becados} clase="text-purple-300" />
-              <Kpi etiqueta="Con adeudo" valor={kpis.conAdeudo} clase="text-rose-300" />
-              <Kpi etiqueta="Sin inscripción" valor={kpis.sinInscripcion} clase="text-amber-300" />
+            {/* Indicadores: cada uno abre su propia lista en la tabla de abajo */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-2">
+              <Kpi
+                etiqueta="Total jugadores"
+                valor={kpis.total}
+                clase="text-white"
+                activo={kpiActivo === "total"}
+                anillo="border-blue-500/50 bg-blue-500/10"
+                onClick={() => seleccionarKpi("total")}
+              />
+              <Kpi
+                etiqueta="Inscritos"
+                valor={kpis.inscritos}
+                clase="text-emerald-300"
+                nota={kpis.total > 0 ? `${Math.round((kpis.inscritos / kpis.total) * 100)}% de ${kpis.total.toLocaleString("es-MX")}` : undefined}
+                title="Jugadores inscritos en la temporada, con la MISMA regla y el mismo padrón que la pantalla de Inscripciones: pagaron su inscripción (o, si son porteros, ya arrancaron la temporada), y no son de clinics, venta al público ni captura mal hecha en sede de keepers."
+                activo={kpiActivo === "inscritos"}
+                anillo="border-emerald-500/50 bg-emerald-500/10"
+                onClick={() => seleccionarKpi("inscritos")}
+              />
+              <Kpi
+                etiqueta="Becados"
+                valor={kpis.becados}
+                clase="text-purple-300"
+                activo={kpiActivo === "becados"}
+                anillo="border-purple-500/50 bg-purple-500/10"
+                onClick={() => seleccionarKpi("becados")}
+              />
+              <Kpi
+                etiqueta="Con adeudo"
+                valor={kpis.conAdeudo}
+                clase="text-rose-300"
+                activo={kpiActivo === "adeudo"}
+                anillo="border-rose-500/50 bg-rose-500/10"
+                onClick={() => seleccionarKpi("adeudo")}
+              />
+              <Kpi
+                etiqueta="Sin inscripción"
+                valor={kpis.sinInscripcion}
+                clase="text-amber-300"
+                activo={kpiActivo === "sin-inscripcion"}
+                anillo="border-amber-500/50 bg-amber-500/10"
+                onClick={() => seleccionarKpi("sin-inscripcion")}
+              />
             </div>
+            <p className="text-[10px] text-slate-500 mb-6">
+              {kpiActivo && kpiActivo !== "total"
+                ? "Mostrando solo los jugadores de ese indicador. Tócalo de nuevo, o toca Total jugadores, para ver a todos."
+                : "Toca un indicador para ver solo esos jugadores."}
+            </p>
 
             {/* Filtros */}
             <div className="flex flex-wrap items-center gap-2 mb-5">
@@ -395,14 +508,22 @@ export default function JugadoresPage() {
                             )}
                           </td>
                           <td className="px-3 py-2">
-                            {j.Inscrito === 1 || pct >= 100 ? (
+                            {estaInscrito(j) ? (
                               <span className="text-[10px] font-bold text-emerald-300">
                                 SÍ{j.FechaInscripcion ? ` · ${j.FechaInscripcion}` : ""}
                               </span>
                             ) : j.Exento === 1 ? (
                               <span className="text-[10px] font-bold text-slate-500">N/A</span>
                             ) : (
-                              <span className="text-[10px] font-bold text-rose-300">NO</span>
+                              /* Beca 100% sin inscripción capturada: no debe dinero, pero
+                                 tampoco está inscrito. Es el mismo criterio de Adeudos,
+                                 que los reporta en su propio corte. */
+                              <span
+                                className="text-[10px] font-bold text-rose-300"
+                                title={pct >= 100 ? "Beca del 100%: no paga inscripción, pero no hay pago de inscripción capturado en esta temporada." : undefined}
+                              >
+                                NO
+                              </span>
                             )}
                           </td>
                           <td className="px-3 py-2">
@@ -460,12 +581,42 @@ export default function JugadoresPage() {
   );
 }
 
-function Kpi({ etiqueta, valor, clase }: { etiqueta: string; valor: number; clase: string }) {
+function Kpi({
+  etiqueta,
+  valor,
+  clase,
+  activo,
+  anillo,
+  onClick,
+  nota,
+  title,
+}: {
+  etiqueta: string;
+  valor: number;
+  clase: string;
+  activo: boolean;
+  /** Clases del borde y fondo cuando la tarjeta es la seleccionada. */
+  anillo: string;
+  onClick: () => void;
+  /** Renglón chico bajo la cifra: contra qué se mide. */
+  nota?: string;
+  /** Explicación al pasar el mouse: qué cuenta exactamente. */
+  title?: string;
+}) {
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activo}
+      title={title}
+      className={`text-left rounded-xl px-4 py-3 border transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
+        activo ? anillo : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+      }`}
+    >
       <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{etiqueta}</p>
       <p className={`text-2xl font-black ${clase}`}>{valor.toLocaleString("es-MX")}</p>
-    </div>
+      {nota && <p className="text-[9px] font-bold text-slate-500 tabular-nums">{nota}</p>}
+    </button>
   );
 }
 

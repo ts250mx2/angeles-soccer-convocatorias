@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { CLAVE_LISTA_JUGADORES } from '@/lib/navegacion';
 import { requierePagina } from '@/lib/permisos';
-import { ESTA_INSCRITO, SIN_CLINICS, loadSeasonAndPrevious } from '@/lib/adeudos-db';
+import { SIN_CLINICS, loadSeasonAndPrevious } from '@/lib/adeudos-db';
 import { jugadoresConAdeudo } from '@/lib/adeudos-jugadores';
+import { ES_VENTA_PUBLICO, esFueraDeLugarKeeper, inscritoEnTemporada } from '@/lib/jugador-filtros';
+import { MENSUALIDADES_EN_TEMPORADA_SQL } from '@/lib/temporada';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,17 +13,18 @@ export const dynamic = 'force-dynamic';
  * Lista de Jugadores: la plantilla completa (activos y bajas), jugador por jugador,
  * con su situación en la temporada seleccionada.
  *
- * La inscripción usa la MISMA regla que Convocatorias y Adeudos (`ESTA_INSCRITO`, con
- * herencia de inscripción para porteros/keepers) y el adeudo la MISMA función que
- * Adeudos por Sede (`jugadoresConAdeudo`), para que ninguna pantalla diga del jugador
- * algo distinto que las demás. Los filtros viven en el navegador: son unas cuatro mil
- * filas y así responden sin volver al servidor.
+ * La inscripción usa la MISMA regla que la pantalla de Inscripciones
+ * (`inscritoEnTemporada`) y el adeudo la MISMA función que Adeudos por Sede
+ * (`jugadoresConAdeudo`), para que ninguna pantalla diga del jugador algo distinto que
+ * las demás. Los filtros viven en el navegador: son unas cuatro mil filas y así
+ * responden sin volver al servidor.
  */
 
 interface FilaJugador {
     IdJugador: number;
     Inscrito: number;
     Exento: number;
+    EnPadronInscritos: number;
 }
 
 export async function GET(request: Request) {
@@ -58,8 +61,21 @@ export async function GET(request: Request) {
                 J.CorreoElectronicoPadre,
                 J.CorreoElectronicoMadre,
                 FI.FechaInscripcion,
-                CASE WHEN ${ESTA_INSCRITO} THEN 1 ELSE 0 END AS Inscrito,
-                CASE WHEN ${SIN_CLINICS} THEN 0 ELSE 1 END AS Exento
+                CASE WHEN ${inscritoEnTemporada('SD')} THEN 1 ELSE 0 END AS Inscrito,
+                CASE WHEN ${SIN_CLINICS} THEN 0 ELSE 1 END AS Exento,
+                /* Marca a quien entra en el padrón que cuenta la pantalla de
+                   Inscripciones, que deja fuera las sedes de clinics, los registros de
+                   venta al público y a quien está mal capturado en una sede de keepers.
+                   Sin esta marca, el indicador de inscritos de la Lista daría más que
+                   aquella pantalla.
+                   OJO: nunca un signo de interrogación en los comentarios de una
+                   consulta. mysql2 sustituye TODOS los que encuentra en la cadena,
+                   comentarios incluidos: uno aquí se come un parámetro y desfasa a
+                   todos los que siguen. */
+                CASE WHEN COALESCE(SD.EsClinics, 0) = 0
+                       AND NOT ${ES_VENTA_PUBLICO}
+                       AND NOT ${esFueraDeLugarKeeper('SD')}
+                     THEN 1 ELSE 0 END AS EnPadronInscritos
              FROM tblJugadores J
              LEFT JOIN tblSedes SD ON SD.IdSede = J.IdSede
              LEFT JOIN (
@@ -69,12 +85,10 @@ export async function GET(request: Request) {
                  WHERE P.IdTemporada = ? AND PR.IdTipoProducto = 2 AND P.Status = 0
              ) INS ON INS.IdJugador = J.IdJugador
              LEFT JOIN (
-                 -- Cualquier inscripción, de cualquier temporada (regla portero/keeper).
-                 SELECT DISTINCT P.IdJugador
-                 FROM tblPagos P
-                 INNER JOIN tblProductos PR ON P.IdProducto = PR.IdProducto
-                 WHERE PR.IdTipoProducto = 2 AND P.Status = 0
-             ) KINS ON KINS.IdJugador = J.IdJugador
+                 -- Mensualidades de los meses de la temporada: para el portero, haber
+                 -- pagado una ya cuenta como haber arrancado la temporada.
+                 SELECT DISTINCT IdJugador FROM (${MENSUALIDADES_EN_TEMPORADA_SQL}) M
+             ) MEN ON MEN.IdJugador = J.IdJugador
              LEFT JOIN (
                  SELECT P.IdJugador, DATE_FORMAT(MIN(P.FechaPago), '%d/%m/%Y') AS FechaInscripcion
                  FROM tblPagos P
@@ -84,7 +98,8 @@ export async function GET(request: Request) {
              ) FI ON FI.IdJugador = J.IdJugador
              WHERE J.Status IN (0, 2)
              ORDER BY SedeNombre ASC, J.Categoria ASC, J.Jugador ASC`,
-            [temporadaId, temporadaId],
+            // Un parámetro por subconsulta, en el orden en que aparecen: INS, MEN y FI.
+            [temporadaId, temporadaId, temporadaId],
         )) as [Array<FilaJugador & Record<string, unknown>>, unknown];
 
         /* Adeudo de la temporada con la regla completa de Adeudos por Sede. A quien no

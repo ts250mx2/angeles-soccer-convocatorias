@@ -39,6 +39,29 @@ export const esFueraDeLugarKeeper = (sedeAlias: string) =>
     `(COALESCE(${sedeAlias}.EsKeeper, 0) = 1 AND NOT ${ES_CATEGORIA_PORTERO})`;
 
 /**
+ * Portero que ARRANCÓ la temporada: pagó su inscripción (INS) o alguna mensualidad de
+ * los meses de la temporada (MEN).
+ *
+ * La regla histórica del portero —cualquier inscripción de cualquier año, KINS— da el
+ * mismo número en todas las temporadas, así que no sirve para medir el avance de
+ * ninguna. Requiere el alias de sede indicado, la tabla J y los LEFT JOIN INS y MEN.
+ */
+export const keeperInscritoEnTemporada = (sedeAlias: string) =>
+    `(${esKeeperOPortero(sedeAlias)} AND (INS.IdJugador IS NOT NULL OR MEN.IdJugador IS NOT NULL))`;
+
+/**
+ * "Está inscrito EN ESTA TEMPORADA": pagó la inscripción de la temporada o, si es
+ * portero, arrancó en ella.
+ *
+ * Es la regla de la pantalla de Inscripciones, y la que debe usar cualquier pantalla
+ * que cuente inscritos. No confundir con `ESTA_INSCRITO` de adeudos-db, que para el
+ * portero acepta cualquier inscripción de cualquier año: esa sirve para decidir si
+ * DEBE, no para contar inscritos de una temporada.
+ */
+export const inscritoEnTemporada = (sedeAlias: string) =>
+    `(INS.IdJugador IS NOT NULL OR ${keeperInscritoEnTemporada(sedeAlias)})`;
+
+/**
  * Categoría de futsal: cualquier categoría cuyo nombre contenga FUTSAL. Requiere J.
  */
 export const ES_FUTSAL_CATEGORIA = `UPPER(J.Categoria) LIKE '%FUTSAL%'`;

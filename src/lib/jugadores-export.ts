@@ -27,6 +27,12 @@ export interface JugadorListaRow {
     Inscrito: number;
     /** Sede de clinics o venta al público: el modelo inscripción/mensualidad no aplica. */
     Exento: number;
+    /**
+     * 1 si el jugador entra en el padrón que cuenta la pantalla de Inscripciones (sede
+     * no clinics, no venta al público y no mal capturado en una sede de keepers). El
+     * indicador de inscritos se apoya en esto para dar el MISMO número que aquélla.
+     */
+    EnPadronInscritos: number;
     MesesDebe: number;
 }
 
