@@ -49,9 +49,10 @@ export async function GET(request: Request) {
         )) as [FilaJugador[], unknown];
 
         /* Inscripción y adeudo de la temporada, para cada jugador de la lista.
-           La pantalla solo muestra a los inscritos, pero NUNCA esconde a quien ya está
-           en la convocatoria: si un convocado no está inscrito, eso es justo lo que
-           hay que ver, no lo que hay que ocultar. */
+           Se listan TODOS los activos de la categoría, con o sin inscripción y con o sin
+           adeudo: convocar es decisión del club. El estado se manda para marcarlos en
+           pantalla, no para esconderlos; esconder a un jugador solo hace creer que no
+           existe. */
         const estados = await estadoEnTemporada(
             Number(seasonId),
             rows.map((r) => Number(r.IdJugador)),
@@ -66,13 +67,6 @@ export async function GET(request: Request) {
                 MesesDebe: estado?.mesesDebe ?? 0,
             };
         });
-
-        const enLaConvocatoria = (f: typeof conEstado[number]) =>
-            Number(f.EsConvocado) === 1 || Number(f.EsEliminado) === 1;
-        const visibles = conEstado.filter(
-            (f) => f.Inscrito === 1 || f.Exento === 1 || enLaConvocatoria(f),
-        );
-        const ocultosNoInscritos = conEstado.length - visibles.length;
 
         // Get total sum and count
         const [totalRows] = await pool.query(
@@ -108,12 +102,11 @@ export async function GET(request: Request) {
 
         return NextResponse.json({
             success: true,
-            data: visibles,
+            data: conEstado,
             total,
             count,
             totalPagos,
             totalCXC,
-            ocultosNoInscritos,
         });
     } catch (error) {
         console.error('Error fetching players:', error);

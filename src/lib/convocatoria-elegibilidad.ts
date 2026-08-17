@@ -3,12 +3,14 @@ import { ESTA_INSCRITO, SIN_CLINICS, loadSeasonAndPrevious } from '@/lib/adeudos
 import { jugadoresConAdeudo } from '@/lib/adeudos-jugadores';
 
 /**
- * Quién puede ser convocado.
+ * Cómo llega un jugador a la convocatoria: inscripción y adeudo de la temporada.
  *
- * Dos condiciones, ambas medidas contra la temporada de la convocatoria:
- *   1. Estar INSCRITO (pago de inscripción de esa temporada; los porteros heredan
+ * Convocar es una decisión del club, no del sistema: se puede convocar a cualquier
+ * jugador activo de la categoría. Lo que aquí se calcula NO bloquea, informa. Dos
+ * señales, ambas medidas contra la temporada de la convocatoria:
+ *   1. Si está INSCRITO (pago de inscripción de esa temporada; los porteros heredan
  *      cualquier inscripción previa, igual que en Adeudos).
- *   2. No deber mensualidades vencidas.
+ *   2. Cuántas mensualidades vencidas debe.
  *
  * El adeudo se calcula con la MISMA función que Adeudos por Sede y Pagos de Copas
  * (`jugadoresConAdeudo`), para que las tres pantallas nunca digan cosas distintas del
@@ -85,15 +87,20 @@ export async function estadoEnTemporada(
     return out;
 }
 
-/** ¿Se puede convocar? Devuelve el motivo del rechazo, o null si sí se puede. */
-export function motivoNoConvocable(estado: EstadoTemporada | undefined): string | null {
+/**
+ * Lo que hay que advertir antes de convocarlo, o null si viene limpio.
+ *
+ * Es un aviso, no un veto: quien convoca decide con el dato a la vista. Por eso el
+ * texto describe la situación en vez de dar una orden.
+ */
+export function advertenciaConvocatoria(estado: EstadoTemporada | undefined): string | null {
     const e = estado ?? SIN_DATO;
     if (!e.inscrito && !e.exento) {
-        return 'No está inscrito en la temporada. Registra su inscripción antes de convocarlo.';
+        return 'No tiene inscripción pagada en la temporada.';
     }
     if (e.mesesDebe > 0) {
         const meses = e.mesesDebe === 1 ? '1 mes' : `${e.mesesDebe} meses`;
-        return `Tiene ${meses} de adeudo en la temporada. Ponlo al corriente antes de convocarlo.`;
+        return `Tiene ${meses} de adeudo en la temporada.`;
     }
     return null;
 }

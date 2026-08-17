@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { normalizarEliminatoria, normalizarJornadas } from '@/lib/convocatoria-opciones';
+import { crearConvocatoria } from '@/lib/convocatorias-crear';
 
 export async function POST(request: Request) {
     try {
@@ -10,6 +10,26 @@ export async function POST(request: Request) {
             return NextResponse.json(
                 { success: false, message: 'Faltan parámetros requeridos' },
                 { status: 400 }
+            );
+        }
+
+        /* Clinics no juega liga ni copa. El selector de categorías ya no las ofrece, pero
+           eso es comodidad de pantalla: quien decide es el servidor, y aquí se corta
+           tanto por categoría como por liga. */
+        const [ligas] = await pool.query(
+            'SELECT Liga FROM tblLigas WHERE IdLiga = ?',
+            [leagueId]
+        ) as unknown as [Array<{ Liga: string | null }>, unknown];
+        const nombreLiga = String(ligas[0]?.Liga ?? '');
+        const esClinics = (t: string) => t.toUpperCase().includes('CLINIC');
+
+        if (esClinics(String(categoria)) || esClinics(nombreLiga)) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    message: 'Clinics no juega liga ni copa, así que no se le pueden crear convocatorias.',
+                },
+                { status: 409 }
             );
         }
 
@@ -35,43 +55,12 @@ export async function POST(request: Request) {
             );
         }
 
-        // REPLACE reescribe la fila completa, así que Cerrada y Status vuelven a 0: la
-        // convocatoria eliminada queda otra vez vigente y abierta.
-        const insertQuery = `
-            REPLACE INTO tblConvocatorias (IdTemporada, IdLiga, Categoria, FechaInicio, FechaFin, Color, IdProfesor, CostoLiga, CostoProfesor, CostoArbitro, CantidadJornadas, Eliminatoria, Cerrada, Status, FechaAlta)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
-        `;
-
-        await pool.query(insertQuery, [
+        // El alta vive en una sola función, compartida con la creación automática por
+        // ligas y copas pagadas, para que las dos produzcan exactamente lo mismo.
+        await crearConvocatoria(pool, {
             seasonId, leagueId, categoria, fechaInicio, fechaFin, color, idProfesor,
-            costoLiga || 0, costoProfesor || 0, costoArbitro || 0,
-            normalizarJornadas(cantidadJornadas), normalizarEliminatoria(eliminatoria),
-        ]);
-
-        // Insert players into tblDetalleConvocatorias
-        const insertPlayersQuery = `
-            INSERT INTO tblDetalleConvocatorias(IdJugador, IdTemporada, IdLiga, Precio, EsConvocado, EsEliminado, Categoria, Color) 
-            SELECT DISTINCT IdJugador, ?, ?, 0, 0, 0, ?, ?
-            FROM tblJugadores
-            WHERE Categoria = ?
-            AND IdJugador NOT IN (
-                SELECT IdJugador 
-                FROM tblDetalleConvocatorias 
-                WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?
-            )
-        `;
-
-        await pool.query(insertPlayersQuery, [
-            seasonId,
-            leagueId,
-            categoria,
-            color,
-            categoria,
-            seasonId,
-            leagueId,
-            categoria,
-            color
-        ]);
+            costoLiga, costoProfesor, costoArbitro, cantidadJornadas, eliminatoria,
+        });
 
         return NextResponse.json({
             success: true,

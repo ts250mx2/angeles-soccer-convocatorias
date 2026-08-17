@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { estadoEnTemporada, motivoNoConvocable } from '@/lib/convocatoria-elegibilidad';
+import { estadoEnTemporada, advertenciaConvocatoria } from '@/lib/convocatoria-elegibilidad';
 
 export async function POST(request: Request) {
     try {
@@ -13,13 +13,10 @@ export async function POST(request: Request) {
             );
         }
 
-        /* La misma reja que convoke: la opción deshabilitada en el modal es comodidad,
-           pero quien decide si un jugador puede ser invitado es el servidor. */
+        /* Igual que convoke: invitar no está condicionado a la inscripción ni al adeudo.
+           El estado viaja de regreso solo para avisar. */
         const estados = await estadoEnTemporada(Number(seasonId), [Number(playerId)]);
-        const motivo = motivoNoConvocable(estados.get(Number(playerId)));
-        if (motivo) {
-            return NextResponse.json({ success: false, message: motivo }, { status: 409 });
-        }
+        const advertencia = advertenciaConvocatoria(estados.get(Number(playerId)));
 
         const insertQuery = `
             INSERT INTO tblDetalleConvocatorias(IdJugador, IdTemporada, IdLiga, Precio, EsConvocado, EsEliminado, Categoria, Color) 
@@ -32,7 +29,8 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
-            message: 'Jugador invitado exitosamente'
+            message: 'Jugador invitado exitosamente',
+            advertencia,
         });
     } catch (error) {
         console.error('Error inviting player:', error);

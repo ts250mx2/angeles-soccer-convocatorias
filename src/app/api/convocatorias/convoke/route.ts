@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { estadoEnTemporada, motivoNoConvocable } from '@/lib/convocatoria-elegibilidad';
+import { estadoEnTemporada, advertenciaConvocatoria } from '@/lib/convocatoria-elegibilidad';
 
 export async function POST(request: Request) {
     try {
@@ -10,13 +10,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, message: 'Missing required parameters' }, { status: 400 });
         }
 
-        /* La reja de verdad: el botón deshabilitado en pantalla es comodidad, pero el
-           que decide si un jugador puede entrar a la convocatoria es el servidor. */
+        /* Se convoca a cualquier jugador activo de la categoría: la decisión es del club.
+           El estado de inscripción y adeudo NO impide la alta, se devuelve para que la
+           pantalla lo muestre y quien convoca sepa a quién está metiendo. */
         const estados = await estadoEnTemporada(Number(seasonId), [Number(playerId)]);
-        const motivo = motivoNoConvocable(estados.get(Number(playerId)));
-        if (motivo) {
-            return NextResponse.json({ success: false, message: motivo }, { status: 409 });
-        }
+        const advertencia = advertenciaConvocatoria(estados.get(Number(playerId)));
 
         // Get price from tblProductos
         const [priceRows] = await pool.query(
@@ -38,7 +36,7 @@ export async function POST(request: Request) {
             [price, playerId, seasonId, leagueId, categoria, color]
         );
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, advertencia });
     } catch (error) {
         console.error('Error updating convocatorias:', error);
         return NextResponse.json(

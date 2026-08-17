@@ -52,16 +52,19 @@ function becaPct(beca: unknown): number {
 }
 
 /**
- * Por qué no se puede convocar, o null si sí se puede.
- * Refleja `motivoNoConvocable` del servidor (src/lib/convocatoria-elegibilidad.ts).
+ * Lo que hay que advertir de este jugador, o null si viene limpio.
+ *
+ * Es un aviso, no un candado: a cualquier jugador activo de la categoría se le puede
+ * convocar. Refleja `advertenciaConvocatoria` del servidor
+ * (src/lib/convocatoria-elegibilidad.ts).
  */
-export function motivoBloqueo(p: JugadorConvocatoria): string | null {
+export function advertenciaJugador(p: JugadorConvocatoria): string | null {
   if (!p.Inscrito && !p.Exento) {
-    return "No está inscrito en la temporada. Registra su inscripción antes de convocarlo.";
+    return "No tiene inscripción pagada en la temporada.";
   }
   if (p.MesesDebe > 0) {
     const meses = p.MesesDebe === 1 ? "1 mes" : `${p.MesesDebe} meses`;
-    return `Tiene ${meses} de adeudo en la temporada. Ponlo al corriente antes de convocarlo.`;
+    return `Tiene ${meses} de adeudo en la temporada.`;
   }
   return null;
 }
@@ -123,13 +126,14 @@ export default function ConvocatoriaPlayersTable({
           </thead>
           <tbody>
             {players.map((p) => {
-              const bloqueo = motivoBloqueo(p);
+              const bloqueo = advertenciaJugador(p);
               const convocado = !!p.EsConvocado;
               const eliminado = !!p.EsEliminado;
               const beca = becaPct(p.Beca);
 
               /* El color de la fila dice el estado de un vistazo: verde dentro,
-                 ámbar bloqueado por adeudo, rojo fuera. */
+                 ámbar se puede convocar pero trae adeudo o le falta inscripción,
+                 rojo fuera. */
               const fondo = eliminado
                 ? "bg-rose-50/60"
                 : convocado
@@ -271,9 +275,12 @@ export default function ConvocatoriaPlayersTable({
                       ) : (
                         <button
                           onClick={() => onConvocar(p)}
-                          disabled={!!bloqueo}
-                          title={bloqueo ?? "Convocar a este jugador"}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black transition-colors shadow-sm disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed"
+                          title={
+                            bloqueo
+                              ? `${bloqueo} Aun así lo puedes convocar.`
+                              : "Convocar a este jugador"
+                          }
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black transition-colors shadow-sm"
                         >
                           Convocar
                         </button>

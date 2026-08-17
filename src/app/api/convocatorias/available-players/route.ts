@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { estadoEnTemporada, motivoNoConvocable } from '@/lib/convocatoria-elegibilidad';
+import { estadoEnTemporada, advertenciaConvocatoria } from '@/lib/convocatoria-elegibilidad';
 
 interface FilaDisponible {
     IdJugador: number;
@@ -40,9 +40,8 @@ export async function GET(request: Request) {
             [seasonId, leagueId, categoria, color],
         )) as [FilaDisponible[], unknown];
 
-        /* El buscador de invitados NO esconde a quien no puede ser convocado: lo muestra
-           con su motivo (sin inscripción / con adeudo) para que quien busca entienda por
-           qué no lo puede invitar, en vez de creer que el jugador no existe. */
+        /* Todos se pueden invitar. Los que traen adeudo o no tienen inscripción salen
+           marcados, para que quien invita lo sepa antes de hacerlo. */
         const estados = await estadoEnTemporada(
             Number(seasonId),
             rows.map((r) => Number(r.IdJugador)),
@@ -55,7 +54,7 @@ export async function GET(request: Request) {
                 Inscrito: estado?.inscrito ? 1 : 0,
                 Exento: estado?.exento ? 1 : 0,
                 MesesDebe: estado?.mesesDebe ?? 0,
-                Motivo: motivoNoConvocable(estado),
+                Advertencia: advertenciaConvocatoria(estado),
             };
         });
 

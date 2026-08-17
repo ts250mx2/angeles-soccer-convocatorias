@@ -111,9 +111,6 @@ export default function Home() {
   const [recordCount, setRecordCount] = useState<number>(0);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
   const [busquedaJugador, setBusquedaJugador] = useState('');
-  /* Jugadores que la API dejó fuera por no estar inscritos en la temporada. Se informa
-     en pantalla: si el entrenador no ve a alguien, tiene que saber por qué. */
-  const [ocultosNoInscritos, setOcultosNoInscritos] = useState(0);
   const [playerSortConfig, setPlayerSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   // Invite Modal State
@@ -147,10 +144,29 @@ export default function Home() {
   }, [user, isInitialized, router]);
 
 
+  /**
+   * Da de alta las convocatorias de ligas y copas ya pagadas que aún no existen.
+   *
+   * Corre antes de pedir el resumen para que aparezcan en la misma carga. Solo lo
+   * dispara la administración: crea convocatorias sin profesor asignado, que un
+   * profesor ni siquiera vería en su propio resumen, así que su visita no tiene por
+   * qué escribir en la base. Si falla, no se interrumpe la pantalla: el resumen se
+   * carga igual y a lo sumo faltará alguna convocatoria por capturar a mano.
+   */
+  const autogenerarConvocatorias = async () => {
+    if (Number(user?.AdminConvocatorias ?? 0) < 2) return;
+    try {
+      await fetch('/api/convocatorias/autogenerar', { method: 'POST' });
+    } catch (error) {
+      console.error('Error autogenerando convocatorias:', error);
+    }
+  };
+
   // Fetch convocatorias summary
   const fetchConvocatorias = async () => {
     setIsLoading(true);
     try {
+      await autogenerarConvocatorias();
       const response = await fetch(`/api/convocatorias/summary?userId=${user?.IdUsuario}&adminLevel=${user?.AdminConvocatorias}`);
       const data = await response.json();
       if (data.success) {
@@ -717,7 +733,6 @@ export default function Home() {
         setRecordCount(data.count || 0);
         setTotalPagos(data.totalPagos || 0);
         setTotalCXC(data.totalCXC || 0);
-        setOcultosNoInscritos(data.ocultosNoInscritos || 0);
       } else {
         alert('Error al cargar jugadores: ' + data.message);
       }
@@ -842,6 +857,13 @@ export default function Home() {
       String(player.Categoria ?? '').toLowerCase().includes(q)
     );
   });
+
+  /* Cuántos de la categoría traen algo pendiente. Se cuenta sobre la lista completa, no
+     sobre la filtrada: el aviso habla de la categoría, no de lo que se está buscando. */
+  const sinAlCorriente = players.filter(
+    (p: { Inscrito?: number; Exento?: number; MesesDebe?: number }) =>
+      (p.Inscrito === 0 && p.Exento === 0) || Number(p.MesesDebe) > 0,
+  ).length;
 
   const sortedPlayers = [...filteredPlayers].sort((a, b) => {
     if (!playerSortConfig) return 0;
@@ -973,8 +995,8 @@ export default function Home() {
     }
   };
 
-  /* Etiqueta corta para el listado de invitables: el motivo completo va en el title. */
-  const etiquetaNoInvitable = (player: any): string => {
+  /* Etiqueta corta para el listado de invitables: la advertencia completa va en el title. */
+  const etiquetaAdvertencia = (player: any): string => {
     if (player.Inscrito === 0 && player.Exento === 0) return 'Sin inscripción';
     return player.MesesDebe === 1 ? 'Adeudo: 1 mes' : `Adeudo: ${player.MesesDebe} meses`;
   };
@@ -982,14 +1004,6 @@ export default function Home() {
   const handleInvitePlayer = async () => {
     if (!selectedConvocatoria || !selectedPlayerId) {
       alert('Por favor seleccione un jugador');
-      return;
-    }
-
-    /* Cinturón además de los tirantes: la opción ya viene deshabilitada, pero si algo
-       la dejó seleccionable, aquí se corta antes de llamar al servidor. */
-    const jugador = availablePlayers.find(p => String(p.IdJugador) === String(selectedPlayerId));
-    if (jugador?.Motivo) {
-      alert('No se puede invitar: ' + jugador.Motivo);
       return;
     }
 
@@ -2155,13 +2169,16 @@ export default function Home() {
                     </span>
                   </div>
 
-                  {/* La lista solo trae inscritos: si alguien falta, hay que decir por qué. */}
-                  {ocultosNoInscritos > 0 && (
-                    <div className="mb-4 flex items-start gap-2 px-4 py-2.5 rounded-xl bg-white/10 border border-white/10 text-slate-300">
-                      <Info size={15} className="flex-shrink-0 mt-0.5 text-slate-500" />
+                  {/* Aquí está toda la categoría. Los que traen adeudo o no tienen
+                      inscripción salen en ámbar: se pueden convocar, pero conviene saberlo. */}
+                  {sinAlCorriente > 0 && (
+                    <div className="mb-4 flex items-start gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-400/20 text-amber-200">
+                      <Info size={15} className="flex-shrink-0 mt-0.5 text-amber-400" />
                       <p className="text-xs font-semibold leading-relaxed">
-                        {ocultosNoInscritos} jugador{ocultosNoInscritos !== 1 ? 'es' : ''} de la categoría no
-                        aparece{ocultosNoInscritos !== 1 ? 'n' : ''} por no tener inscripción pagada en la temporada.
+                        {sinAlCorriente} jugador{sinAlCorriente !== 1 ? 'es' : ''} de la categoría
+                        {sinAlCorriente !== 1 ? ' tienen' : ' tiene'} adeudo o no
+                        {sinAlCorriente !== 1 ? ' tienen' : ' tiene'} inscripción pagada en la temporada
+                        (marcados en ámbar). Se pueden convocar igual.
                       </p>
                     </div>
                   )}
@@ -2241,16 +2258,19 @@ export default function Home() {
                         <option
                           key={player.IdJugador}
                           value={player.IdJugador}
-                          disabled={!!player.Motivo}
-                          title={player.Motivo ?? undefined}
+                          title={
+                            player.Advertencia
+                              ? `${player.Advertencia} Aun así lo puedes invitar.`
+                              : undefined
+                          }
                         >
-                          {player.Jugador} ({player.Categoria}){player.Motivo ? ` — ⛔ ${etiquetaNoInvitable(player)}` : ''}
+                          {player.Jugador} ({player.Categoria}){player.Advertencia ? ` — ⚠ ${etiquetaAdvertencia(player)}` : ''}
                         </option>
                       ))}
                   </select>
-                  {availablePlayers.some(p => p.Motivo) && (
+                  {availablePlayers.some(p => p.Advertencia) && (
                     <p className="mt-2 text-xs text-amber-300/90">
-                      Los jugadores marcados con ⛔ no se pueden invitar: necesitan inscripción en la temporada o ponerse al corriente.
+                      Los marcados con ⚠ traen adeudo o no tienen inscripción en la temporada. Se pueden invitar igual.
                     </p>
                   )}
                 </div>
