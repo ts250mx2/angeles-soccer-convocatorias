@@ -1626,7 +1626,7 @@ export default function Home() {
                 </div>
 
                 {isLeagueDropdownOpen && (
-                  <div className="absolute z-[70] w-full mt-1 bg-white/5 border border-white/10 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute z-[70] w-full mt-1 bg-slate-900 border border-white/15 rounded-lg shadow-2xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="p-2 sticky top-0 bg-white/5 border-b border-white/10">
                       <div className="relative">
                         <Search className="absolute left-2 top-2.5 text-slate-500" size={14} />
@@ -1679,7 +1679,7 @@ export default function Home() {
                 </div>
 
                 {isProfesorDropdownOpen && (
-                  <div className="absolute z-[70] w-full mt-1 bg-white/5 border border-white/10 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute z-[70] w-full mt-1 bg-slate-900 border border-white/15 rounded-lg shadow-2xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="p-2 sticky top-0 bg-white/5 border-b border-white/10">
                       <div className="relative">
                         <Search className="absolute left-2 top-2.5 text-slate-500" size={14} />
@@ -1743,7 +1743,7 @@ export default function Home() {
                 </div>
 
                 {isCategoryDropdownOpen && (
-                  <div className="absolute z-[60] w-full mt-1 bg-white/5 border border-white/10 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute z-[60] w-full mt-1 bg-slate-900 border border-white/15 rounded-lg shadow-2xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="p-2 sticky top-0 bg-white/5 border-b border-white/10">
                       <div className="relative">
                         <Search className="absolute left-2 top-2.5 text-slate-500" size={14} />

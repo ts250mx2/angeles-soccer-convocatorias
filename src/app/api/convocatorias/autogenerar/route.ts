@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { crearConvocatoria } from '@/lib/convocatorias-crear';
+import { crearConvocatoria, sincronizarPagados } from '@/lib/convocatorias-crear';
 import { ES_CLINICS_CATEGORIA } from '@/lib/jugador-filtros';
 
 export const dynamic = 'force-dynamic';
@@ -58,6 +58,19 @@ export async function POST() {
         }
         const temporada = temporadas[0];
 
+        /* Los pagos siguen entrando despues del alta, asi que cada visita pone al
+           corriente lo ya existente: quien pago su liga o copa queda convocado. Va antes
+           de crear las que faltan porque esas nacen ya sincronizadas. */
+        const [ligas] = (await pool.query(
+            'SELECT DISTINCT IdLiga FROM tblConvocatorias WHERE IdTemporada = ? AND Status = 0',
+            [temporada.IdTemporada],
+        )) as unknown as [Array<{ IdLiga: number }>, unknown];
+
+        let convocadosPorPago = 0;
+        for (const l of ligas) {
+            convocadosPorPago += await sincronizarPagados(pool, temporada.IdTemporada, l.IdLiga);
+        }
+
         /* Ligas y copas pagadas de la temporada que todavía no tienen convocatoria.
            El NOT EXISTS mira la terna completa sin el color: el color es un
            desempate del alta manual, no parte de la identidad del torneo. */
@@ -85,7 +98,7 @@ export async function POST() {
         )) as unknown as [Faltante[], unknown];
 
         if (faltantes.length === 0) {
-            return NextResponse.json({ success: true, creadas: 0, detalle: [] });
+            return NextResponse.json({ success: true, creadas: 0, convocadosPorPago, detalle: [] });
         }
 
         /* Todo o nada: si una falla a media lista, no se queda medio poblada. El alta
@@ -118,6 +131,7 @@ export async function POST() {
         return NextResponse.json({
             success: true,
             creadas: faltantes.length,
+            convocadosPorPago,
             detalle: faltantes.map((f) => ({ IdLiga: f.IdLiga, Categoria: f.Categoria })),
         });
     } catch (error) {

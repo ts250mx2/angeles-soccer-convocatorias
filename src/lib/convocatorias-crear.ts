@@ -71,4 +71,44 @@ export async function crearConvocatoria(db: Ejecutor, c: NuevaConvocatoria): Pro
             c.seasonId, c.leagueId, c.categoria, c.color,
         ],
     );
+
+    await sincronizarPagados(db, c.seasonId, c.leagueId);
+}
+
+/**
+ * Quien ya pagó la liga o la copa queda convocado.
+ *
+ * El pago es la decisión: si el niño pagó, está dentro, y tener que marcarlo además a
+ * mano solo abre la puerta a que el cobro y la convocatoria digan cosas distintas. Se
+ * le pone también el precio del producto, que es lo que la pantalla compara contra lo
+ * pagado para sacar el saldo.
+ *
+ * No toca a los que están marcados como eliminados: a esos se les sacó a propósito, y
+ * un pago viejo no debe regresarlos solos.
+ *
+ * Corre sobre toda la liga de la temporada, no solo sobre la categoría recién creada,
+ * porque los pagos siguen entrando después del alta.
+ */
+export async function sincronizarPagados(
+    db: Ejecutor,
+    seasonId: number | string,
+    leagueId: number | string,
+): Promise<number> {
+    const [res] = await db.query(
+        `UPDATE tblDetalleConvocatorias D
+         INNER JOIN (
+             SELECT P.IdJugador, MAX(PR.Precio) AS Precio
+             FROM tblPagos P
+             INNER JOIN tblProductos PR ON PR.IdProducto = P.IdProducto
+             WHERE P.Status = 0 AND P.IdTemporada = ? AND PR.IdLiga = ?
+               AND PR.IdTipoProducto IN (3, 4)
+             GROUP BY P.IdJugador
+         ) PAG ON PAG.IdJugador = D.IdJugador
+         SET D.EsConvocado = 1,
+             D.Precio = COALESCE(NULLIF(D.Precio, 0), PAG.Precio, 0)
+         WHERE D.IdTemporada = ? AND D.IdLiga = ?
+           AND D.EsConvocado = 0 AND D.EsEliminado = 0`,
+        [seasonId, leagueId, seasonId, leagueId],
+    );
+    return (res as { affectedRows?: number }).affectedRows ?? 0;
 }
