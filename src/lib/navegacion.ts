@@ -90,6 +90,12 @@ export const NAV_ITEMS: NavItem[] = [
                 icono: 'Trophy',
                 adminOnly: true,
             },
+            {
+                label: 'Catálogo de Copas y Ligas',
+                href: '/copas-ligas',
+                icono: 'Boxes',
+                adminOnly: true,
+            },
         ],
     },
     {
@@ -249,6 +255,7 @@ export const CLAVE_USUARIOS = '/usuarios';
 export const CLAVE_AGENTE = '/agente';
 export const CLAVE_PREREGISTROS = '/preregistros';
 export const CLAVE_LISTA_JUGADORES = '/jugadores';
+export const CLAVE_COPAS_LIGAS = '/copas-ligas';
 
 export interface PaginaCatalogo {
     /** href del módulo: la misma clave del manual y de tblPerfilPaginas. */

@@ -247,6 +247,43 @@ export const SECCIONES: SeccionManual[] = [
         ],
     },
     {
+        clave: '/copas-ligas',
+        titulo: 'Catálogo de Copas y Ligas',
+        audiencia: ['direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'Es el padrón de torneos: lo que existe aquí es lo que después se puede convocar y cobrar. Cada tarjeta es una copa o una liga, con su foto, su nombre y sus precios.',
+            },
+            { tipo: 'subtitulo', texto: 'Copa o liga, y por qué importa' },
+            {
+                tipo: 'parrafo',
+                texto: 'Al dar de alta se elige si es **COPA** o **LIGA**. Esa marca viaja a los cobros, así que es la que separa las dos columnas en los reportes de ventas. Si cambias el tipo después, los cobros de ese torneo se actualizan solos para no quedar contradiciéndose con el catálogo.',
+            },
+            { tipo: 'subtitulo', texto: 'El precio no es un solo número' },
+            {
+                tipo: 'parrafo',
+                texto: 'Un mismo torneo suele cobrar cosas distintas: DESTACA cobra aparte el FUT 3 y el FUT 7, y COPA DALLAS cobra el torneo y el transporte por separado. Por eso cada copa o liga tiene una lista de **conceptos cobrables**, y el precio se edita renglón por renglón. La tarjeta muestra el rango cuando hay varios.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'cuidado',
+                titulo: 'Cuidado',
+                texto: 'Cambiar un precio **no toca lo ya cobrado**: los pagos guardan su propio importe y el histórico se queda como está. El precio nuevo aplica de ahí en adelante, y las convocatorias vigentes lo toman en la siguiente visita a Convocatorias, donde se ponen al corriente los importes que todavía nadie ha pagado.',
+            },
+            { tipo: 'subtitulo', texto: 'La foto' },
+            {
+                tipo: 'parrafo',
+                texto: 'Se puede **arrastrar** la imagen al recuadro, **pegarla con Ctrl+V** o hacer clic para elegir el archivo. El sistema la reduce antes de guardarla, así que no importa si viene pesada del celular. Acepta PNG, JPG, WEBP y GIF.',
+            },
+            { tipo: 'subtitulo', texto: 'Dar de baja' },
+            {
+                tipo: 'parrafo',
+                texto: 'Nada se borra. Una copa o liga se marca de baja y deja de ofrecerse, pero conserva su historia. No se puede dar de baja si tiene convocatorias vigentes en la temporada activa: primero hay que eliminar esas convocatorias.',
+            },
+        ],
+    },
+    {
         clave: '/pagos-copas',
         titulo: 'Pagos de Copas y Ligas',
         audiencia: ['direccion'],
