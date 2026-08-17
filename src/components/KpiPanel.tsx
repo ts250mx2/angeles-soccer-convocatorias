@@ -1,5 +1,6 @@
 "use client";
-import { MapPin, ChevronRight } from 'lucide-react';
+import { MapPin, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import GraficaPastel from '@/components/GraficaPastel';
 
 /**
  * Primitivos visuales de los paneles de KPI (Inscripciones y Adeudos por Sede):
@@ -87,6 +88,152 @@ export function TileGrupo({ label, valor, color, pct, title, onClick }: {
         <span className="text-2xl font-black text-white tabular-nums leading-none">{valor}</span>
         {pct !== undefined && <span className="text-[10px] font-bold text-slate-500 tabular-nums">{pct}%</span>}
       </span>
+    </button>
+  );
+}
+
+/** Una rebanada del pastel de un panel, con su corte clicable. */
+export interface RebanadaKpi {
+  etiqueta: string;
+  cantidad: number;
+  color: string;
+  /** Explicación al pasar el mouse: qué cuenta exactamente esta rebanada. */
+  title?: string;
+  onClick?: () => void;
+}
+
+/**
+ * Reparto de un panel: la dona a la izquierda con la cifra en el hueco, y a la derecha
+ * la lista con el número y el porcentaje de cada rebanada.
+ *
+ * La lista no es decoración. En una dona los ángulos parecidos no se comparan bien, así
+ * que el valor exacto va escrito y el color solo acompaña; es también lo que la mantiene
+ * legible para quien no distingue los tonos. El número vive en el hueco porque es el
+ * dato que la dona está contando, no un adorno al lado.
+ */
+export function PastelKpi({ rebanadas, centro, centroNota, tamano = 128, unidad = 'registros', className }: {
+  rebanadas: RebanadaKpi[];
+  /** Cifra que va en el hueco. */
+  centro: number;
+  centroNota?: string;
+  tamano?: number;
+  unidad?: string;
+  className?: string;
+}) {
+  const total = rebanadas.reduce((s, r) => s + r.cantidad, 0);
+  const visibles = rebanadas.filter((r) => r.cantidad > 0);
+  const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+
+  return (
+    <div className={`flex items-center gap-4 ${className ?? ''}`}>
+      <div className="relative flex-shrink-0" style={{ width: tamano, height: tamano }}>
+        <GraficaPastel rebanadas={rebanadas} total={total} tamano={tamano} hueco={28} unidad={unidad} />
+        {/* Sin datos la dona no se dibuja, pero la cifra igual se muestra: un cero
+            explícito se entiende, un hueco en blanco no. */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-2xl font-black text-white leading-none tabular-nums">{centro.toLocaleString('es-MX')}</span>
+          {centroNota && (
+            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 leading-none mt-1 text-center px-2">
+              {centroNota}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="min-w-0 flex-1 space-y-1">
+        {visibles.length === 0 ? (
+          <p className="text-[11px] text-slate-500">Sin registros en este período.</p>
+        ) : visibles.map((r) => {
+          const contenido = (
+            <>
+              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: r.color }} />
+              <span className="text-[11px] font-bold text-slate-300 truncate flex-1 min-w-0">{r.etiqueta}</span>
+              <span className="text-sm font-black text-white tabular-nums">{r.cantidad.toLocaleString('es-MX')}</span>
+              <span className="text-[10px] text-slate-500 tabular-nums w-9 text-right">{pct(r.cantidad)}%</span>
+            </>
+          );
+          return r.onClick ? (
+            <button
+              key={r.etiqueta}
+              type="button"
+              onClick={r.onClick}
+              title={r.title}
+              className="w-full flex items-center gap-2 text-left rounded-lg px-1.5 py-1 hover:bg-white/10 transition-colors"
+            >
+              {contenido}
+            </button>
+          ) : (
+            <div key={r.etiqueta} title={r.title} className="w-full flex items-center gap-2 px-1.5 py-1">
+              {contenido}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Un panel plegado: una barra con su título y su cifra clave, que se expande al
+ * oprimirla. Es la misma forma para todos los paneles plegables, para que se lea como
+ * un solo mecanismo y no como varios controles distintos.
+ */
+export function BarraColapsada({ icono, iconoClase, titulo, tituloClase, subtitulo, cifras = [], insignia, onToggle, title, className }: {
+  icono: React.ReactNode;
+  iconoClase: string;
+  titulo: string;
+  tituloClase: string;
+  subtitulo: string;
+  /** Cifras clave que se siguen viendo con el panel plegado. */
+  cifras?: { valor: number; nota: string; clase?: string }[];
+  /** Aviso a la derecha (por ejemplo, que un filtro está recortando la cifra). */
+  insignia?: React.ReactNode;
+  onToggle: () => void;
+  title?: string;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={title}
+      className={`w-full border rounded-2xl px-5 py-3.5 flex items-center justify-between gap-4 transition-all ${className ?? ''}`}
+    >
+      <span className="flex items-center gap-3 min-w-0">
+        <span className={`p-2 rounded-xl border flex-shrink-0 ${iconoClase}`}>{icono}</span>
+        <span className="min-w-0 text-left">
+          <span className={`block text-[11px] uppercase tracking-widest font-black ${tituloClase}`}>{titulo}</span>
+          <span className="block text-xs text-slate-400 truncate">{subtitulo}</span>
+        </span>
+      </span>
+      <span className="flex items-center gap-4 flex-shrink-0">
+        {insignia}
+        {cifras.map((c) => (
+          <span key={c.nota} className="text-right">
+            <span className={`block text-2xl font-black tabular-nums leading-none ${c.clase ?? 'text-white'}`}>
+              {c.valor.toLocaleString('es-MX')}
+            </span>
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-0.5">{c.nota}</span>
+          </span>
+        ))}
+        <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-blue-300">
+          Expandir <ChevronDown size={14} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** Control para volver a plegar un panel abierto. */
+export function OcultarBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Volver a plegar esta tarjeta"
+      className="self-end -mt-1 mb-1 flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
+    >
+      Ocultar <ChevronUp size={13} />
     </button>
   );
 }
