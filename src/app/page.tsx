@@ -72,9 +72,9 @@ export default function Home() {
     fechaInicio: today,
     fechaFin: today,
     color: '',
-    costoLiga: 0,
-    costoProfesor: 0,
-    costoArbitro: 0,
+    costoLiga: '',
+    costoProfesor: '',
+    costoArbitro: '',
     cantidadJornadas: '',
     eliminatoria: ''
   });
@@ -99,9 +99,9 @@ export default function Home() {
     fechaInicio: '',
     fechaFin: '',
     idProfesor: '' as string | number,
-    costoLiga: 0,
-    costoProfesor: 0,
-    costoArbitro: 0,
+    costoLiga: '',
+    costoProfesor: '',
+    costoArbitro: '',
     cantidadJornadas: '',
     eliminatoria: ''
   });
@@ -342,9 +342,9 @@ export default function Home() {
           fechaInicio: today,
           fechaFin: today,
           color: '',
-          costoLiga: 0,
-          costoProfesor: 0,
-          costoArbitro: 0,
+          costoLiga: '',
+          costoProfesor: '',
+          costoArbitro: '',
           cantidadJornadas: '',
           eliminatoria: ''
         });
@@ -371,9 +371,9 @@ export default function Home() {
       fechaInicio: item.FechaInicio ? item.FechaInicio.substring(0, 10) : '',
       fechaFin: item.FechaFin ? item.FechaFin.substring(0, 10) : '',
       idProfesor: item.IdProfesor || '',
-      costoLiga: item.CostoLiga || 0,
-      costoProfesor: item.CostoProfesor || 0,
-      costoArbitro: item.CostoArbitro || 0,
+      costoLiga: item.CostoLiga == null ? '' : String(item.CostoLiga),
+      costoProfesor: item.CostoProfesor == null ? '' : String(item.CostoProfesor),
+      costoArbitro: item.CostoArbitro == null ? '' : String(item.CostoArbitro),
       cantidadJornadas: item.CantidadJornadas ? String(item.CantidadJornadas) : '',
       eliminatoria: item.Eliminatoria || ''
     });
@@ -1597,9 +1597,9 @@ export default function Home() {
                   fechaInicio: today,
                   fechaFin: today,
                   color: '',
-                  costoLiga: 0,
-                  costoProfesor: 0,
-                  costoArbitro: 0,
+                  costoLiga: '',
+                  costoProfesor: '',
+                  costoArbitro: '',
                   cantidadJornadas: '',
                   eliminatoria: ''
                 });
@@ -1830,7 +1830,7 @@ export default function Home() {
                   <input
                     type="number"
                     value={newConvocatoria.costoLiga}
-                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoLiga: parseFloat(e.target.value) || 0 }))}
+                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoLiga: e.target.value }))}
                     className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
@@ -1840,7 +1840,7 @@ export default function Home() {
                   <input
                     type="number"
                     value={newConvocatoria.costoProfesor}
-                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoProfesor: parseFloat(e.target.value) || 0 }))}
+                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoProfesor: e.target.value }))}
                     className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
@@ -1850,7 +1850,7 @@ export default function Home() {
                   <input
                     type="number"
                     value={newConvocatoria.costoArbitro}
-                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoArbitro: parseFloat(e.target.value) || 0 }))}
+                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoArbitro: e.target.value }))}
                     className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
@@ -1895,9 +1895,9 @@ export default function Home() {
                     fechaInicio: today,
                     fechaFin: today,
                     color: '',
-                    costoLiga: 0,
-                    costoProfesor: 0,
-                    costoArbitro: 0,
+                    costoLiga: '',
+                    costoProfesor: '',
+                    costoArbitro: '',
                     cantidadJornadas: '',
                     eliminatoria: ''
                   });
@@ -1987,7 +1987,7 @@ export default function Home() {
                   <input
                     type="number"
                     value={editConvocatoria.costoLiga}
-                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoLiga: parseFloat(e.target.value) || 0 }))}
+                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoLiga: e.target.value }))}
                     className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
@@ -1997,7 +1997,7 @@ export default function Home() {
                   <input
                     type="number"
                     value={editConvocatoria.costoProfesor}
-                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoProfesor: parseFloat(e.target.value) || 0 }))}
+                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoProfesor: e.target.value }))}
                     className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
@@ -2007,7 +2007,7 @@ export default function Home() {
                   <input
                     type="number"
                     value={editConvocatoria.costoArbitro}
-                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoArbitro: parseFloat(e.target.value) || 0 }))}
+                    onChange={(e) => setEditConvocatoria(prev => ({ ...prev, costoArbitro: e.target.value }))}
                     className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
                     placeholder="0.00"
                   />
