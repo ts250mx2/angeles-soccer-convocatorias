@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, History, Ban, Check, DollarSign } from "lucide-react";
+import { AlertTriangle, History, Ban, Check, DollarSign, Lock } from "lucide-react";
 
 /**
  * Lista de jugadores de una convocatoria.
@@ -30,6 +30,11 @@ export interface JugadorConvocatoria {
   Exento: number;
   /** Meses vencidos sin pagar en la temporada. */
   MesesDebe: number;
+  /**
+   * El precio se fijó a mano: ni el sincronizado ni convocar lo mueven. Se pone al
+   * capturar un importe distinto al del sistema y se quita al volver a ese importe.
+   */
+  PrecioManual?: number;
 }
 
 interface Props {
@@ -45,6 +50,20 @@ interface Props {
 
 const money = (n: number) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n || 0);
+
+const MANUAL_TITULO =
+  "Precio fijado a mano: no lo cambia el precio de la liga. Para devolverlo al automático, captúralo igual al del sistema.";
+
+const tituloPrecio = (p: JugadorConvocatoria): string => {
+  if (p.PrecioManual === 1) return MANUAL_TITULO;
+  return p.EsConvocado === 1 ? "Cambiar precio" : "Asignar precio (aún no convocado)";
+};
+
+/** Candado que distingue un precio ajustado a mano de uno que sigue al de la liga. */
+function CandadoPrecio({ visible }: { visible: boolean }) {
+  if (!visible) return null;
+  return <Lock size={11} className="inline-block ml-1 -mt-0.5 text-amber-600" aria-label="Precio fijado a mano" />;
+}
 
 /** Porcentaje de beca normalizado a 0-100; '', '0' y NULL son "sin beca". */
 function becaPct(beca: unknown): number {
@@ -200,12 +219,13 @@ export default function ConvocatoriaPlayersTable({
                   <td className="px-4 py-2.5 text-right whitespace-nowrap">
                     <button
                       onClick={() => onPrecio(p)}
-                      title={convocado ? "Cambiar precio" : "Asignar precio (aún no convocado)"}
+                      title={tituloPrecio(p)}
                       className={`text-sm font-bold tabular-nums hover:underline transition-colors ${
                         convocado ? "text-blue-700 hover:text-blue-900" : "text-slate-300 hover:text-slate-500"
                       }`}
                     >
                       {convocado ? money(p.Precio) : "—"}
+                      <CandadoPrecio visible={p.PrecioManual === 1} />
                     </button>
                   </td>
 
@@ -268,7 +288,7 @@ export default function ConvocatoriaPlayersTable({
                       </button>
                       <button
                         onClick={() => onPrecio(p)}
-                        title="Cambiar el precio de este jugador"
+                        title={p.PrecioManual === 1 ? MANUAL_TITULO : "Cambiar el precio de este jugador"}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
                       >
                         <DollarSign size={15} />

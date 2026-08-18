@@ -1,5 +1,6 @@
 import type { Pool, PoolConnection } from 'mysql2/promise';
 import { normalizarEliminatoria, normalizarJornadas } from '@/lib/convocatoria-opciones';
+import { joinPrecioManual, preciosManualesDisponibles } from '@/lib/convocatorias-precios';
 
 /**
  * Alta de una convocatoria, en un solo lugar.
@@ -76,6 +77,46 @@ export async function crearConvocatoria(db: Ejecutor, c: NuevaConvocatoria): Pro
 }
 
 /**
+ * Pone el precio de cada convocado al del producto de la liga, con su BecaLigas aplicada.
+ *
+ * El precio del sistema manda mientras nadie diga lo contrario: antes solo se escribía al
+ * convocar, así que un cambio de tarifa o de beca dejaba a los ya convocados con el
+ * importe viejo y el saldo salía mal sin que nada lo delatara.
+ *
+ * NO toca a quien tiene el precio fijado a mano. Un ajuste hecho desde la pantalla deja
+ * su marca (ver @/lib/convocatorias-precios) y este sincronizado lo respeta; sin eso, el
+ * precio especial de un jugador duraba hasta la siguiente visita a la categoría.
+ *
+ * Solo toca a los convocados: quien no lo está va en 0 por convención, y ahí se queda.
+ */
+export async function sincronizarPrecios(
+    db: Ejecutor,
+    seasonId: number | string,
+    leagueId: number | string,
+): Promise<number> {
+    const respetaManuales = await preciosManualesDisponibles(db);
+    const [res] = await db.query(
+        `UPDATE tblDetalleConvocatorias D
+         INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
+         INNER JOIN (
+             SELECT IdLiga, MAX(Precio) AS Precio
+             FROM tblProductos
+             WHERE IdLiga = ? AND IdTipoProducto IN (3, 4)
+             GROUP BY IdLiga
+         ) PR ON PR.IdLiga = D.IdLiga
+         ${respetaManuales ? joinPrecioManual('D') : ''}
+         SET D.Precio = ROUND(
+                 PR.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2)
+         WHERE D.IdTemporada = ? AND D.IdLiga = ? AND D.EsConvocado = 1
+           ${respetaManuales ? 'AND MAN.IdJugador IS NULL' : ''}
+           AND D.Precio <> ROUND(
+                 PR.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2)`,
+        [leagueId, seasonId, leagueId],
+    );
+    return (res as { affectedRows?: number }).affectedRows ?? 0;
+}
+
+/**
  * Quien ya pagó la liga o la copa queda convocado.
  *
  * El pago es la decisión: si el niño pagó, está dentro, y tener que marcarlo además a
@@ -89,48 +130,15 @@ export async function crearConvocatoria(db: Ejecutor, c: NuevaConvocatoria): Pro
  * Corre sobre toda la liga de la temporada, no solo sobre la categoría recién creada,
  * porque los pagos siguen entrando después del alta.
  */
-/**
- * Pone el precio de cada convocado al del producto de la liga, con su BecaLigas aplicada.
- *
- * El precio del sistema manda. Antes solo se escribía al convocar, así que un cambio de
- * tarifa o de beca dejaba a los ya convocados con el importe viejo y el saldo salía mal
- * sin que nada lo delatara.
- *
- * OJO: esto pisa los precios ajustados a mano. Es a propósito —se pidió que el precio
- * refleje el del sistema— pero significa que un ajuste manual dura hasta la siguiente
- * visita a la pantalla.
- *
- * Solo toca a los convocados: quien no lo está va en 0 por convención, y ahí se queda.
- */
-export async function sincronizarPrecios(
-    db: Ejecutor,
-    seasonId: number | string,
-    leagueId: number | string,
-): Promise<number> {
-    const [res] = await db.query(
-        `UPDATE tblDetalleConvocatorias D
-         INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
-         INNER JOIN (
-             SELECT IdLiga, MAX(Precio) AS Precio
-             FROM tblProductos
-             WHERE IdLiga = ? AND IdTipoProducto IN (3, 4)
-             GROUP BY IdLiga
-         ) PR ON PR.IdLiga = D.IdLiga
-         SET D.Precio = ROUND(
-                 PR.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2)
-         WHERE D.IdTemporada = ? AND D.IdLiga = ? AND D.EsConvocado = 1
-           AND D.Precio <> ROUND(
-                 PR.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2)`,
-        [leagueId, seasonId, leagueId],
-    );
-    return (res as { affectedRows?: number }).affectedRows ?? 0;
-}
-
 export async function sincronizarPagados(
     db: Ejecutor,
     seasonId: number | string,
     leagueId: number | string,
 ): Promise<number> {
+    /* Con precio fijado a mano solo se marca la convocatoria y el importe se deja tal
+       cual: un precio manual de 0 (invitado, beca total) es una decisión, y el
+       NULLIF de abajo lo leería como "sin precio" y le pondría el del producto. */
+    const respetaManuales = await preciosManualesDisponibles(db);
     const [res] = await db.query(
         `UPDATE tblDetalleConvocatorias D
          INNER JOIN (
@@ -142,12 +150,13 @@ export async function sincronizarPagados(
              GROUP BY P.IdJugador
          ) PAG ON PAG.IdJugador = D.IdJugador
          INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
+         ${respetaManuales ? joinPrecioManual('D') : ''}
          SET D.EsConvocado = 1,
-             D.Precio = COALESCE(
+             D.Precio = ${respetaManuales ? 'IF(MAN.IdJugador IS NOT NULL, D.Precio, ' : ''}COALESCE(
                  NULLIF(D.Precio, 0),
                  ROUND(PAG.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2),
                  0
-             )
+             )${respetaManuales ? ')' : ''}
          WHERE D.IdTemporada = ? AND D.IdLiga = ?
            AND D.EsConvocado = 0 AND D.EsEliminado = 0`,
         [seasonId, leagueId, seasonId, leagueId],

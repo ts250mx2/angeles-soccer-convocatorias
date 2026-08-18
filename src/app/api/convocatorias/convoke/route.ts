@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { estadoEnTemporada, advertenciaConvocatoria } from '@/lib/convocatoria-elegibilidad';
+import { precioDelSistema, tienePrecioManual } from '@/lib/convocatorias-precios';
 
 export async function POST(request: Request) {
     try {
@@ -19,17 +20,25 @@ export async function POST(request: Request) {
         /* Precio de la liga con la beca del jugador ya aplicada. La beca que cuenta aquí
            es BecaLigas, no la de mensualidades: son descuentos distintos. Se guarda ya
            rebajado porque es contra este número que la pantalla saca el saldo; dejarlo
-           completo cobraría de más a un becado. */
-        const [priceRows] = await pool.query(
-            `SELECT ROUND(MAX(PR.Precio) * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2) AS Precio
-             FROM tblProductos PR
-             CROSS JOIN tblJugadores J
-             WHERE PR.IdLiga = ? AND J.IdJugador = ?`,
-            [leagueId, playerId]
-        ) as unknown as [Array<{ Precio: number | null }>, unknown];
+           completo cobraría de más a un becado.
 
-        const price = priceRows[0]?.Precio;
-        if (price === undefined || price === null) {
+           Salvo que el jugador traiga precio fijado a mano: entonces solo se le marca la
+           convocatoria y el importe se respeta. Convocar a alguien al que se le puso un
+           precio especial no debe deshacer ese ajuste. */
+        const clave = { idJugador: playerId, seasonId, leagueId, categoria, color: color ?? '' };
+        const manual = await tienePrecioManual(pool, clave);
+
+        if (manual) {
+            await pool.query(
+                `UPDATE tblDetalleConvocatorias SET EsConvocado = 1, EsEliminado = 0
+                 WHERE IdJugador = ? AND IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?`,
+                [playerId, seasonId, leagueId, categoria, color]
+            );
+            return NextResponse.json({ success: true, advertencia });
+        }
+
+        const price = await precioDelSistema(pool, leagueId, playerId);
+        if (price === null) {
             return NextResponse.json(
                 { success: false, message: 'No se encontró precio para esta liga' },
                 { status: 404 }

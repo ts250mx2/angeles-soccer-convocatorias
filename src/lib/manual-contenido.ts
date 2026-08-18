@@ -216,6 +216,16 @@ export const SECCIONES: SeccionManual[] = [
                 texto: 'Cada jugador convocado muestra tres cifras: **Precio** (lo que le toca pagar), **Pago** (lo que ya entregó) y **CXC** (lo que falta). Puedes cambiar el precio de un jugador en particular para casos especiales.',
             },
             {
+                tipo: 'parrafo',
+                texto: 'Normalmente el precio lo pone el sistema: el del concepto de la liga en **Copas y Ligas**, con la beca de ligas del jugador ya descontada. Si cambias la tarifa ahí, las convocatorias vigentes la toman en la siguiente visita, sin recapturar nada.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Un precio que capturas a mano se queda',
+                texto: 'Cuando le pones a un jugador un importe **distinto** al de la liga, ese precio queda fijo: aparece con un candado y ya no lo mueve nada automático, ni al recargar la categoría, ni al convocarlo, ni al cambiar la tarifa de la liga. Para devolverlo al automático, captúrale de nuevo el mismo precio que tiene la liga y el candado desaparece.',
+            },
+            {
                 tipo: 'nota',
                 estilo: 'ojo',
                 titulo: 'Ojo',

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { normalizarEliminatoria, normalizarJornadas } from '@/lib/convocatoria-opciones';
+import { mueveColorDePreciosManuales } from '@/lib/convocatorias-precios';
 
 export async function POST(request: Request) {
     try {
@@ -52,6 +53,9 @@ export async function POST(request: Request) {
                  WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?`,
                 [newColor, seasonId, leagueId, oldCategoria, oldColor]
             );
+
+            // 3. Y las marcas de precio fijado a mano, que se identifican igual.
+            await mueveColorDePreciosManuales(connection, seasonId, leagueId, oldCategoria, oldColor, newColor);
 
             await connection.commit();
             return NextResponse.json({ success: true, message: 'Convocatoria actualizada exitosamente' });

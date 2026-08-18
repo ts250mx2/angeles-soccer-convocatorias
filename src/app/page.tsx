@@ -947,7 +947,15 @@ export default function Home() {
   const handleUpdatePrice = async (player: any) => {
     if (!selectedConvocatoria) return;
 
-    const newPrice = prompt(`Ingrese el nuevo precio para ${player.Jugador}:`, (player.Precio ?? 0).toString());
+    /* El importe capturado se queda fijo si difiere del de la liga: el sincronizado de
+       precios lo respeta. Volver a capturar el precio de la liga lo regresa al
+       automático. Se explica aquí porque es donde el usuario toma la decisión. */
+    const newPrice = prompt(
+      `Nuevo precio para ${player.Jugador}:` +
+        '\n\nSi es distinto al de la liga, queda fijo y ya no se le cambia solo.' +
+        '\nPara devolverlo al automático, captura el mismo precio que tiene la liga.',
+      (player.Precio ?? 0).toString(),
+    );
     if (newPrice === null) return;
 
     const precio = Number(newPrice);

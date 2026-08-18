@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { estadoEnTemporada } from '@/lib/convocatoria-elegibilidad';
+import { joinPrecioManual, preciosManualesDisponibles } from '@/lib/convocatorias-precios';
 
 interface FilaJugador {
     IdJugador: number;
     EsConvocado: number;
     EsEliminado: number;
+    /** 1 cuando el precio se fijó a mano y ningún automatismo lo mueve. */
+    PrecioManual: number;
 }
 
 export async function GET(request: Request) {
@@ -23,12 +26,17 @@ export async function GET(request: Request) {
             );
         }
 
+        /* El indicador de precio fijado a mano solo existe si la migración 010 ya se
+           aplicó; sin ella la pantalla se comporta como antes. */
+        const respetaManuales = await preciosManualesDisponibles(pool);
+
         const selectQuery = `
             SELECT A.IdJugador, B.Jugador, B.Categoria, A.Precio, A.EsConvocado, A.EsEliminado,
                    -- La beca que aplica aquí es BecaLigas, no la de mensualidades: son
                    -- descuentos distintos y un jugador puede tener uno sin el otro.
                    COALESCE(B.BecaLigas, 0) AS Beca,
                    CASE WHEN A.Categoria <> B.Categoria THEN 1 ELSE 0 END AS EsInvitado,
+                   ${respetaManuales ? 'CASE WHEN MAN.IdJugador IS NULL THEN 0 ELSE 1 END' : '0'} AS PrecioManual,
                    CASE WHEN A.EsConvocado = 1 THEN COALESCE(PAGOS.TotalPago, 0) ELSE 0 END AS PagoJugador,
                    CASE WHEN A.EsConvocado = 1 THEN (A.Precio - COALESCE(PAGOS.TotalPago, 0)) ELSE 0 END AS CXC
             FROM tblDetalleConvocatorias A 
@@ -40,6 +48,7 @@ export async function GET(request: Request) {
                 WHERE P.IdTemporada = ? AND PR.IdLiga = ? AND P.Status = 0
                 GROUP BY P.IdJugador
             ) PAGOS ON A.IdJugador = PAGOS.IdJugador
+            ${respetaManuales ? joinPrecioManual('A') : ''}
             WHERE A.IdTemporada = ? AND A.IdLiga = ? AND A.Categoria = ? AND A.Color = ?
             ORDER BY B.Jugador ASC
         `;

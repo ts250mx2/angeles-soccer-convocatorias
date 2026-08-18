@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { olvidaPreciosDeConvocatoria } from '@/lib/convocatorias-precios';
 
 export async function POST(request: Request) {
     try {
@@ -26,6 +27,10 @@ export async function POST(request: Request) {
             WHERE IdTemporada = ? AND IdLiga = ? AND Categoria = ? AND Color = ?
         `;
         await pool.query(deleteDetailsQuery, [seasonId, leagueId, categoria, color]);
+
+        /* Y sus precios fijados a mano: si la convocatoria se vuelve a crear, debe
+           nacer con los precios del sistema, no arrastrando ajustes de la anterior. */
+        await olvidaPreciosDeConvocatoria(pool, seasonId, leagueId, categoria, color ?? '');
 
         return NextResponse.json({
             success: true,
