@@ -4,8 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import ExcelJS from "exceljs";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   UserRoundPlus, Plus, RefreshCw, Search, AlertCircle, Pencil, Ban, RotateCcw, ArrowRight, Check,
+  FileSpreadsheet, FileText,
 } from "lucide-react";
 import { VIGENTE, BAJA, yaAplicada, type IncorporacionRow, type OpcionProfesor, type OpcionTemporada } from "@/lib/incorporaciones";
 import { NuevaIncorporacionModal, EditarIncorporacionModal } from "@/components/IncorporacionModal";
@@ -25,6 +29,16 @@ type FiltroEstado = "vigentes" | "canceladas" | "todas";
 
 const SELECT =
   "bg-white/5 border border-white/15 text-slate-200 text-xs py-2 px-3 rounded-lg outline-none focus:border-blue-500 transition-colors";
+
+/** Encabezado del formato, el mismo del papel. */
+const CLUB = "ANGELES SOCCER ELITE";
+const TITULO_FORMATO = "FORMATO DE INCORPORACION";
+
+/** Columnas del formato, en el orden en que se captura. */
+const COLUMNAS = [
+  "#", "FECHA", "PROFESOR", "JUGADOR", "PROCEDENCIA",
+  "GRUPO A INCORPORAR", "JUSTIFICACION DE INCORPORACION", "AUTORIZACION",
+];
 
 const fechaCorta = (valor: string | null): string => {
   if (!valor) return "—";
@@ -52,6 +66,7 @@ export default function IncorporacionesPage() {
   const [filtroProfesor, setFiltroProfesor] = useState<number | "todos">("todos");
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("vigentes");
 
+  const [exportando, setExportando] = useState(false);
   const [creando, setCreando] = useState(false);
   const [editando, setEditando] = useState<IncorporacionRow | null>(null);
 
@@ -134,6 +149,145 @@ export default function IncorporacionesPage() {
 
   const temporadaActual = temporadas.find((t) => t.IdTemporada === temporadaId);
 
+  /* ── Exportación ──
+     Sale lo que se está viendo, con los filtros puestos. La columna de estatus solo se
+     agrega cuando el filtro puede traer canceladas: en el caso normal el archivo es el
+     formato tal cual, sin una columna que diría "VIGENTE" en todos los renglones. */
+  const conEstatus = filtroEstado !== "vigentes";
+  const ciclo = temporadaActual?.Temporada ?? "";
+  const archivo = `Incorporaciones_${(ciclo || "ciclo").replace(/\s+/g, "_")}`;
+  const encabezados = conEstatus ? [...COLUMNAS, "ESTATUS"] : [...COLUMNAS];
+
+  const renglon = (f: IncorporacionRow, i: number): (string | number)[] => {
+    const base = [
+      i + 1,
+      fechaCorta(f.FechaCaptura),
+      f.Profesor ?? "",
+      f.Jugador ?? "",
+      f.Procedencia ?? "",
+      f.GrupoIncorporar,
+      f.Justificacion ?? "",
+      f.Autorizacion ?? "",
+    ];
+    return conEstatus ? [...base, f.Status === BAJA ? "CANCELADA" : "VIGENTE"] : base;
+  };
+
+  const exportExcel = async () => {
+    setExportando(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Incorporaciones");
+      const ultima = String.fromCharCode(64 + encabezados.length);
+
+      ws.mergeCells(`A1:${ultima}1`);
+      const titulo = ws.getCell("A1");
+      titulo.value = `CICLO ${ciclo.toUpperCase()}`;
+      titulo.font = { bold: true, size: 16, color: { argb: "FF1E293B" } };
+      titulo.alignment = { horizontal: "center", vertical: "middle" };
+
+      ws.getCell("B2").value = TITULO_FORMATO;
+      ws.getCell("B2").font = { bold: true, size: 12, color: { argb: "FF334155" } };
+      const celdaClub = ws.getCell(`${ultima}2`);
+      celdaClub.value = CLUB;
+      celdaClub.font = { bold: true, size: 12, color: { argb: "FF1E293B" } };
+      celdaClub.alignment = { horizontal: "right" };
+
+      ws.columns = [
+        { width: 5 }, { width: 12 }, { width: 26 }, { width: 32 },
+        { width: 18 }, { width: 20 }, { width: 42 }, { width: 28 },
+        ...(conEstatus ? [{ width: 12 }] : []),
+      ];
+
+      const header = ws.getRow(3);
+      header.values = encabezados;
+      header.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 9 };
+      header.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      header.eachCell((c) => {
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF334155" } };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      });
+
+      filtradas.forEach((f, i) => {
+        const fila = ws.addRow(renglon(f, i));
+        fila.alignment = { vertical: "middle", wrapText: true };
+        fila.eachCell((c) => {
+          c.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        });
+        // La autorización va centrada y en cursiva, con aire de firma.
+        fila.getCell(8).alignment = { horizontal: "center", vertical: "middle" };
+        fila.getCell(8).font = { italic: true };
+        if (f.Status === BAJA) fila.font = { strike: true, color: { argb: "FF94A3B8" } };
+      });
+
+      const pie = ws.addRow([`${filtradas.length} incorporacion(es)`]);
+      pie.font = { bold: true, color: { argb: "FF334155" } };
+
+      const buffer = await wb.xlsx.writeBuffer();
+      descarga(
+        new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `${archivo}.xlsx`,
+      );
+    } finally {
+      setExportando(false);
+    }
+  };
+
+  const exportPdf = () => {
+    setExportando(true);
+    try {
+      const doc = new jsPDF({ orientation: "landscape" });
+      const ancho = doc.internal.pageSize.getWidth();
+
+      doc.setFontSize(15);
+      doc.setFont("helvetica", "bold");
+      doc.text(`CICLO ${ciclo.toUpperCase()}`, ancho / 2, 14, { align: "center" });
+      doc.setFontSize(11);
+      doc.text(TITULO_FORMATO, 14, 22);
+      doc.text(CLUB, ancho - 14, 22, { align: "right" });
+
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(110);
+      const profesorLabel = filtroProfesor === "todos"
+        ? "Todos los profesores"
+        : profesores.find((p) => p.IdUsuario === filtroProfesor)?.Usuario ?? "Profesor";
+      const estadoLabel = filtroEstado === "vigentes" ? "Vigentes" : filtroEstado === "canceladas" ? "Canceladas" : "Todas";
+      doc.text(`${profesorLabel} · ${estadoLabel} · ${filtradas.length} incorporacion(es)`, 14, 27);
+
+      autoTable(doc, {
+        startY: 30,
+        head: [encabezados],
+        body: filtradas.map((f, i) => renglon(f, i).map(String)),
+        styles: { fontSize: 7, cellPadding: 2, valign: "middle", lineWidth: 0.1, lineColor: [148, 163, 184] },
+        headStyles: { fillColor: [51, 65, 85], fontSize: 7, halign: "center" },
+        columnStyles: {
+          0: { cellWidth: 8, halign: "center" },
+          1: { cellWidth: 18 },
+          4: { cellWidth: 24 },
+          5: { cellWidth: 28 },
+          6: { cellWidth: 70 },
+          7: { cellWidth: 42, halign: "center", fontStyle: "italic" },
+        },
+        margin: { left: 14, right: 14 },
+        didDrawPage: (datos) => {
+          doc.setFontSize(7);
+          doc.setTextColor(140);
+          doc.text(
+            `Pagina ${datos.pageNumber}`,
+            ancho - 14,
+            doc.internal.pageSize.getHeight() - 8,
+            { align: "right" },
+          );
+        },
+      });
+
+      doc.save(`${archivo}.pdf`);
+    } finally {
+      setExportando(false);
+    }
+  };
+
+
   return (
     <DashboardLayout>
       <main className="p-4 md:p-8 overflow-y-auto flex-1">
@@ -163,6 +317,11 @@ export default function IncorporacionesPage() {
                     </option>
                   ))}
                 </select>
+                <ExportGroup
+                  disabled={isLoading || exportando || filtradas.length === 0}
+                  onExcel={exportExcel}
+                  onPdf={exportPdf}
+                />
                 <button
                   onClick={() => cargar(temporadaId)}
                   disabled={isLoading}
@@ -377,6 +536,39 @@ export default function IncorporacionesPage() {
         )}
       </main>
     </DashboardLayout>
+  );
+}
+
+function descarga(blob: Blob, nombre: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombre;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function ExportGroup({ disabled, onExcel, onPdf }: { disabled?: boolean; onExcel: () => void; onPdf: () => void }) {
+  return (
+    <div className="flex items-center gap-1 bg-white/5 border border-white/15 rounded-lg pl-2.5 pr-1 py-1">
+      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 hidden sm:inline">Exportar</span>
+      <button
+        onClick={onExcel}
+        disabled={disabled}
+        title="Exportar: Excel"
+        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-200 text-[11px] font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <FileSpreadsheet size={13} /> Excel
+      </button>
+      <button
+        onClick={onPdf}
+        disabled={disabled}
+        title="Exportar: PDF"
+        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-200 text-[11px] font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <FileText size={13} /> PDF
+      </button>
+    </div>
   );
 }
 
