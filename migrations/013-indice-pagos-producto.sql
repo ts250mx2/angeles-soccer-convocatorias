@@ -1,0 +1,28 @@
+-- Indice de tblPagos por IdProducto.
+--
+-- Casi todo el sistema cruza pagos contra productos para saber de QUE es un pago
+-- (inscripcion, mensualidad, liga, copa, uniforme): tblProductos es quien conoce el
+-- tipo. Sin este indice, cada uno de esos cruces recorre los 85 mil pagos completos.
+--
+-- Medido en la base de produccion, con los cuatro conjuntos que arma el detalle de
+-- Inscripciones (inscritos de la temporada, mensualidades, cualquier inscripcion e
+-- inscripcion previa):
+--
+--   hoy                     3912 ms
+--   con este indice          855 ms
+--
+-- Se probaron ademas (IdTemporada, Status) y (Anio, Mes): juntos bajaban de 855 a 810
+-- ms, dentro del ruido de medicion, asi que no se incluyen. Un indice que no se gana su
+-- lugar solo encarece cada INSERT.
+--
+-- El indice ocupa del orden de 1 MB. Crear un indice en MyISAM bloquea la tabla
+-- mientras se construye: son unos segundos con este volumen, pero conviene correrlo
+-- fuera del horario de cobro.
+--
+-- Beneficia a todo el sistema, no solo a Inscripciones: dashboard, adeudos, pagos de
+-- copas y ligas, convocatorias y cortes hacen el mismo cruce.
+--
+-- Para revertir:
+--   ALTER TABLE tblPagos DROP INDEX idx_pagos_producto;
+
+ALTER TABLE tblPagos ADD INDEX idx_pagos_producto (IdProducto);
