@@ -257,6 +257,59 @@ export const SECCIONES: SeccionManual[] = [
         ],
     },
     {
+        clave: '/incorporaciones',
+        titulo: 'Incorporaciones',
+        audiencia: ['operacion', 'direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'Es el **formato de incorporación** que se llenaba en Excel, ahora en el sistema: un renglón por jugador que pasa de un grupo a otro, con quién lo propone, de dónde viene, a dónde va, por qué y quién lo autoriza.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'cuidado',
+                titulo: 'Esta pantalla no mueve al jugador',
+                texto: 'Deja **constancia autorizada** del cambio. La categoría del jugador se sigue cambiando en el sistema de escritorio, como siempre. Si esta pantalla lo moviera, una captura administrativa cambiaría de golpe convocatorias, adeudos y reportes.',
+            },
+            { tipo: 'subtitulo', texto: 'Llenar el formato' },
+            {
+                tipo: 'pasos',
+                items: [
+                    'Arriba se elige el **ciclo** (la temporada). Todo lo que captures queda en ese ciclo.',
+                    'Pulsa **Nueva incorporación**. La fecha viene con la de hoy.',
+                    '**Profesor** y **Jugador** se buscan escribiendo: la lista se va filtrando con lo que tecleas.',
+                    '**Procedencia** se llena sola con la categoría del jugador: no se captura.',
+                    '**Grupo a incorporar** se elige del catálogo; si el grupo es nuevo y todavía no tiene jugadores, escríbelo y pulsa Enter.',
+                    'Escribe la **justificación** y guarda. La autorización se estampa sola.',
+                ],
+            },
+            {
+                tipo: 'tabla',
+                encabezados: ['Campo', 'De dónde sale'],
+                filas: [
+                    ['Fecha de captura', 'La pones tú; viene la de hoy.'],
+                    ['Profesor', 'Los usuarios con perfil ENTRENADOR.'],
+                    ['Jugador', 'Los jugadores activos, buscando por nombre o categoría.'],
+                    ['Procedencia', 'Automática: la categoría que el jugador tiene al capturar. Queda congelada, porque en cuanto el cambio se aplique su categoría será la nueva.'],
+                    ['Grupo a incorporar', 'El catálogo de categorías, o una nueva escrita a mano.'],
+                    ['Justificación', 'Texto libre, hasta 500 caracteres.'],
+                    ['Autorización', 'La firma de quien autoriza. Se guarda el nombre tal como se firmó, para que no cambie si después ese usuario se renombra o se da de baja.'],
+                ],
+            },
+            { tipo: 'subtitulo', texto: 'La palomita verde' },
+            {
+                tipo: 'parrafo',
+                texto: 'Cuando el jugador **ya aparece en el grupo destino**, el renglón muestra una palomita: el cambio ya se aplicó en la plantilla. Sirve para saber de un vistazo qué formatos siguen pendientes de ejecutar.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Corregir y cancelar',
+                texto: 'Se pueden cambiar la fecha, el grupo y la justificación. El jugador, el profesor y la procedencia no: eso sería otro formato. Y nada se borra: una incorporación equivocada se **cancela** (se ve con el filtro Canceladas y se puede reactivar).',
+            },
+        ],
+    },
+    {
         clave: '/copas-ligas',
         titulo: 'Catálogo de Copas y Ligas',
         audiencia: ['direccion'],

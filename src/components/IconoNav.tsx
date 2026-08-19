@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   UserCog,
   UserPlus,
+  UserRoundPlus,
 } from "lucide-react";
 import type { IconoNav as NombreIcono } from "@/lib/navegacion";
 
@@ -54,6 +55,7 @@ const ICONOS: Record<NombreIcono, React.ElementType> = {
   ShieldCheck,
   UserCog,
   UserPlus,
+  UserRoundPlus,
 };
 
 export default function IconoNav({

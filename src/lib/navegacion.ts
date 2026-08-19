@@ -35,6 +35,7 @@ export type IconoNav =
     | 'BookOpen'
     | 'ShieldCheck'
     | 'UserCog'
+    | 'UserRoundPlus'
     | 'UserPlus';
 
 export interface NavItem {
@@ -88,6 +89,12 @@ export const NAV_ITEMS: NavItem[] = [
                 label: 'Pagos de Copas y Ligas',
                 href: '/pagos-copas',
                 icono: 'Trophy',
+                adminOnly: true,
+            },
+            {
+                label: 'Incorporaciones',
+                href: '/incorporaciones',
+                icono: 'UserRoundPlus',
                 adminOnly: true,
             },
             {
@@ -253,6 +260,7 @@ export const NAV_ITEMS: NavItem[] = [
 export const CLAVE_PERFILES = '/perfiles';
 export const CLAVE_USUARIOS = '/usuarios';
 export const CLAVE_AGENTE = '/agente';
+export const CLAVE_INCORPORACIONES = '/incorporaciones';
 export const CLAVE_PREREGISTROS = '/preregistros';
 export const CLAVE_LISTA_JUGADORES = '/jugadores';
 export const CLAVE_COPAS_LIGAS = '/copas-ligas';
