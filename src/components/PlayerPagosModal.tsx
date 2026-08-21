@@ -3,21 +3,16 @@
 import { Fragment, useEffect, useState } from "react";
 import {
   X, Loader2, AlertCircle, Receipt, FileDown, FileSpreadsheet, CalendarCheck,
-  AlertTriangle, Check, Pencil,
+  AlertTriangle, Check, Pencil, User,
 } from "lucide-react";
 import {
   type PagoRow, exportPagosToPdf, exportPagosToExcel, money, fecha, mesLabel,
   esPagoAnticipado, MESES_ANTICIPO_SOSPECHOSO,
 } from "@/lib/inscripciones-export";
+import DatosGeneralesJugador, { texto, type JugadorFicha } from "@/components/DatosGeneralesJugador";
 
-interface JugadorInfo {
-  IdJugador: number;
-  Jugador: string;
-  Categoria: string;
-  Status: number;
-  Beca: string | null;
-  SedeNombre: string;
-}
+/** La ficha completa del jugador; la pinta DatosGeneralesJugador. */
+type JugadorInfo = JugadorFicha;
 
 export interface PagosTarget {
   idJugador: number;
@@ -69,6 +64,9 @@ export default function PlayerPagosModal({
   const [error, setError] = useState<string | null>(null);
   // Por defecto se muestra la temporada en curso; el histórico completo es opcional.
   const [soloTemporada, setSoloTemporada] = useState(true);
+  /* Se abre siempre en los pagos: es a lo que se viene la mayoría de las veces.
+     Ver el efecto de abajo, que la devuelve ahí al cambiar de jugador. */
+  const [pestana, setPestana] = useState<"pagos" | "generales">("pagos");
   // Corrección del año de un pago anticipado
   const [editando, setEditando] = useState<number | null>(null);
   const [anioNuevo, setAnioNuevo] = useState("");
@@ -82,7 +80,10 @@ export default function PlayerPagosModal({
   const [movidaSosp, setMovidaSosp] = useState(false);
 
   useEffect(() => {
-    if (target) setSoloTemporada(true);
+    if (target) {
+      setSoloTemporada(true);
+      setPestana("pagos");
+    }
     // Al cambiar de jugador (o de aviso), el banner de sospecha vuelve a mostrarse.
     setMovidaSosp(false);
   }, [target, inscripcionSospechosa]);
@@ -241,6 +242,8 @@ export default function PlayerPagosModal({
   const subtitle = [jugador?.SedeNombre, jugador?.Categoria, scopeLabel].filter(Boolean).join(" · ");
   const nombre = jugador?.Jugador ?? target.jugador;
   const canExport = !isLoading && !error && pagos.length > 0;
+  const enPagos = pestana === "pagos";
+  const tieneAlerta = Boolean(texto(jugador?.Alerta));
 
   const btn = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed";
 
@@ -274,7 +277,31 @@ export default function PlayerPagosModal({
             </button>
           </div>
 
-          {/* Alcance + exportación */}
+          {/* Pestañas */}
+          <div className="mt-4 flex items-center gap-1 border-b border-white/10 -mb-px">
+            <button
+              onClick={() => setPestana("pagos")}
+              className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-black uppercase tracking-widest border-b-2 transition-all ${
+                enPagos ? "border-blue-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              <Receipt size={13} /> Pagos
+            </button>
+            <button
+              onClick={() => setPestana("generales")}
+              className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-black uppercase tracking-widest border-b-2 transition-all ${
+                !enPagos ? "border-blue-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              <User size={13} /> Datos generales
+              {/* La alerta del jugador no debe pasar desapercibida por estar en la
+                  otra pestaña: se avisa desde aquí. */}
+              {tieneAlerta && <AlertTriangle size={12} className="text-amber-400" />}
+            </button>
+          </div>
+
+          {/* Alcance + exportación: solo aplican a los pagos */}
+          {enPagos && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {temporadaId && (
               <div className="flex bg-white/5 border border-white/10 rounded-lg p-0.5">
@@ -314,12 +341,13 @@ export default function PlayerPagosModal({
               </button>
             </div>
           </div>
+          )}
         </div>
 
         {/* Inscripción de otra temporada pagada cerca del inicio de esta (detectada en
             adeudos): probable inscripción de esta temporada. Al moverla, el aviso se
             oculta. */}
-        {inscripcionSospechosa && !movidaSosp && (
+        {enPagos && inscripcionSospechosa && !movidaSosp && (
           <div className="mx-5 mt-4 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3.5 py-3">
             <div className="flex items-start gap-2.5">
               <AlertTriangle size={16} className="text-amber-300 flex-shrink-0 mt-0.5" />
@@ -345,7 +373,7 @@ export default function PlayerPagosModal({
         )}
 
         {/* Inscripción de otra temporada que parece corresponder a la seleccionada */}
-        {sugerida && !inscripcionSospechosa && (
+        {enPagos && sugerida && !inscripcionSospechosa && (
           <div className="mx-5 mt-4 bg-purple-500/10 border border-purple-500/30 rounded-xl px-3.5 py-3">
             <div className="flex items-start gap-2.5">
               <CalendarCheck size={16} className="text-purple-300 flex-shrink-0 mt-0.5" />
@@ -375,7 +403,7 @@ export default function PlayerPagosModal({
         )}
 
         {/* Aviso de pagos con antelación sospechosa */}
-        {anticipados.length > 0 && (
+        {enPagos && anticipados.length > 0 && (
           <div className="mx-5 mt-4 flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3.5 py-2.5">
             <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
             <div className="text-[11px] text-amber-200/90 leading-relaxed">
@@ -387,16 +415,18 @@ export default function PlayerPagosModal({
           </div>
         )}
 
-        {avisoCorreccion && (
+        {enPagos && avisoCorreccion && (
           <div className="mx-5 mt-3 flex items-start gap-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl px-3.5 py-2.5">
             <Check size={16} className="text-blue-300 flex-shrink-0 mt-0.5" />
             <p className="text-[11px] text-blue-100/90 leading-relaxed">{avisoCorreccion}</p>
           </div>
         )}
 
-        {/* Tabla */}
+        {/* Cuerpo: la ficha o el historial, segun la pestaña */}
         <div className="flex-1 overflow-auto p-5">
-          {isLoading ? (
+          {!enPagos ? (
+            <DatosGeneralesJugador jugador={jugador} />
+          ) : isLoading ? (
             <div className="h-48 flex flex-col items-center justify-center gap-3 text-slate-400">
               <Loader2 size={28} className="animate-spin text-blue-500" />
               <p className="text-sm font-bold">Cargando pagos...</p>
@@ -536,7 +566,8 @@ export default function PlayerPagosModal({
           )}
         </div>
 
-        {/* Footer con el total */}
+        {/* Footer con el total (del historial; en la ficha no viene al caso) */}
+        {enPagos && (
         <div className="p-4 px-5 bg-white/5 border-t border-white/10 flex items-center justify-between gap-3">
           <p className="text-[11px] text-slate-500">
             {isLoading ? "—" : `${pagos.length} pago(s)`}
@@ -546,6 +577,7 @@ export default function PlayerPagosModal({
             <p className="text-xl font-black text-emerald-400">{money(total)}</p>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

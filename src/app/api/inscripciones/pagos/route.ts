@@ -32,6 +32,13 @@ export async function GET(request: Request) {
             );
         }
 
+        /* Ficha del jugador. Va completa aunque la pantalla sea de pagos: quien revisa
+           un historial casi siempre necesita a quien llamar, y tener que salirse a otra
+           pantalla por un telefono era el paso que sobraba.
+
+           Las fechas se formatean en SQL y viajan como texto: una fecha de nacimiento es
+           un dia del calendario, no un instante, y mandarla como DATETIME la corre un dia
+           en cuanto el navegador la interpreta en otro huso. */
         const [jugadorRows] = await pool.query(
             `SELECT
                 J.IdJugador,
@@ -39,7 +46,18 @@ export async function GET(request: Request) {
                 J.Categoria,
                 J.Status,
                 J.Beca,
-                COALESCE(S.Sede, J.Sede) as SedeNombre
+                COALESCE(S.Sede, J.Sede) as SedeNombre,
+                DATE_FORMAT(J.FechaNacimiento, '%d/%m/%Y') as FechaNacimiento,
+                TIMESTAMPDIFF(YEAR, J.FechaNacimiento, CURDATE()) as Edad,
+                J.Genero, J.GeneroDesc, J.CURP, J.Dorsal, J.NumeroSocio, J.Talla,
+                J.Padre, J.TelPadre, J.CorreoElectronicoPadre,
+                J.Madre, J.TelMadre, J.CorreoElectronicoMadre,
+                J.TelCasa, J.ContactoEmergencia, J.ViveCon,
+                J.Escuela, J.BecaLigas, J.Coach, J.Grupo,
+                J.Calle, J.NumExterior, J.NumInterior, J.Colonia,
+                J.CodigoPostal, J.Municipio, J.Estado,
+                DATE_FORMAT(J.FechaAlta, '%d/%m/%Y') as FechaAlta,
+                J.Alerta, J.Observaciones, J.MotivoBaja
              FROM tblJugadores J
              LEFT JOIN tblSedes S ON J.IdSede = S.IdSede
              WHERE J.IdJugador = ?`,
