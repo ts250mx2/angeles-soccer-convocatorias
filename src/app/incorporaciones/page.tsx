@@ -9,10 +9,12 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
   UserRoundPlus, Plus, RefreshCw, Search, AlertCircle, Pencil, Ban, RotateCcw, ArrowRight, Check,
-  FileSpreadsheet, FileText,
+  FileSpreadsheet, FileText, QrCode, ClipboardList, Inbox, ExternalLink,
 } from "lucide-react";
 import { VIGENTE, BAJA, yaAplicada, type IncorporacionRow, type OpcionProfesor, type OpcionTemporada } from "@/lib/incorporaciones";
 import { NuevaIncorporacionModal, EditarIncorporacionModal } from "@/components/IncorporacionModal";
+import PreincorporacionesLista from "@/components/PreincorporacionesLista";
+import QrPreincorporacion from "@/components/QrPreincorporacion";
 
 /**
  * Formato de incorporación.
@@ -66,6 +68,10 @@ export default function IncorporacionesPage() {
   const [filtroProfesor, setFiltroProfesor] = useState<number | "todos">("todos");
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("vigentes");
 
+  /* Dos vistas: los formatos capturados y la bandeja de lo que llega por el QR
+     público. Se abre en los formatos, que es el trabajo de todos los días. */
+  const [vista, setVista] = useState<"formatos" | "preinscripciones">("formatos");
+  const [qrAbierto, setQrAbierto] = useState(false);
   const [exportando, setExportando] = useState(false);
   const [creando, setCreando] = useState(false);
   const [editando, setEditando] = useState<IncorporacionRow | null>(null);
@@ -148,6 +154,7 @@ export default function IncorporacionesPage() {
   };
 
   const temporadaActual = temporadas.find((t) => t.IdTemporada === temporadaId);
+  const enFormatos = vista === "formatos";
 
   /* ── Exportación ──
      Sale lo que se está viendo, con los filtros puestos. La columna de estatus solo se
@@ -306,6 +313,23 @@ export default function IncorporacionesPage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setQrAbierto(true)}
+                  title="Códigos QR del formulario público de preinscripción"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 border border-white/15 text-slate-300 hover:bg-white/10 text-xs font-bold transition-colors"
+                >
+                  <QrCode size={14} /> QR
+                </button>
+                <a
+                  href="/preincorporacion"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Abrir el formulario público de preinscripción en otra pestaña"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 border border-white/15 text-slate-300 hover:bg-white/10 text-xs font-bold transition-colors"
+                >
+                  <ExternalLink size={14} /> Preinscripción
+                </a>
+                {enFormatos && (
                 <select
                   value={temporadaId ?? ""}
                   onChange={(e) => { const t = Number(e.target.value); setTemporadaId(t); cargar(t); }}
@@ -317,11 +341,15 @@ export default function IncorporacionesPage() {
                     </option>
                   ))}
                 </select>
+                )}
+                {enFormatos && (
                 <ExportGroup
                   disabled={isLoading || exportando || filtradas.length === 0}
                   onExcel={exportExcel}
                   onPdf={exportPdf}
                 />
+                )}
+                {enFormatos && (
                 <button
                   onClick={() => cargar(temporadaId)}
                   disabled={isLoading}
@@ -330,6 +358,8 @@ export default function IncorporacionesPage() {
                 >
                   <RefreshCw size={15} className={isLoading ? "animate-spin" : ""} />
                 </button>
+                )}
+                {enFormatos && (
                 <button
                   onClick={() => setCreando(true)}
                   disabled={!temporadaId}
@@ -337,28 +367,52 @@ export default function IncorporacionesPage() {
                 >
                   <Plus size={14} /> Nueva incorporación
                 </button>
+                )}
               </div>
             </div>
 
-            {error && (
+            {/* Pestañas */}
+            <div className="flex items-center gap-1 border-b border-white/10 mb-6">
+              <button
+                onClick={() => setVista("formatos")}
+                className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-black uppercase tracking-widest border-b-2 transition-all ${
+                  enFormatos ? "border-blue-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                <ClipboardList size={13} /> Formatos
+              </button>
+              <button
+                onClick={() => setVista("preinscripciones")}
+                className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-black uppercase tracking-widest border-b-2 transition-all ${
+                  !enFormatos ? "border-blue-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                <Inbox size={13} /> Preinscripciones
+              </button>
+            </div>
+
+            {enFormatos && error && (
               <p className="flex items-start gap-2 mb-4 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
                 <AlertCircle size={14} className="flex-shrink-0 mt-0.5" /> {error}
               </p>
             )}
-            {aviso && (
+            {enFormatos && aviso && (
               <p className="mb-4 text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
                 {aviso}
               </p>
             )}
 
+            {enFormatos && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
               <Kpi etiqueta="Incorporaciones" valor={String(kpis.num)} clase="text-blue-300" />
               <Kpi etiqueta="Ya aplicadas" valor={String(kpis.aplicadas)} clase="text-emerald-300" />
               <Kpi etiqueta="Grupos destino" valor={String(kpis.grupos)} clase="text-slate-200" />
               <Kpi etiqueta="Profesores" valor={String(kpis.profesores)} clase="text-slate-200" />
             </div>
+            )}
 
             {/* Filtros */}
+            {enFormatos && (
             <div className="flex flex-wrap items-center gap-2 mb-5">
               <div className="relative flex-1 min-w-[220px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
@@ -385,9 +439,12 @@ export default function IncorporacionesPage() {
                 <option value="todas">Todas</option>
               </select>
             </div>
+            )}
 
-            {/* Tabla: las mismas columnas del formato */}
-            {isLoading ? (
+            {/* Cuerpo: los formatos capturados o lo que llegó por el QR */}
+            {!enFormatos ? (
+              <PreincorporacionesLista />
+            ) : isLoading ? (
               <div className="flex flex-col items-center justify-center py-24 gap-3">
                 <div className="w-9 h-9 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin" />
                 <p className="text-xs font-bold text-slate-500">Cargando incorporaciones...</p>
@@ -521,6 +578,8 @@ export default function IncorporacionesPage() {
             }}
           />
         )}
+
+        {qrAbierto && <QrPreincorporacion onClose={() => setQrAbierto(false)} />}
 
         {editando && (
           <EditarIncorporacionModal

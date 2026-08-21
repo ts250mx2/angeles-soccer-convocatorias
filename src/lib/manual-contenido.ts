@@ -296,6 +296,25 @@ export const SECCIONES: SeccionManual[] = [
                     ['Autorización', 'La firma de quien autoriza. Se guarda el nombre tal como se firmó, para que no cambie si después ese usuario se renombra o se da de baja.'],
                 ],
             },
+            { tipo: 'subtitulo', texto: 'Preinscripciones: lo que llega por el QR' },
+            {
+                tipo: 'parrafo',
+                texto: 'El botón **QR** de arriba abre el código del formulario público. Quien lo escanea llega a una captura muy corta —nombre, año de nacimiento, teléfono, equipo (la letra del grupo: A, B, C, D, X) y comentarios— pensada para el que se acerca a preguntar si puede sumarse. No pide domicilio ni tutores: eso se levanta después, por teléfono. Junto al QR está el botón **Preinscripción**, que abre ese mismo formulario en otra pestaña: sirve para llenarlo desde la oficina cuando alguien pregunta en persona.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Lo que va llegando se ve en la pestaña **Preinscripciones**. Es una bandeja de contactos, no un reporte: el teléfono va como enlace, así que desde el celular se marca de un toque.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Es otro embudo, no el mismo',
+                texto: 'No confundir con el **preregistro** de Jugadores: aquel recoge el alta completa de alguien que quiere inscribirse en la academia y tiene un código **por sede**; este es un **solo código** para toda la academia y recoge nada más los datos para devolverle la llamada a quien quiere sumarse a un equipo. Van en tablas distintas y cada uno tiene su pantalla.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Un contacto que no cuajó se **descarta**, no se borra: de qué equipo venía y cuándo preguntó siguen siendo información. Se recupera con el filtro Descartadas.',
+            },
             { tipo: 'subtitulo', texto: 'La palomita verde' },
             {
                 tipo: 'parrafo',
