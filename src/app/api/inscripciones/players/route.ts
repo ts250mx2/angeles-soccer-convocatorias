@@ -228,6 +228,19 @@ export async function GET(request: Request) {
             where.push('J.Categoria = ?');
             params.push(categoria);
         }
+        /* Corte por sexo: '1' hombres, '2' mujeres, 'sin' lo que no tiene el dato.
+           Va por J.Genero y no por GeneroDesc, que se captura de dos formas
+           ('MASCULINO' y 'HOMBRE', 'FEMENINO' y 'MUJER'); es el mismo criterio con el
+           que el resumen por sede cuenta a unos y a otras, para que el listado y la
+           cifra de la tarjeta no puedan discrepar. */
+        const genero = searchParams.get('genero');
+        if (genero === '1' || genero === '2') {
+            where.push('J.Genero = ?');
+            params.push(Number(genero));
+        } else if (genero === 'sin') {
+            where.push('(J.Genero IS NULL OR J.Genero NOT IN (1, 2))');
+        }
+
         // '0' = solo sedes normales, '1' = solo clinics, ausente = ambas.
         const clinicsParam = searchParams.get('clinics');
         if (clinicsParam === '0' || clinicsParam === '1') {
@@ -337,6 +350,11 @@ export async function GET(request: Request) {
                 J.Categoria,
                 J.Status,
                 J.Beca,
+                J.Genero,
+                /* La fecha de nacimiento se formatea en SQL y viaja como texto: es un
+                   dia del calendario, no un instante, y como DATETIME se corre un dia
+                   en cuanto el navegador la interpreta en otro huso. */
+                DATE_FORMAT(J.FechaNacimiento, '%d/%m/%Y') as FechaNacimiento,
                 J.IdSede,
                 COALESCE(S.Sede, J.Sede) as SedeNombre,
                 ${inscripcionPagadaSql} as InscripcionPagada

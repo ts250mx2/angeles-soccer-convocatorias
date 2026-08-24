@@ -17,6 +17,12 @@ import GraficaPastel from '@/components/GraficaPastel';
 const NUEVAS_COLOR = '#34d399';   // emerald-400
 const REINSC_COLOR = '#fbbf24';   // amber-400
 
+/* Colores del reparto por sexo. El color acompaña; quien lleva el dato es la etiqueta
+   escrita al lado, con su cantidad y su porcentaje. */
+const NINOS_COLOR = '#60a5fa';    // blue-400
+const NINAS_COLOR = '#f472b6';    // pink-400
+const SIN_SEXO_COLOR = '#64748b'; // slate-500
+
 interface SedeSummary {
   IdSede: number;
   Sede: string;
@@ -34,6 +40,9 @@ interface SedeSummary {
   PlantillaClinicsFutsal: number;
   PlantillaKeepers: number;
   Inscritos: number;
+  /** Los mismos inscritos partidos por sexo (Genero 1 y 2 de tblJugadores). */
+  InscritosHombres: number;
+  InscritosMujeres: number;
   InscritosKeepers: number;
   InscritosFutsal: number;
   InscritosClinicsFutsal: number;
@@ -193,6 +202,8 @@ interface Agregados {
   activosVentaPublico: number;
   activosClinics: number;
   inscritosSedes: number;
+  inscritosHombres: number;
+  inscritosMujeres: number;
   inscritosKeepers: number;
   inscritosFutsal: number;
   inscritosClinicsFutsal: number;
@@ -247,6 +258,11 @@ function calcularAgregados(lista: SedeSummary[]): Agregados {
     - sumaPorTipo(1, s => s.ActivosVentaPublico) - sumaPorTipo(1, s => s.ActivosClinicsFutsal);
   // Inscritos (keeper-aware, sin venta pública) separando keepers, futsal y clinics futsal.
   const inscritosSedes = sumaPorTipo(0, s => s.Inscritos);
+  /* Reparto por sexo del MISMO universo que la cifra grande (inscritosSedes), para que
+     niños + niñas no puedan pasarse del total ni quedarse cortos sin explicación: lo
+     que no es 1 ni 2 en la base sale del resto, como "Sin dato". */
+  const inscritosHombres = sumaPorTipo(0, s => s.InscritosHombres);
+  const inscritosMujeres = sumaPorTipo(0, s => s.InscritosMujeres);
   const inscritosKeepers = sumaPorTipo(0, s => s.InscritosKeepers);
   const inscritosFutsal = sumaPorTipo(0, s => s.InscritosFutsal);
   /* Los restandos se miden en el MISMO alcance que la base (sedes no-clinics). Con
@@ -293,6 +309,7 @@ function calcularAgregados(lista: SedeSummary[]): Agregados {
   return {
     activosSedes, activosKeepers, activosFutsal, activosClinicsFutsal, activosVentaPublico, activosClinics,
     inscritosSedes, inscritosKeepers, inscritosFutsal, inscritosClinicsFutsal, inscritosNormal,
+    inscritosHombres, inscritosMujeres,
     reinscritosSedes, reinscritosKeepers, reinscritosFutsal, reinscritosNormal,
     becasTotal, becasNuevas, becasReinsc,
     becadosNuevasKeepers, becadosNuevasFutsal, becadosNuevasClinicsFutsal,
@@ -596,6 +613,28 @@ function TarjetaInscritos({ a, abrir, verSedes }: { a: Agregados; abrir: Abrir; 
     },
   ];
 
+  /* Reparto por sexo del total. "Sin dato" solo aparece cuando existe: hoy el género
+     está capturado en todos los jugadores activos, y una rebanada en cero nada más
+     estorbaría. El corte del listado es el mismo de la cifra grande (inscritos de
+     sedes no-clinics) más el sexo, así que el detalle cuenta a la misma gente. */
+  const sinSexo = Math.max(0, total - a.inscritosHombres - a.inscritosMujeres);
+  const sexos: { label: string; color: string; total: number; cfg: PlayersModalConfig }[] = [
+    {
+      label: 'Niños', color: NINOS_COLOR, total: a.inscritosHombres,
+      cfg: { title: 'Inscritos · Niños', filtro: 'inscritos', clinics: 0, genero: 1 },
+    },
+    {
+      label: 'Niñas', color: NINAS_COLOR, total: a.inscritosMujeres,
+      cfg: { title: 'Inscritos · Niñas', filtro: 'inscritos', clinics: 0, genero: 2 },
+    },
+    ...(sinSexo > 0
+      ? [{
+          label: 'Sin dato', color: SIN_SEXO_COLOR, total: sinSexo,
+          cfg: { title: 'Inscritos · Sin género capturado', filtro: 'inscritos' as const, clinics: 0 as const, genero: 'sin' as const },
+        }]
+      : []),
+  ];
+
   /* Rebanadas del pastel: las tres áreas más el resto que el panel no detalla (los
      clinics futsal, que quedan fuera del adeudo). Sin ese cuarto pedazo el pastel
      mostraría un hueco sin explicación, porque las tres áreas no suman el total. */
@@ -664,6 +703,40 @@ function TarjetaInscritos({ a, abrir, verSedes }: { a: Agregados; abrir: Abrir; 
               <span className="text-[10px] text-slate-500 tabular-nums w-8 text-right">{pctDe(x.total)}%</span>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Reparto por sexo. Va en dona y no en pastel para no confundirse de un vistazo
+          con el de arriba, que reparte el mismo total por otra cosa. */}
+      <div className="mt-4 pt-4 border-t border-white/10">
+        <p className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2">Niños y niñas</p>
+        <div className="flex items-center gap-4">
+          <GraficaPastel
+            tamano={84}
+            hueco={26}
+            unidad="inscritos"
+            total={total}
+            rebanadas={sexos.map((x) => ({ etiqueta: x.label, cantidad: x.total, color: x.color }))}
+          />
+          <div className="min-w-0 flex-1 space-y-1">
+            {sexos.map((x) => (
+              <button
+                key={x.label}
+                type="button"
+                onClick={() => abrir(x.cfg)}
+                title={`${x.label}: ${x.total} de ${total} inscritos (${pctDe(x.total)}%). Clic para ver el detalle y exportarlo.`}
+                className="w-full flex items-center gap-2 text-left rounded-lg px-1.5 py-1 hover:bg-white/10 transition-colors"
+              >
+                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: x.color }} />
+                <span className="text-[11px] font-bold text-slate-300 truncate w-16">{x.label}</span>
+                <span className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <span className="block h-full rounded-full" style={{ width: `${pctDe(x.total)}%`, backgroundColor: x.color }} />
+                </span>
+                <span className="text-xs font-black text-white tabular-nums">{x.total}</span>
+                <span className="text-[10px] text-slate-500 tabular-nums w-8 text-right">{pctDe(x.total)}%</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

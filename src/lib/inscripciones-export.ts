@@ -13,6 +13,10 @@ export interface PlayerRow {
     Categoria: string;
     Status: number;
     Beca: string | null;
+    /** 1 = hombre, 2 = mujer. Fuera de esos dos, el dato no se capturó. */
+    Genero: number | null;
+    /** Ya viene formateada por MySQL como "dd/mm/aaaa". */
+    FechaNacimiento: string | null;
     IdSede: number;
     SedeNombre: string;
     FechaInscripcion: string | null;
@@ -199,6 +203,7 @@ const playerCols = (config?: PlayersConfig): XCol[] => {
     const base: XCol[] = [
         { header: "ID", width: 10 },
         { header: "Jugador", width: 38 },
+        { header: "F. Nacimiento", width: 15 },
         { header: "Categoría", width: 16 },
         { header: "Sede", width: 24 },
         { header: "Estatus", width: 12 },
@@ -223,6 +228,7 @@ const playerCells = (p: PlayerRow, config?: PlayersConfig) => {
     const base = [
         p.IdJugador,
         p.Jugador,
+        fecha(p.FechaNacimiento),
         p.Categoria || "—",
         p.SedeNombre || "—",
         p.Status === 0 ? "ACTIVO" : "BAJA",
@@ -250,7 +256,7 @@ export function exportPlayersToPdf(
 ) {
     const cols = playerCols(config);
     // Con el desglose de meses la tabla ya no cabe en vertical.
-    const doc = new jsPDF({ orientation: cols.length > 8 ? "landscape" : "portrait" });
+    const doc = new jsPDF({ orientation: cols.length > 9 ? "landscape" : "portrait" });
     const y = pdfHeader(doc, title, subtitle);
 
     autoTable(doc, {
@@ -261,7 +267,12 @@ export function exportPlayersToPdf(
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: BRAND, textColor: 255, fontStyle: "bold" },
         alternateRowStyles: { fillColor: [248, 250, 252] },
-        columnStyles: { 0: { halign: "right", cellWidth: 14 }, 6: { halign: "center" }, 7: { halign: "center" } },
+        columnStyles: {
+            0: { halign: "right", cellWidth: 14 },
+            2: { halign: "center", cellWidth: 20 },
+            7: { halign: "center" },
+            8: { halign: "center" },
+        },
         foot: [[`TOTAL: ${players.length} jugador(es)`, ...cols.slice(1).map(() => "")]],
         footStyles: { fillColor: FOOT_BG, textColor: FOOT_TEXT, fontStyle: "bold" },
         margin: { left: 14, right: 14 },

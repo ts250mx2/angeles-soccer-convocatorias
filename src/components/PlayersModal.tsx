@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   X, Search, User, ChevronRight, AlertCircle, Loader2, MapPin,
-  FileDown, FileSpreadsheet, CalendarCheck, CheckCircle2, XCircle, AlertTriangle, ListTree,
+  FileDown, FileSpreadsheet, CalendarCheck, Cake, CheckCircle2, XCircle, AlertTriangle, ListTree,
 } from "lucide-react";
 import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModal";
 import {
@@ -28,6 +28,8 @@ export interface PlayersModalConfig {
   grupo?: 'normal' | 'keepers' | 'futsal' | 'clinicsfutsal' | 'ventapublico';
   /** Corte de inscritos por primera inscripción: 'nueva' (primera) o 'reinscripcion'. */
   tipoInscripcion?: 'nueva' | 'reinscripcion';
+  /** Corte por sexo: 1 hombres, 2 mujeres, 'sin' los que no traen el dato. */
+  genero?: 1 | 2 | 'sin';
   /** Ruta al drill-down por categorías; si viene, se muestra la liga "Por Categoría" */
   categoriaHref?: string;
 }
@@ -82,6 +84,7 @@ export default function PlayersModal({
     if (config.clinics !== undefined) params.set("clinics", String(config.clinics));
     if (config.grupo) params.set("grupo", config.grupo);
     if (config.tipoInscripcion) params.set("tipoInscripcion", config.tipoInscripcion);
+    if (config.genero !== undefined) params.set("genero", String(config.genero));
     if (temporadaId) params.set("temporadaId", String(temporadaId));
 
     (async () => {
@@ -261,6 +264,11 @@ export default function PlayersModal({
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                         ID {p.IdJugador}
                       </span>
+                      {p.FechaNacimiento && (
+                        <span className="text-[10px] text-slate-500 flex items-center gap-1" title="Fecha de nacimiento">
+                          <Cake size={9} /> {fecha(p.FechaNacimiento)}
+                        </span>
+                      )}
                       {p.FechaInscripcion && (
                         <span className="text-[10px] text-slate-500 flex items-center gap-1" title="Fecha de inscripción">
                           <CalendarCheck size={9} /> {fecha(p.FechaInscripcion)}

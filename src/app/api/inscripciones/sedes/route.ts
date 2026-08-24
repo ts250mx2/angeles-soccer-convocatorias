@@ -44,6 +44,8 @@ export async function GET(request: Request) {
                     COUNT(CASE WHEN J.Status = 0 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as ActivosClinicsFutsal,
                     COUNT(CASE WHEN J.Status = 0 AND ${ES_VENTA_PUBLICO} THEN 1 END) as ActivosVentaPublico,
                     COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as Inscritos,
+                    COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND J.Genero = 1 THEN 1 END) as InscritosHombres,
+                    COUNT(CASE WHEN J.Status = 0 AND NOT ${ES_VENTA_PUBLICO} AND J.Genero = 2 THEN 1 END) as InscritosMujeres,
                     COUNT(CASE WHEN J.Status = 0 AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL} THEN 1 END) as InscritosKeepers,
                     COUNT(CASE WHEN J.Status = 0 AND ${FUTSAL_NETO} THEN 1 END) as InscritosFutsal,
                     COUNT(CASE WHEN J.Status = 0 AND ${ES_CLINICS_FUTSAL} THEN 1 END) as InscritosClinicsFutsal,
@@ -120,6 +122,13 @@ export async function GET(request: Request) {
                 COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${ES_KEEPER} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL} THEN 1 END) as PlantillaKeepers,
                 -- Inscritos con regla keeper (excluye venta al público).
                 COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${INSCRITO} AND NOT ${ES_VENTA_PUBLICO} THEN 1 END) as Inscritos,
+                /* El mismo conteo de arriba partido por sexo. El corte va por J.Genero
+                   (1 hombre, 2 mujer) y NO por GeneroDesc: la descripcion se captura de
+                   dos formas ('MASCULINO' y 'HOMBRE', 'FEMENINO' y 'MUJER') y agrupar
+                   por texto partiria cada sexo en dos. Lo que no sea 1 ni 2 no se
+                   consulta: la pantalla lo deduce restando y lo muestra como sin dato. */
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${INSCRITO} AND NOT ${ES_VENTA_PUBLICO} AND J.Genero = 1 THEN 1 END) as InscritosHombres,
+                COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${INSCRITO} AND NOT ${ES_VENTA_PUBLICO} AND J.Genero = 2 THEN 1 END) as InscritosMujeres,
                 COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${KEEPER_INSCRITO_TEMPORADA} AND NOT ${ES_VENTA_PUBLICO} AND NOT ${ES_CLINICS_FUTSAL} THEN 1 END) as InscritosKeepers,
                 COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${INSCRITO} AND ${FUTSAL_NETO} THEN 1 END) as InscritosFutsal,
                 COUNT(CASE WHEN J.Status = 0 AND NOT ${FUERA_LUGAR} AND ${INSCRITO} AND ${ES_CLINICS_FUTSAL} THEN 1 END) as InscritosClinicsFutsal,

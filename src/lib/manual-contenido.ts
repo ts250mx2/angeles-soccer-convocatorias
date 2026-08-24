@@ -477,10 +477,21 @@ export const SECCIONES: SeccionManual[] = [
                 tipo: 'parrafo',
                 texto: 'Los porteros y keepers no vuelven a pagar inscripción cada temporada. Para ellos, una inscripción de cualquier año cuenta como vigente. Por eso aparecen inscritos aunque no tengan un pago del ciclo en curso.',
             },
+            { tipo: 'subtitulo', texto: 'Niños y niñas' },
+            {
+                tipo: 'parrafo',
+                texto: 'Dentro de **Total Inscritos** hay una dona con el reparto por sexo, con la cantidad y el porcentaje de cada lado. Cuenta a los mismos inscritos de la cifra grande, así que las dos partes suman el total, y aparece igual en el desglose de cada sede. Al hacer clic en **Niños** o en **Niñas** se abre la lista de esos jugadores, con su ID, fecha de nacimiento, categoría y beca, y desde ahí se exporta a PDF o Excel.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'calculo',
+                titulo: 'Cómo se calcula',
+                texto: 'El corte usa el campo **Género** de la ficha del jugador, no la categoría. Si apareciera un inscrito sin ese dato, se muestra como una tercera rebanada, **Sin dato**: así la dona nunca cuenta de menos que la cifra grande.',
+            },
             { tipo: 'subtitulo', texto: 'Del resumen al jugador' },
             {
                 tipo: 'parrafo',
-                texto: 'Cada tarjeta de sede se abre en el detalle por categoría, y cualquier cifra abre la lista de jugadores que la componen. Desde ahí salen tres archivos: PDF, Excel y **Excel de Movimientos**, que trae un renglón por pago con su recibo, fecha, concepto y forma de pago, más una hoja de resumen.',
+                texto: 'Cada tarjeta de sede se abre en el detalle por categoría, y cualquier cifra abre la lista de jugadores que la componen. Cada renglón trae la fecha de nacimiento, la categoría y la beca, y de ahí salen tres archivos: PDF, Excel y **Excel de Movimientos**, que trae un renglón por pago con su recibo, fecha, concepto y forma de pago, más una hoja de resumen.',
             },
         ],
     },
