@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { VIGENTE, BAJA, yaAplicada, type IncorporacionRow, type OpcionProfesor, type OpcionTemporada } from "@/lib/incorporaciones";
 import { NuevaIncorporacionModal, EditarIncorporacionModal } from "@/components/IncorporacionModal";
+import PlayersModal, { type PlayersModalConfig } from "@/components/PlayersModal";
 import PreincorporacionesLista from "@/components/PreincorporacionesLista";
 import QrPreincorporacion from "@/components/QrPreincorporacion";
 
@@ -72,6 +73,8 @@ export default function IncorporacionesPage() {
      público. Se abre en los formatos, que es el trabajo de todos los días. */
   const [vista, setVista] = useState<"formatos" | "preinscripciones">("formatos");
   const [qrAbierto, setQrAbierto] = useState(false);
+  /* Listado de una categoría, abierto desde la procedencia o el grupo destino. */
+  const [categoriaAbierta, setCategoriaAbierta] = useState<PlayersModalConfig | null>(null);
   const [exportando, setExportando] = useState(false);
   const [creando, setCreando] = useState(false);
   const [editando, setEditando] = useState<IncorporacionRow | null>(null);
@@ -155,6 +158,21 @@ export default function IncorporacionesPage() {
 
   const temporadaActual = temporadas.find((t) => t.IdTemporada === temporadaId);
   const enFormatos = vista === "formatos";
+
+  /* Abre una categoría desde el formato con sus jugadores ACTIVOS, estén inscritos o
+     no: al leer una incorporación lo que se pregunta es a quién tiene ese grupo hoy.
+
+     La temporada elegida arriba sí viaja, y no para filtrar sino para marcar: cada
+     renglón muestra si esa persona ya pagó la inscripción del ciclo y qué mensualidades
+     lleva. Filtrar por inscritos dejaba el listado vacío en las categorías de clinics,
+     que no manejan inscripción, y en los grupos que apenas arrancan la temporada. */
+  const verCategoria = (categoria: string, contexto: string) =>
+    setCategoriaAbierta({
+      title: `Categoría ${categoria}`,
+      subtitle: [contexto, temporadaActual?.Temporada].filter(Boolean).join(" · "),
+      filtro: "activos",
+      categoria,
+    });
 
   /* ── Exportación ──
      Sale lo que se está viendo, con los filtros puestos. La columna de estatus solo se
@@ -498,16 +516,32 @@ export default function IncorporacionesPage() {
                               {f.Sede && <span className="text-[10px] text-slate-500">{f.Sede}</span>}
                             </td>
                             <td className="px-4 py-3">
-                              <span className="inline-block px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300">
-                                {f.Procedencia || "—"}
-                              </span>
+                              {f.Procedencia ? (
+                                <button
+                                  type="button"
+                                  onClick={() => verCategoria(f.Procedencia!, "Procedencia")}
+                                  title={`Ver a los jugadores de ${f.Procedencia}`}
+                                  className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300 hover:bg-white/15 hover:text-white transition-colors"
+                                >
+                                  {f.Procedencia}
+                                </button>
+                              ) : (
+                                <span className="inline-block px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-slate-600">
+                                  —
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3">
                               <span className="inline-flex items-center gap-1.5">
                                 <ArrowRight size={11} className="text-blue-400 flex-shrink-0" />
-                                <span className="px-2 py-0.5 rounded bg-blue-600/20 border border-blue-500/40 text-[10px] font-black text-blue-200">
+                                <button
+                                  type="button"
+                                  onClick={() => verCategoria(f.GrupoIncorporar, "Grupo a incorporar")}
+                                  title={`Ver a los jugadores de ${f.GrupoIncorporar}`}
+                                  className="px-2 py-0.5 rounded bg-blue-600/20 border border-blue-500/40 text-[10px] font-black text-blue-200 hover:bg-blue-600/40 hover:text-white transition-colors"
+                                >
                                   {f.GrupoIncorporar}
-                                </span>
+                                </button>
                                 {aplicada && (
                                   <span title="El jugador ya está en ese grupo" className="text-emerald-400">
                                     <Check size={12} />
@@ -580,6 +614,13 @@ export default function IncorporacionesPage() {
         )}
 
         {qrAbierto && <QrPreincorporacion onClose={() => setQrAbierto(false)} />}
+
+        <PlayersModal
+          config={categoriaAbierta}
+          temporadaId={temporadaId}
+          temporadaNombre={temporadaActual?.Temporada}
+          onClose={() => setCategoriaAbierta(null)}
+        />
 
         {editando && (
           <EditarIncorporacionModal

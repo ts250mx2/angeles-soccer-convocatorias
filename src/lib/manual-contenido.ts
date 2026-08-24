@@ -296,6 +296,17 @@ export const SECCIONES: SeccionManual[] = [
                     ['Autorización', 'La firma de quien autoriza. Se guarda el nombre tal como se firmó, para que no cambie si después ese usuario se renombra o se da de baja.'],
                 ],
             },
+            { tipo: 'subtitulo', texto: 'Ver quién está en un grupo' },
+            {
+                tipo: 'parrafo',
+                texto: 'En la tabla, la **procedencia** y el **grupo a incorporar** se pueden pulsar: abren la lista de esa categoría —de dónde sale el jugador, o a dónde va a llegar—, con el ID, la fecha de nacimiento y la beca de cada quien, y con sus botones de PDF y Excel. Es la forma de ver si el grupo destino tiene cupo antes de autorizar.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Quién sale y qué marca cada renglón',
+                texto: 'Salen los jugadores **activos** de la categoría, estén inscritos o no. La palomita verde de **Inscrip.** dice quién ya pagó la inscripción de la temporada elegida arriba, y la tacha roja quién no; a un lado van los cuadritos de las mensualidades. Así el mismo listado responde las dos cosas: quién está en el grupo y cómo va de pagos.',
+            },
             { tipo: 'subtitulo', texto: 'Preinscripciones: lo que llega por el QR' },
             {
                 tipo: 'parrafo',
