@@ -7,7 +7,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import {
   DollarSign, CreditCard, Users, TrendingUp, TrendingDown,
   Calendar, BarChart3, RefreshCw, Trophy, Target, MapPin, X,
-  ExternalLink, ChevronRight, Search, FileText, Download
+  ExternalLink, ChevronRight, Search, FileText, Download, Loader2
 } from "lucide-react";
 
 type Period = "today" | "yesterday" | "week" | "month" | "custom";
@@ -105,6 +105,77 @@ const fmt0 = (n: number) =>
 const MESES_CORTOS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 /** Etiqueta de un código Anio*100+Mes. */
 const mesLabel = (code: number) => MESES_CORTOS[(code % 100) - 1] ?? "";
+
+/** 'YYYY-MM-DD' partido a mano: pasarlo por Date() lo corre un dia por zona horaria. */
+const partesISO = (iso: string) => {
+  const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+  return { y, m, d, ok: Boolean(y && m && d) };
+};
+
+/** Fecha suelta legible: "24 Ago 2026". */
+const fechaLabel = (iso: string) => {
+  const { y, m, d, ok } = partesISO(iso);
+  return ok ? `${d} ${MESES_CORTOS[m - 1]} ${y}` : String(iso);
+};
+
+/**
+ * Rango legible que colapsa lo que ambos extremos comparten:
+ * mismo dia -> "24 Ago 2026"; mismo mes -> "1 al 24 Ago 2026";
+ * mismo anio -> "28 Jul al 24 Ago 2026"; distinto anio -> "28 Dic 2025 al 3 Ene 2026".
+ */
+const rangoLabel = (from: string, to: string) => {
+  const a = partesISO(from), b = partesISO(to);
+  if (!a.ok || !b.ok) return `${from} al ${to}`;
+  if (from === to) return fechaLabel(from);
+  if (a.y !== b.y) return `${fechaLabel(from)} al ${fechaLabel(to)}`;
+  if (a.m !== b.m) return `${a.d} ${MESES_CORTOS[a.m - 1]} al ${b.d} ${MESES_CORTOS[b.m - 1]} ${b.y}`;
+  return `${a.d} al ${b.d} ${MESES_CORTOS[b.m - 1]} ${b.y}`;
+};
+
+/** Version compacta (sin anio) para el chip del boton de fechas: "1–24 Ago". */
+const rangoCorto = (from: string, to: string) => {
+  const a = partesISO(from), b = partesISO(to);
+  if (!a.ok || !b.ok) return `${from} – ${to}`;
+  if (from === to) return `${a.d} ${MESES_CORTOS[a.m - 1]}`;
+  if (a.m === b.m && a.y === b.y) return `${a.d}–${b.d} ${MESES_CORTOS[b.m - 1]}`;
+  return `${a.d} ${MESES_CORTOS[a.m - 1]} – ${b.d} ${MESES_CORTOS[b.m - 1]}`;
+};
+
+const aISO = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/**
+ * Fechas reales que cubre cada preset. Espeja buildDateFilter() de
+ * /api/dashboard/kpis: la semana es ISO (lunes a domingo) y el mes es completo,
+ * asi que el rango mostrado es el mismo que filtra la consulta.
+ */
+const rangoDePeriodo = (p: Period, from: string, to: string): { from: string; to: string } => {
+  const hoy = new Date();
+  switch (p) {
+    case "custom":
+      return { from, to };
+    case "today":
+      return { from: aISO(hoy), to: aISO(hoy) };
+    case "yesterday": {
+      const ayer = new Date(hoy);
+      ayer.setDate(ayer.getDate() - 1);
+      return { from: aISO(ayer), to: aISO(ayer) };
+    }
+    case "week": {
+      const lunes = new Date(hoy);
+      lunes.setDate(lunes.getDate() - ((lunes.getDay() + 6) % 7));
+      const domingo = new Date(lunes);
+      domingo.setDate(domingo.getDate() + 6);
+      return { from: aISO(lunes), to: aISO(domingo) };
+    }
+    case "month":
+    default:
+      return {
+        from: aISO(new Date(hoy.getFullYear(), hoy.getMonth(), 1)),
+        to: aISO(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0)),
+      };
+  }
+};
 
 /**
  * Avance de la temporada: recaudación mes a mes (una barra por mes de cobro) y
@@ -365,6 +436,8 @@ export default function DashboardPage() {
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  /* Aplicar del rango de fechas: se queda esperando a que lleguen los datos. */
+  const [aplicando, setAplicando] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -432,7 +505,7 @@ export default function DashboardPage() {
 
       worksheet.mergeCells("A4:H4");
       const filterCell = worksheet.getCell("A4");
-      filterCell.value = `Filtro: ${detailsModal.subtitle}  |  Rango de Fechas: ${periodLabel}`;
+      filterCell.value = `Filtro: ${detailsModal.subtitle}  |  Rango de Fechas: ${periodFullLabel}`;
       filterCell.font = { name: "Segoe UI", size: 10, italic: true, color: { argb: "FF64748B" } };
       filterCell.alignment = { vertical: "middle", horizontal: "left" };
 
@@ -618,7 +691,7 @@ export default function DashboardPage() {
 
       worksheet.mergeCells("A4:F4");
       const filterCell = worksheet.getCell("A4");
-      filterCell.value = `Rango de Fechas: ${periodLabel}`;
+      filterCell.value = `Rango de Fechas: ${periodFullLabel}`;
       filterCell.font = { name: "Segoe UI", size: 10, italic: true, color: { argb: "FF64748B" } };
       filterCell.alignment = { vertical: "middle", horizontal: "left" };
 
@@ -857,8 +930,14 @@ export default function DashboardPage() {
     return Object.values(map).sort((a, b) => b.total - a.total);
   };
 
-  // Sin el permiso, DashboardLayout pinta "Sin acceso": no hay nada que pedir.
+  /* Sin el permiso, DashboardLayout pinta "Sin acceso": no hay nada que pedir.
+
+     El rango personalizado NO se pide aqui: lo dispara Aplicar, que ademas espera la
+     respuesta. Sin ese corte, entrar a "custom" lanzaba la misma consulta dos veces
+     —una este efecto al cambiar el periodo y otra Aplicar—, y cada una tarda unos
+     ocho segundos contra la base. */
   useEffect(() => {
+    if (period === "custom") return;
     if (isInitialized && user && puedeVer) fetchKPIs(period, dateFrom, dateTo);
   }, [isInitialized, user, puedeVer, period, fetchKPIs]);
 
@@ -867,13 +946,28 @@ export default function DashboardPage() {
     setPeriod(p);
   };
 
-  const applyCustomDates = () => {
+  /* Aplicar no cierra hasta que los datos del rango nuevo estan en pantalla. Cerrando
+     al instante, el usuario se quedaba viendo las cifras del rango ANTERIOR sin nada
+     que le dijera que todavia estaban cambiando, y la lectura equivocada dura lo que
+     tarde la consulta. El boton se bloquea mientras tanto, asi que tampoco se puede
+     pedir dos veces el mismo rango. */
+  const applyCustomDates = async () => {
+    setAplicando(true);
     setDateFrom(pendingFrom); setDateTo(pendingTo);
-    setPeriod("custom"); setShowDatePicker(false);
-    fetchKPIs("custom", pendingFrom, pendingTo);
+    setPeriod("custom");
+    try {
+      await fetchKPIs("custom", pendingFrom, pendingTo);
+    } finally {
+      setAplicando(false);
+      setShowDatePicker(false);
+    }
   };
 
-  const periodLabel = period === "custom" ? `${dateFrom} → ${dateTo}` : PERIODS.find(p => p.key === period)?.label ?? "";
+  const periodRange = rangoDePeriodo(period, dateFrom, dateTo);
+  const periodRangeLabel = rangoLabel(periodRange.from, periodRange.to);
+  // Corta para badges y subtitulos; completa (preset + fechas) donde el dato tiene que ser inequivoco.
+  const periodLabel = period === "custom" ? periodRangeLabel : PERIODS.find(p => p.key === period)?.label ?? "";
+  const periodFullLabel = period === "custom" ? periodRangeLabel : `${periodLabel} · ${periodRangeLabel}`;
   const timelineSlice = data?.timeline.slice(-14) ?? [];
   const maxTimeline = Math.max(...timelineSlice.map((t) => t.Total), 1);
 
@@ -895,7 +989,9 @@ export default function DashboardPage() {
             <p className="text-xs text-blue-300">{data?.season?.Temporada ? `Temporada ${data.season.Temporada}` : season ? `Temporada ${season}` : "Resumen ejecutivo"}</p>
           </div>
           <div className="flex items-center gap-3">
-            {lastUpdated && <span className="text-[10px] text-slate-500">Act. {lastUpdated.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</span>}
+            {isLoading
+              ? <span className="text-[10px] font-bold text-blue-300 animate-pulse">Actualizando...</span>
+              : lastUpdated && <span className="text-[10px] text-slate-500">Act. {lastUpdated.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</span>}
             <button onClick={() => fetchKPIs(period, dateFrom, dateTo)} disabled={isLoading} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white transition-all" title="Actualizar">
               <RefreshCw size={15} className={isLoading ? "animate-spin" : ""} />
             </button>
@@ -908,7 +1004,10 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h2 className="text-lg font-black">Recaudación por Período</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Pagos de convocatorias — {periodLabel}</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Pagos de convocatorias — {period !== "custom" && <>{periodLabel} · </>}
+                <span className="text-slate-200 font-semibold">{periodRangeLabel}</span>
+              </p>
             </div>
             <div className="flex gap-2 bg-white/5 p-1 rounded-2xl border border-white/10 flex-wrap">
               {PERIODS.map((p) => (
@@ -920,7 +1019,7 @@ export default function DashboardPage() {
                   }`}>
                   {p.key === "custom" ? <Calendar size={13} /> : null}
                   {p.label}
-                  {p.key === "custom" && period === "custom" && <span className="text-[9px] opacity-70 ml-1">{dateFrom.slice(5)} → {dateTo.slice(5)}</span>}
+                  {p.key === "custom" && period === "custom" && <span className="text-[9px] opacity-70 ml-1">{rangoCorto(dateFrom, dateTo)}</span>}
                 </button>
               ))}
             </div>
@@ -947,8 +1046,20 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="flex gap-3 mt-6">
-                  <button onClick={() => setShowDatePicker(false)} className="flex-1 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-bold hover:bg-white/5 transition-all">Cancelar</button>
-                  <button onClick={applyCustomDates} className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-black transition-all shadow-lg shadow-blue-500/20">Aplicar</button>
+                  <button
+                    onClick={() => setShowDatePicker(false)}
+                    disabled={aplicando}
+                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-bold hover:bg-white/5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={applyCustomDates}
+                    disabled={aplicando}
+                    className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-black transition-all shadow-lg shadow-blue-500/20 disabled:opacity-70 disabled:cursor-wait flex items-center justify-center gap-2"
+                  >
+                    {aplicando ? <><Loader2 size={15} className="animate-spin" /> Aplicando...</> : "Aplicar"}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1651,7 +1762,15 @@ export default function DashboardPage() {
             ) : <div className="h-56 flex items-center justify-center text-slate-500 text-sm">Sin datos en los últimos 30 días</div>}
           </div>
 
-          {/* Bottom: Por Sede + Por Liga + Acumulado de la temporada */}
+          {/* Bottom: Por Sede + Por Liga + Acumulado de la temporada.
+              Tambien se cubren mientras carga: eran las unicas que seguian pintando las
+              cifras del rango anterior junto a los esqueletos de arriba, y esa mezcla
+              se lee como si el dato ya se hubiera actualizado. */}
+          {isLoading ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-72 bg-white/5 rounded-2xl animate-pulse border border-white/10" />)}
+            </div>
+          ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <BarSection
               title="Por Sede"
@@ -1672,6 +1791,7 @@ export default function DashboardPage() {
             />
             <SeasonCard data={data} />
           </div>
+          )}
 
           {/* Empty state */}
           {!isLoading && data && data.kpi.totalPagos === 0 && (
