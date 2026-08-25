@@ -124,7 +124,7 @@ export default function Sidebar() {
     <>
       {/* Mobile overlay */}
       <div
-        className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-30 lg:hidden transition-opacity duration-300 ${
+        className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-30 lg:hidden print:hidden transition-opacity duration-300 ${
           collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
         }`}
         onClick={() => cambiarColapso(true)}
@@ -132,7 +132,7 @@ export default function Sidebar() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-300 ease-in-out
+        className={`fixed left-0 top-0 h-full z-40 flex flex-col print:hidden transition-all duration-300 ease-in-out
           ${collapsed ? "w-[68px]" : "w-64"}
           bg-slate-900/95 backdrop-blur-xl border-r border-white/10 shadow-2xl`}
       >
@@ -421,7 +421,7 @@ export default function Sidebar() {
 
       {/* Spacer to push content */}
       <div
-        className={`flex-shrink-0 transition-all duration-300 ${
+        className={`flex-shrink-0 print:hidden transition-all duration-300 ${
           collapsed ? "w-[68px]" : "w-64"
         }`}
       />

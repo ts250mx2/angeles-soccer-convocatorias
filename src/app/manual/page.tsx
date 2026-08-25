@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -46,7 +47,7 @@ function BloqueVista({ bloque }: { bloque: Bloque }) {
         <ul className="mb-3 space-y-1.5 max-w-3xl">
           {bloque.items.map((it, i) => (
             <li key={i} className="text-sm text-slate-300 leading-relaxed flex gap-2">
-              <span className="text-blue-400 flex-shrink-0 mt-1.5">&bull;</span>
+              <span className="manual-vineta text-blue-400 flex-shrink-0 mt-1.5">&bull;</span>
               <span>{conNegritas(it)}</span>
             </li>
           ))}
@@ -57,7 +58,7 @@ function BloqueVista({ bloque }: { bloque: Bloque }) {
         <ol className="mb-3 space-y-2 max-w-3xl">
           {bloque.items.map((it, i) => (
             <li key={i} className="text-sm text-slate-300 leading-relaxed flex gap-3">
-              <span className="flex-shrink-0 w-5 h-5 rounded-md bg-blue-600 text-white text-[11px] font-black flex items-center justify-center mt-0.5">
+              <span className="manual-paso-num flex-shrink-0 w-5 h-5 rounded-md bg-blue-600 text-white text-[11px] font-black flex items-center justify-center mt-0.5">
                 {i + 1}
               </span>
               <span>{conNegritas(it)}</span>
@@ -67,7 +68,7 @@ function BloqueVista({ bloque }: { bloque: Bloque }) {
       );
     case "formula":
       return (
-        <div className="my-4 bg-slate-950/60 border border-white/10 rounded-xl p-4 overflow-x-auto">
+        <div className="manual-formula my-4 bg-slate-950/60 border border-white/10 rounded-xl p-4 overflow-x-auto">
           {bloque.lineas.map((l, i) => (
             <p key={i} className="font-mono text-[12px] text-slate-300 whitespace-pre leading-relaxed">{l}</p>
           ))}
@@ -76,15 +77,15 @@ function BloqueVista({ bloque }: { bloque: Bloque }) {
     case "nota": {
       const e = NOTA_ESTILO[bloque.estilo];
       return (
-        <div className={`my-4 border-l-4 rounded-r-xl px-4 py-3 max-w-3xl ${e.caja}`}>
-          <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${e.tag}`}>{bloque.titulo}</p>
+        <div className={`manual-nota manual-nota-${bloque.estilo} my-4 border-l-4 rounded-r-xl px-4 py-3 max-w-3xl ${e.caja}`}>
+          <p className={`manual-nota-tag text-[10px] font-black uppercase tracking-widest mb-1 ${e.tag}`}>{bloque.titulo}</p>
           <p className="text-sm text-slate-200 leading-relaxed">{conNegritas(bloque.texto)}</p>
         </div>
       );
     }
     case "imagen":
       return (
-        <figure className="my-5 max-w-3xl">
+        <figure className="manual-figura my-5 max-w-3xl">
           <Image
             src={bloque.src}
             alt={bloque.alt}
@@ -106,7 +107,7 @@ function BloqueVista({ bloque }: { bloque: Bloque }) {
       );
     case "tabla":
       return (
-        <div className="my-4 overflow-x-auto">
+        <div className="manual-tabla my-4 overflow-x-auto">
           <table className="w-full min-w-[420px] border border-white/10 rounded-xl overflow-hidden">
             <thead>
               <tr className="bg-white/5">
@@ -136,13 +137,38 @@ function BloqueVista({ bloque }: { bloque: Bloque }) {
 
 export default function ManualPage() {
   const router = useRouter();
-  const { user, isInitialized } = useUser();
+  const { user, isInitialized, season } = useUser();
   const { paginas } = usePermisos();
   const [busqueda, setBusqueda] = useState("");
+  /* Fecha de la portada. Se calcula ya montado el componente y no durante el render,
+     porque el HTML que llega del servidor se genera en otro momento (y en otra zona
+     horaria) que el del navegador, y React reclamaría la diferencia. */
+  const [generado, setGenerado] = useState("");
 
   useEffect(() => {
     if (isInitialized && !user) router.push("/login");
   }, [user, isInitialized, router]);
+
+  /* Las reglas de impresión de globals.css cuelgan de esta clase, para que solo se
+     apliquen mientras se está en el manual y ninguna otra pantalla las herede. */
+  useEffect(() => {
+    document.body.classList.add("manual-impresion");
+    return () => document.body.classList.remove("manual-impresion");
+  }, []);
+
+  /* La fecha se sella justo antes de imprimir, no al cargar: así dice cuándo se
+     imprimió el ejemplar, y no cuándo se generó la página (que además es estática,
+     así que su fecha sería la de la compilación). flushSync obliga a que el cambio
+     esté en el DOM antes de que el navegador arme la vista previa. */
+  useEffect(() => {
+    const alImprimir = () => {
+      flushSync(() => setGenerado(new Date().toLocaleDateString("es-MX", {
+        day: "numeric", month: "long", year: "numeric",
+      })));
+    };
+    window.addEventListener("beforeprint", alImprimir);
+    return () => window.removeEventListener("beforeprint", alImprimir);
+  }, []);
 
   /* Recorre el MISMO menú que pinta el sidebar y arma las secciones que este usuario
      puede ver. Si mañana se agrega o restringe un módulo, el manual lo sigue solo. */
@@ -199,6 +225,57 @@ export default function ManualPage() {
     <DashboardLayout>
       <main className="overflow-y-auto flex-1 text-white p-6 md:p-8">
         <div className="max-w-6xl mx-auto">
+
+          {/* Portada. En pantalla estorba (el título ya está abajo), así que solo
+              existe en el papel, donde un manual sin portada no parece un manual. */}
+          <section className="manual-portada hidden print:block">
+            <Image
+              src="/favicon.ico"
+              alt=""
+              width={256}
+              height={256}
+              unoptimized
+              className="manual-portada-logo"
+            />
+            <p className="manual-portada-club">Ángeles Soccer</p>
+            <p className="manual-portada-titulo">Manual de Operación</p>
+            <p className="manual-portada-sub">
+              Cómo operar cada módulo del sistema y qué significa cada número que reporta.
+            </p>
+            <dl className="manual-portada-datos">
+              {season && (
+                <>
+                  <dt>Temporada</dt>
+                  <dd>{season}</dd>
+                </>
+              )}
+              <dt>Impreso por</dt>
+              <dd>{user?.Usuario ?? "—"}{user?.Puesto ? ` · ${user.Puesto}` : ""}</dd>
+              <dt>Fecha</dt>
+              <dd>{generado}</dd>
+              {busqueda.trim() && (
+                <>
+                  <dt>Filtro</dt>
+                  <dd>{busqueda.trim()}</dd>
+                </>
+              )}
+            </dl>
+            <p className="manual-portada-nota">
+              Este ejemplar contiene únicamente los módulos a los que tiene acceso el
+              usuario que lo imprimió; otro perfil imprimirá un manual distinto.
+            </p>
+          </section>
+
+          {/* Índice del papel. En pantalla el índice es la columna de la izquierda,
+              que navega con anclas; en papel esa columna no sirve de nada. */}
+          <nav className="manual-indice hidden print:block">
+            <h2>Contenido</h2>
+            <ol>
+              {filtradas.map(({ seccion }) => (
+                <li key={seccion.clave}>{seccion.titulo}</li>
+              ))}
+            </ol>
+          </nav>
 
           <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-5 print:hidden">
             <div>
@@ -258,19 +335,19 @@ export default function ManualPage() {
                   <p className="text-slate-500 mt-1 text-sm">No hay secciones que mencionen &quot;{busqueda}&quot;.</p>
                 </div>
               ) : (
-                <div className="space-y-10">
+                <div className="manual-secciones space-y-10">
                   {filtradas.map(({ seccion, href, ruta }) => (
                     <section
                       key={seccion.clave}
                       id={idDe(seccion)}
-                      className="scroll-mt-6 bg-white/[0.03] border border-white/10 rounded-2xl p-6"
+                      className="manual-seccion scroll-mt-6 bg-white/[0.03] border border-white/10 rounded-2xl p-6"
                     >
                       <div className="flex flex-wrap items-center gap-2 mb-1">
                         <h2 className="text-xl font-black text-white tracking-tight">{seccion.titulo}</h2>
                         {seccion.audiencia.map((a) => (
                           <span
                             key={a}
-                            className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${
+                            className={`manual-audiencia text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${
                               a === "operacion"
                                 ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30"
                                 : "text-blue-300 bg-blue-500/10 border-blue-500/30"
@@ -282,7 +359,7 @@ export default function ManualPage() {
                       </div>
                       {ruta && (
                         <div className="flex items-center gap-2 mb-4">
-                          <span className="text-[11px] text-slate-500">{ruta}</span>
+                          <span className="manual-ruta text-[11px] text-slate-500">{ruta}</span>
                           {href && (
                             <Link
                               href={href}

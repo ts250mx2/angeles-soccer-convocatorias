@@ -47,3 +47,350 @@ body {
 .tema-oscuro select option:disabled {
   color: #64748b;
 }
+
+/*
+ * ---------------------------------------------------------------------------
+ * Impresión del Manual de Operación
+ *
+ * En pantalla el manual es una página oscura, con el menú fijo a la izquierda y el
+ * contenido dentro de un contenedor con scroll propio. Las tres cosas estorban en
+ * papel: el degradado gasta tinta, el texto claro sale ilegible y —lo importante— un
+ * contenedor con `overflow` recorta la impresión a lo que cabe en la ventana, así que
+ * salía UNA hoja en lugar del manual completo.
+ *
+ * Estas reglas convierten esa pantalla en un documento: portada, índice y una sección
+ * por página, en negro sobre blanco. Cuelgan de la clase que /manual le pone al body
+ * mientras está montado, para no tocar la impresión de ninguna otra pantalla.
+ * ---------------------------------------------------------------------------
+ */
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 18mm 16mm;
+  }
+
+  body.manual-impresion {
+    background: #fff !important;
+    color: #1a1d24 !important;
+  }
+
+  /* El armazón de la aplicación: ni degradados, ni alturas de pantalla, ni scroll. */
+  body.manual-impresion .tema-oscuro,
+  body.manual-impresion .tema-oscuro > div,
+  body.manual-impresion main,
+  body.manual-impresion main > div,
+  body.manual-impresion main > div > div {
+    display: block !important;
+    background: #fff !important;
+    color: #1a1d24 !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  /* ---- Portada ---- */
+  body.manual-impresion .manual-portada {
+    break-after: page;
+    text-align: center;
+    padding-top: 38mm;
+  }
+  body.manual-impresion .manual-portada-logo {
+    width: 26mm;
+    height: 26mm;
+    object-fit: contain;
+    margin: 0 auto 10mm;
+  }
+  body.manual-impresion .manual-portada-club {
+    font-size: 11pt;
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: #5a6070;
+    margin-bottom: 6mm;
+  }
+  body.manual-impresion .manual-portada-titulo {
+    font-size: 32pt;
+    font-weight: 900;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: #10131a;
+    margin: 0 0 5mm;
+  }
+  body.manual-impresion .manual-portada-sub {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 12pt;
+    font-style: italic;
+    color: #4b5162;
+    max-width: 120mm;
+    margin: 0 auto 18mm;
+  }
+  /* Ficha del ejemplar: de quién es y de cuándo. Es lo que distingue una copia de
+     otra, porque cada usuario imprime solo los módulos que tiene concedidos. */
+  body.manual-impresion .manual-portada-datos {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 2mm 6mm;
+    justify-content: center;
+    text-align: left;
+    font-size: 10pt;
+    border-top: 1px solid #c9ced6;
+    border-bottom: 1px solid #c9ced6;
+    padding: 6mm 0;
+    max-width: 110mm;
+    margin: 0 auto;
+  }
+  body.manual-impresion .manual-portada-datos dt {
+    font-size: 8pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #6b7280;
+    text-align: right;
+  }
+  body.manual-impresion .manual-portada-datos dd {
+    margin: 0;
+    color: #1a1d24;
+    font-weight: 600;
+  }
+  body.manual-impresion .manual-portada-nota {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 9.5pt;
+    color: #6b7280;
+    max-width: 110mm;
+    margin: 8mm auto 0;
+  }
+
+  /* ---- Índice ---- */
+  body.manual-impresion .manual-indice {
+    break-after: page;
+  }
+  body.manual-impresion .manual-indice h2 {
+    font-size: 18pt;
+    font-weight: 900;
+    color: #10131a;
+    border-bottom: 2px solid #10131a;
+    padding-bottom: 3mm;
+    margin: 0 0 8mm;
+  }
+  body.manual-impresion .manual-indice ol {
+    counter-reset: indice;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  body.manual-impresion .manual-indice li {
+    counter-increment: indice;
+    font-size: 11pt;
+    padding: 1.6mm 0;
+    border-bottom: 1px dotted #d5dae1;
+    color: #24272e;
+  }
+  body.manual-impresion .manual-indice li::before {
+    content: counter(indice) ".";
+    display: inline-block;
+    width: 9mm;
+    font-weight: 800;
+    color: #6b7280;
+  }
+
+  /* ---- Secciones ----
+     Cada una abre página, como el capítulo de un manual. Su contador va en paralelo
+     al del índice: las dos listas recorren las mismas secciones y en el mismo orden,
+     así que el número de una coincide siempre con el de la otra. */
+  body.manual-impresion .manual-secciones {
+    counter-reset: seccion;
+  }
+  body.manual-impresion .manual-seccion {
+    counter-increment: seccion;
+    break-before: page;
+    background: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  /* El índice ya cerró su página; sin esto, algunos navegadores suman el salto de
+     la primera sección al del índice y sale una hoja en blanco entre los dos. */
+  body.manual-impresion .manual-seccion:first-child {
+    break-before: auto;
+  }
+  body.manual-impresion .manual-seccion h2 {
+    font-size: 17pt;
+    font-weight: 900;
+    color: #10131a;
+    letter-spacing: -0.01em;
+    border-bottom: 1.5px solid #10131a;
+    padding-bottom: 2.5mm;
+    margin: 0 0 1mm;
+    width: 100%;
+  }
+  body.manual-impresion .manual-seccion h2::before {
+    content: counter(seccion) ".  ";
+    color: #6b7280;
+  }
+  body.manual-impresion .manual-seccion h3 {
+    font-size: 12pt;
+    font-weight: 800;
+    color: #10131a;
+    margin: 7mm 0 2mm;
+    break-after: avoid;
+  }
+
+  /* El cuerpo en serif es lo que hace que se lea como un documento y no como una
+     captura de pantalla. Los títulos se quedan en la tipografía de la aplicación. */
+  body.manual-impresion .manual-seccion :is(p, li, td, figcaption) {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: #24272e;
+    max-width: none !important;
+    orphans: 3;
+    widows: 3;
+  }
+  body.manual-impresion .manual-seccion strong {
+    color: #10131a !important;
+    font-weight: 700;
+  }
+  /* La ruta del módulo dentro del menú, bajo el título. */
+  body.manual-impresion .manual-ruta {
+    font-family: inherit;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #6b7280 !important;
+  }
+  body.manual-impresion .manual-audiencia {
+    font-size: 7.5pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #4b5162 !important;
+    background: none !important;
+    border: 1px solid #c9ced6 !important;
+    border-radius: 2mm;
+    padding: 0.4mm 1.6mm;
+  }
+
+  /* Viñetas y pasos numerados: el color de pantalla no se lee en papel. */
+  body.manual-impresion .manual-vineta {
+    color: #1d4ed8 !important;
+  }
+  body.manual-impresion .manual-paso-num {
+    background: #1d4ed8 !important;
+    color: #fff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* ---- Bloques que no se deben partir a la mitad ---- */
+  body.manual-impresion :is(.manual-nota, .manual-figura, .manual-formula, .manual-tabla) {
+    break-inside: avoid;
+  }
+
+  /* Avisos: conservan su color, que es lo que distingue el tipo de aviso, pero con
+     tinta clara de fondo y oscura de texto. */
+  body.manual-impresion .manual-nota {
+    border-left-width: 3pt !important;
+    border-radius: 0 2mm 2mm 0;
+    padding: 3mm 4mm;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  body.manual-impresion .manual-nota p:last-child {
+    color: #1f2229 !important;
+    margin: 0;
+  }
+  body.manual-impresion .manual-nota-ojo {
+    background: #fdf6e5 !important;
+    border-color: #b45309 !important;
+  }
+  body.manual-impresion .manual-nota-ojo .manual-nota-tag {
+    color: #92400e !important;
+  }
+  body.manual-impresion .manual-nota-calculo {
+    background: #eef3fd !important;
+    border-color: #1d4ed8 !important;
+  }
+  body.manual-impresion .manual-nota-calculo .manual-nota-tag {
+    color: #1e40af !important;
+  }
+  body.manual-impresion .manual-nota-cuidado {
+    background: #fdeef1 !important;
+    border-color: #be123c !important;
+  }
+  body.manual-impresion .manual-nota-cuidado .manual-nota-tag {
+    color: #9f1239 !important;
+  }
+
+  /* Fórmulas: caja gris con la tipografía de ancho fijo. */
+  body.manual-impresion .manual-formula {
+    background: #f4f6f8 !important;
+    border: 1px solid #d5dae1 !important;
+    border-radius: 2mm;
+    padding: 3mm 4mm;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  body.manual-impresion .manual-formula p {
+    font-family: "Courier New", monospace !important;
+    font-size: 9pt !important;
+    color: #24272e !important;
+  }
+
+  /* Tablas: rejilla visible y encabezado repetido si la tabla cruza de página. */
+  body.manual-impresion .manual-tabla {
+    overflow: visible !important;
+  }
+  body.manual-impresion .manual-tabla table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #c9ced6 !important;
+    border-radius: 0 !important;
+    min-width: 0 !important;
+  }
+  body.manual-impresion .manual-tabla thead {
+    display: table-header-group;
+  }
+  body.manual-impresion .manual-tabla thead tr {
+    background: #eef1f5 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  body.manual-impresion .manual-tabla th {
+    font-size: 8pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #3d4350 !important;
+    border: 1px solid #c9ced6 !important;
+    padding: 2mm 3mm;
+  }
+  body.manual-impresion .manual-tabla td {
+    border: 1px solid #d5dae1 !important;
+    padding: 2mm 3mm;
+    font-size: 9.5pt;
+  }
+  body.manual-impresion .manual-tabla tr {
+    break-inside: avoid;
+  }
+
+  /* Figuras: las capturas se imprimen con marco y sin exceder la caja de texto. */
+  body.manual-impresion .manual-figura img {
+    border: 1px solid #c9ced6 !important;
+    border-radius: 2mm;
+    max-width: 100% !important;
+    height: auto !important;
+  }
+  body.manual-impresion .manual-figura figcaption {
+    font-size: 9pt;
+    font-style: italic;
+    color: #5a6070 !important;
+    margin-top: 1.5mm;
+  }
+}
