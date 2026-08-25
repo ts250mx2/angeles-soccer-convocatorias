@@ -314,6 +314,21 @@ export const SECCIONES: SeccionManual[] = [
                 titulo: 'El grupo destino se ve como va a quedar',
                 texto: 'En el listado del **grupo a incorporar** aparece además el jugador de ese formato, marcado como **POR INCORPORAR**: todavía no está en el grupo —el cambio se aplica en el sistema de escritorio— pero se suma aparte para que el grupo se lea como quedará. Si el cambio ya se aplicó, ese jugador sale en la lista normal marcado como **YA INCORPORADO**, y no se cuenta dos veces.',
             },
+            { tipo: 'subtitulo', texto: 'Imprimir un formato' },
+            {
+                tipo: 'parrafo',
+                texto: 'Cada renglón trae su botón de **impresora**: saca ese formato solo, en una hoja, como el papel que se firmaba. Lleva el escudo y el título **INCORPORACION**; debajo la fecha, el profesor y el jugador; luego de qué grupo viene y a cuál va; en medio, grande, el **grupo incorporado** —la plantilla completa del grupo destino con el jugador ya dentro—; y al pie la justificación y el recuadro de autorización con la firma y la fecha. Un formato cancelado sale igual, pero ese recuadro dice **CANCELADA** en rojo.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'El equipo, como va a quedar',
+                texto: 'El jugador aparece dentro de la lista del grupo destino, resaltado y marcado como **NUEVO**, aunque todavía no se le haya movido en el sistema de escritorio: de eso se trata el papel, de ver el equipo como quedará para poder autorizarlo. Si el cambio ya se aplicó, sale marcado como **INCORPORADO**. Arriba a la derecha, la caja dice cuántos son y qué corte trae: los inscritos del ciclo o, cuando la categoría no maneja inscripción, los activos.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Sale como archivo PDF, igual que el resto de las exportaciones: se guarda, se manda por correo o se imprime desde el visor, sin depender de cómo esté configurada la impresión de cada equipo.',
+            },
             { tipo: 'subtitulo', texto: 'Preinscripciones: lo que llega por el QR' },
             {
                 tipo: 'parrafo',

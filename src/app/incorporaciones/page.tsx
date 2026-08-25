@@ -9,12 +9,13 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
   UserRoundPlus, Plus, RefreshCw, Search, AlertCircle, Pencil, Ban, RotateCcw, ArrowRight, Check,
-  FileSpreadsheet, FileText, QrCode, ClipboardList, Inbox, ExternalLink,
+  FileSpreadsheet, FileText, QrCode, ClipboardList, Inbox, ExternalLink, Printer, Loader2,
 } from "lucide-react";
 import { VIGENTE, BAJA, yaAplicada, type IncorporacionRow, type OpcionProfesor, type OpcionTemporada } from "@/lib/incorporaciones";
 import { EditarIncorporacionModal } from "@/components/IncorporacionModal";
 import NuevaIncorporacionFila from "@/components/NuevaIncorporacionFila";
 import JugadoresDeCategoria from "@/components/JugadoresDeCategoria";
+import { imprimirFormatoIncorporacion, type ListaFormato } from "@/lib/incorporacion-formato";
 import PreincorporacionesLista from "@/components/PreincorporacionesLista";
 import QrPreincorporacion from "@/components/QrPreincorporacion";
 
@@ -81,6 +82,8 @@ export default function IncorporacionesPage() {
     { idIncorporacion: number; procedencia: boolean; grupo: boolean } | null
   >(null);
   const [exportando, setExportando] = useState(false);
+  /** Formato que se está armando para imprimir; hay que ir por las dos plantillas. */
+  const [imprimiendo, setImprimiendo] = useState<number | null>(null);
   const [creando, setCreando] = useState(false);
   const [editando, setEditando] = useState<IncorporacionRow | null>(null);
 
@@ -181,6 +184,46 @@ export default function IncorporacionesPage() {
       // Cerrar el último que quedaba abierto cierra el despliegue entero.
       return siguiente.procedencia || siguiente.grupo ? siguiente : null;
     });
+
+  /**
+   * Plantilla del grupo destino para el formato impreso.
+   *
+   * Se piden los inscritos del ciclo, que es lo que interesa al autorizar. Cuando la
+   * categoría no maneja inscripción —clinics— o el grupo apenas arranca, no hay
+   * ninguno; entonces se imprimen los activos, y el papel dice cuál de los dos cortes
+   * trae, para que nadie lea un listado creyendo que es el otro.
+   */
+  const plantillaDe = async (categoria: string): Promise<ListaFormato> => {
+    const pedir = async (filtro: "inscritos" | "activos") => {
+      const params = new URLSearchParams({ filtro, categoria });
+      if (temporadaId) params.set("temporadaId", String(temporadaId));
+      const res = await fetch(`/api/inscripciones/players?${params}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message ?? "No se pudo leer la categoría");
+      return json.data as { IdJugador: number; Jugador: string }[];
+    };
+
+    const inscritos = await pedir("inscritos");
+    if (inscritos.length > 0) return { categoria, modo: "inscritos", jugadores: inscritos };
+    return { categoria, modo: "activos", jugadores: await pedir("activos") };
+  };
+
+  const imprimirFormato = async (fila: IncorporacionRow) => {
+    setImprimiendo(fila.IdIncorporacion);
+    setError(null);
+    try {
+      await imprimirFormatoIncorporacion({
+        fila,
+        ciclo: temporadaActual?.Temporada ?? fila.Temporada ?? "",
+        grupo: await plantillaDe(fila.GrupoIncorporar),
+        yaAplicado: yaAplicada(fila),
+      });
+    } catch {
+      setError("No se pudo armar el formato para imprimir");
+    } finally {
+      setImprimiendo(null);
+    }
+  };
 
   /* ── Exportación ──
      Sale lo que se está viendo, con los filtros puestos. La columna de estatus solo se
@@ -574,6 +617,16 @@ export default function IncorporacionesPage() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => imprimirFormato(f)}
+                                  disabled={imprimiendo !== null}
+                                  title="Imprimir este formato con el grupo ya incorporado"
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40"
+                                >
+                                  {imprimiendo === f.IdIncorporacion
+                                    ? <Loader2 size={14} className="animate-spin text-blue-300" />
+                                    : <Printer size={14} />}
+                                </button>
                                 <button
                                   onClick={() => setEditando(f)}
                                   title="Editar fecha, grupo o justificación"
