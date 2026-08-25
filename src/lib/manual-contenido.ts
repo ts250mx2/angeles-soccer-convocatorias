@@ -276,11 +276,12 @@ export const SECCIONES: SeccionManual[] = [
                 tipo: 'pasos',
                 items: [
                     'Arriba se elige el **ciclo** (la temporada). Todo lo que captures queda en ese ciclo.',
-                    'Pulsa **Nueva incorporación**. La fecha viene con la de hoy.',
+                    'Pulsa **Nueva incorporación**: se abre un renglón de captura al final de la tabla, con la fecha de hoy puesta.',
                     '**Profesor** y **Jugador** se buscan escribiendo: la lista se va filtrando con lo que tecleas.',
                     '**Procedencia** se llena sola con la categoría del jugador: no se captura.',
                     '**Grupo a incorporar** se elige del catálogo; si el grupo es nuevo y todavía no tiene jugadores, escríbelo y pulsa Enter.',
                     'Escribe la **justificación** y guarda. La autorización se estampa sola.',
+                    'El renglón **se queda abierto** con la fecha y el profesor que traía, para capturar el siguiente formato sin volver a empezar. Se cierra con **Cerrar**.',
                 ],
             },
             {
@@ -299,13 +300,19 @@ export const SECCIONES: SeccionManual[] = [
             { tipo: 'subtitulo', texto: 'Ver quién está en un grupo' },
             {
                 tipo: 'parrafo',
-                texto: 'En la tabla, la **procedencia** y el **grupo a incorporar** se pueden pulsar: abren la lista de esa categoría —de dónde sale el jugador, o a dónde va a llegar—, con el ID, la fecha de nacimiento y la beca de cada quien, y con sus botones de PDF y Excel. Es la forma de ver si el grupo destino tiene cupo antes de autorizar.',
+                texto: 'En la tabla, la **procedencia** y el **grupo a incorporar** se pueden pulsar: el listado de esa categoría se despliega **bajo el propio renglón**, sin taparlo, con el ID, la sede, la fecha de nacimiento y la beca de cada quien. Los dos se pueden abrir **a la vez**, y entonces salen lado a lado: el grupo del que sale y el grupo al que llega, juntos. Se cierran con la equis o volviendo a pulsar el mismo grupo.',
             },
             {
                 tipo: 'nota',
                 estilo: 'ojo',
-                titulo: 'Quién sale y qué marca cada renglón',
-                texto: 'Salen los jugadores **activos** de la categoría, estén inscritos o no. La palomita verde de **Inscrip.** dice quién ya pagó la inscripción de la temporada elegida arriba, y la tacha roja quién no; a un lado van los cuadritos de las mensualidades. Así el mismo listado responde las dos cosas: quién está en el grupo y cómo va de pagos.',
+                titulo: 'Quién sale en el listado',
+                texto: 'Salen los **inscritos en el ciclo** elegido arriba, con la fecha en que pagaron su inscripción: al autorizar una incorporación lo que se pregunta es cuántos hay ya en ese grupo esta temporada. Las categorías de **clinics** no manejan inscripción, y un grupo que apenas arranca todavía no tiene a nadie pagado: ahí el listado sale vacío y ofrece un botón para ver a los **activos** de la categoría.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'calculo',
+                titulo: 'El grupo destino se ve como va a quedar',
+                texto: 'En el listado del **grupo a incorporar** aparece además el jugador de ese formato, marcado como **POR INCORPORAR**: todavía no está en el grupo —el cambio se aplica en el sistema de escritorio— pero se suma aparte para que el grupo se lea como quedará. Si el cambio ya se aplicó, ese jugador sale en la lista normal marcado como **YA INCORPORADO**, y no se cuenta dos veces.',
             },
             { tipo: 'subtitulo', texto: 'Preinscripciones: lo que llega por el QR' },
             {

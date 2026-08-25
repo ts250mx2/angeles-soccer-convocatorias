@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -12,8 +12,9 @@ import {
   FileSpreadsheet, FileText, QrCode, ClipboardList, Inbox, ExternalLink,
 } from "lucide-react";
 import { VIGENTE, BAJA, yaAplicada, type IncorporacionRow, type OpcionProfesor, type OpcionTemporada } from "@/lib/incorporaciones";
-import { NuevaIncorporacionModal, EditarIncorporacionModal } from "@/components/IncorporacionModal";
-import PlayersModal, { type PlayersModalConfig } from "@/components/PlayersModal";
+import { EditarIncorporacionModal } from "@/components/IncorporacionModal";
+import NuevaIncorporacionFila from "@/components/NuevaIncorporacionFila";
+import JugadoresDeCategoria from "@/components/JugadoresDeCategoria";
 import PreincorporacionesLista from "@/components/PreincorporacionesLista";
 import QrPreincorporacion from "@/components/QrPreincorporacion";
 
@@ -73,8 +74,12 @@ export default function IncorporacionesPage() {
      público. Se abre en los formatos, que es el trabajo de todos los días. */
   const [vista, setVista] = useState<"formatos" | "preinscripciones">("formatos");
   const [qrAbierto, setQrAbierto] = useState(false);
-  /* Listado de una categoría, abierto desde la procedencia o el grupo destino. */
-  const [categoriaAbierta, setCategoriaAbierta] = useState<PlayersModalConfig | null>(null);
+  /* Listados desplegados bajo un renglón. Los dos lados se abren por separado y
+     pueden estar abiertos a la vez —de dónde sale y a dónde llega se comparan—, pero
+     solo de un renglón: dos formatos desplegados a la vez dejan de caber en pantalla. */
+  const [panel, setPanel] = useState<
+    { idIncorporacion: number; procedencia: boolean; grupo: boolean } | null
+  >(null);
   const [exportando, setExportando] = useState(false);
   const [creando, setCreando] = useState(false);
   const [editando, setEditando] = useState<IncorporacionRow | null>(null);
@@ -159,19 +164,22 @@ export default function IncorporacionesPage() {
   const temporadaActual = temporadas.find((t) => t.IdTemporada === temporadaId);
   const enFormatos = vista === "formatos";
 
-  /* Abre una categoría desde el formato con sus jugadores ACTIVOS, estén inscritos o
-     no: al leer una incorporación lo que se pregunta es a quién tiene ese grupo hoy.
+  /* Despliega bajo el renglón a los jugadores de esa categoría INSCRITOS en el ciclo
+     elegido arriba: al autorizar una incorporación lo que se pregunta es cuántos hay ya
+     en ese grupo esta temporada. Los dos lados se abren a la vez si se quieren
+     comparar, y volver a pulsar uno lo cierra.
 
-     La temporada elegida arriba sí viaja, y no para filtrar sino para marcar: cada
-     renglón muestra si esa persona ya pagó la inscripción del ciclo y qué mensualidades
-     lleva. Filtrar por inscritos dejaba el listado vacío en las categorías de clinics,
-     que no manejan inscripción, y en los grupos que apenas arrancan la temporada. */
-  const verCategoria = (categoria: string, contexto: string) =>
-    setCategoriaAbierta({
-      title: `Categoría ${categoria}`,
-      subtitle: [contexto, temporadaActual?.Temporada].filter(Boolean).join(" · "),
-      filtro: "activos",
-      categoria,
+     Las categorías de clinics no manejan inscripción y los grupos recién arrancados
+     todavía no tienen a nadie pagado, así que ahí la lista sale vacía; el propio panel
+     ofrece entonces ver a los activos, para que el vacío no sea un callejón. */
+  const verCategoria = (idIncorporacion: number, lado: "procedencia" | "grupo") =>
+    setPanel((abierto) => {
+      const base = abierto?.idIncorporacion === idIncorporacion
+        ? abierto
+        : { idIncorporacion, procedencia: false, grupo: false };
+      const siguiente = { ...base, [lado]: !base[lado] };
+      // Cerrar el último que quedaba abierto cierra el despliegue entero.
+      return siguiente.procedencia || siguiente.grupo ? siguiente : null;
     });
 
   /* ── Exportación ──
@@ -467,7 +475,7 @@ export default function IncorporacionesPage() {
                 <div className="w-9 h-9 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin" />
                 <p className="text-xs font-bold text-slate-500">Cargando incorporaciones...</p>
               </div>
-            ) : filtradas.length === 0 ? (
+            ) : filtradas.length === 0 && !creando ? (
               <div className="text-center py-16 bg-white/5 rounded-2xl border border-dashed border-white/10">
                 <UserRoundPlus size={36} className="mx-auto text-slate-600 mb-3" />
                 <h3 className="text-sm font-bold text-slate-300">
@@ -480,8 +488,8 @@ export default function IncorporacionesPage() {
                 </p>
               </div>
             ) : (
-              <div className="rounded-2xl border border-white/10 overflow-hidden">
-                <div className="overflow-x-auto">
+              <div className={`rounded-2xl border border-white/10 ${creando ? "" : "overflow-hidden"}`}>
+                <div className={creando ? "" : "overflow-x-auto"}>
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-white/5 text-[9px] uppercase font-black text-slate-500 tracking-widest border-b border-white/10">
@@ -500,8 +508,10 @@ export default function IncorporacionesPage() {
                       {filtradas.map((f, i) => {
                         const cancelada = f.Status === BAJA;
                         const aplicada = yaAplicada(f);
+                        const abierto = panel?.idIncorporacion === f.IdIncorporacion ? panel : null;
                         return (
-                          <tr key={f.IdIncorporacion} className={`transition-colors ${cancelada ? "opacity-50" : "hover:bg-white/5"}`}>
+                          <Fragment key={f.IdIncorporacion}>
+                          <tr className={`transition-colors ${cancelada ? "opacity-50" : "hover:bg-white/5"}`}>
                             <td className="px-3 py-3 text-center text-[10px] font-mono text-slate-600 tabular-nums">{i + 1}</td>
                             <td className="px-4 py-3 text-xs tabular-nums whitespace-nowrap text-slate-400">
                               {fechaCorta(f.FechaCaptura)}
@@ -519,9 +529,11 @@ export default function IncorporacionesPage() {
                               {f.Procedencia ? (
                                 <button
                                   type="button"
-                                  onClick={() => verCategoria(f.Procedencia!, "Procedencia")}
+                                  onClick={() => verCategoria(f.IdIncorporacion, "procedencia")}
                                   title={`Ver a los jugadores de ${f.Procedencia}`}
-                                  className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300 hover:bg-white/15 hover:text-white transition-colors"
+                                  className={`px-2 py-0.5 rounded bg-white/5 border text-[10px] font-bold text-slate-300 hover:bg-white/15 hover:text-white transition-colors ${
+                                    abierto?.procedencia ? "border-blue-400/70 text-white bg-white/15" : "border-white/10"
+                                  }`}
                                 >
                                   {f.Procedencia}
                                 </button>
@@ -536,9 +548,11 @@ export default function IncorporacionesPage() {
                                 <ArrowRight size={11} className="text-blue-400 flex-shrink-0" />
                                 <button
                                   type="button"
-                                  onClick={() => verCategoria(f.GrupoIncorporar, "Grupo a incorporar")}
-                                  title={`Ver a los jugadores de ${f.GrupoIncorporar}`}
-                                  className="px-2 py-0.5 rounded bg-blue-600/20 border border-blue-500/40 text-[10px] font-black text-blue-200 hover:bg-blue-600/40 hover:text-white transition-colors"
+                                  onClick={() => verCategoria(f.IdIncorporacion, "grupo")}
+                                  title={`Ver a los jugadores de ${f.GrupoIncorporar}, con este jugador ya sumado`}
+                                  className={`px-2 py-0.5 rounded bg-blue-600/20 border text-[10px] font-black text-blue-200 hover:bg-blue-600/40 hover:text-white transition-colors ${
+                                    abierto?.grupo ? "border-blue-300 text-white bg-blue-600/45" : "border-blue-500/40"
+                                  }`}
                                 >
                                   {f.GrupoIncorporar}
                                 </button>
@@ -587,8 +601,68 @@ export default function IncorporacionesPage() {
                               </div>
                             </td>
                           </tr>
+
+                          {/* Los listados, dentro de la misma tabla. Con los dos abiertos van
+                              lado a lado: el grupo de salida y el de llegada se leen juntos. */}
+                          {abierto && (
+                            <tr>
+                              <td colSpan={9} className="p-0">
+                                <div
+                                  className={`grid gap-3 p-4 border-l-2 border-blue-500/40 bg-blue-500/[0.04] ${
+                                    abierto.procedencia && abierto.grupo ? "lg:grid-cols-2" : ""
+                                  }`}
+                                >
+                                  {abierto.procedencia && f.Procedencia && (
+                                    <JugadoresDeCategoria
+                                      categoria={f.Procedencia}
+                                      contexto="Procedencia"
+                                      temporadaId={temporadaId}
+                                      temporadaNombre={temporadaActual?.Temporada}
+                                      onCerrar={() => verCategoria(f.IdIncorporacion, "procedencia")}
+                                    />
+                                  )}
+                                  {abierto.grupo && (
+                                    <JugadoresDeCategoria
+                                      categoria={f.GrupoIncorporar}
+                                      contexto="Grupo a incorporar"
+                                      temporadaId={temporadaId}
+                                      temporadaNombre={temporadaActual?.Temporada}
+                                      porIncorporar={{
+                                        idJugador: f.IdJugador,
+                                        jugador: f.Jugador ?? `Jugador ${f.IdJugador}`,
+                                        sede: f.Sede,
+                                      }}
+                                      yaAplicado={aplicada}
+                                      onCerrar={() => verCategoria(f.IdIncorporacion, "grupo")}
+                                    />
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         );
                       })}
+
+                      {/* Captura de un formato nuevo: el último renglón de la tabla */}
+                      {creando && temporadaId && (
+                        <tr className="border-t-2 border-blue-500/40 bg-blue-500/[0.06]">
+                          <td colSpan={9} className="p-0">
+                            <NuevaIncorporacionFila
+                              temporadaId={temporadaId}
+                              temporada={temporadaActual?.Temporada ?? null}
+                              profesores={profesores}
+                              categorias={categorias}
+                              autorizante={autorizante}
+                              onCancelar={() => setCreando(false)}
+                              onGuardado={() => {
+                                setAviso("Incorporación guardada");
+                                cargar(temporadaId);
+                              }}
+                            />
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -597,30 +671,7 @@ export default function IncorporacionesPage() {
           </div>
         </div>
 
-        {creando && temporadaId && (
-          <NuevaIncorporacionModal
-            temporadaId={temporadaId}
-            temporada={temporadaActual?.Temporada ?? null}
-            profesores={profesores}
-            categorias={categorias}
-            autorizante={autorizante}
-            onClose={() => setCreando(false)}
-            onGuardado={() => {
-              setCreando(false);
-              setAviso("Incorporación guardada");
-              cargar(temporadaId);
-            }}
-          />
-        )}
-
         {qrAbierto && <QrPreincorporacion onClose={() => setQrAbierto(false)} />}
-
-        <PlayersModal
-          config={categoriaAbierta}
-          temporadaId={temporadaId}
-          temporadaNombre={temporadaActual?.Temporada}
-          onClose={() => setCategoriaAbierta(null)}
-        />
 
         {editando && (
           <EditarIncorporacionModal
