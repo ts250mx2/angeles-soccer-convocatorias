@@ -224,7 +224,7 @@ export default function ManualPage() {
   return (
     <DashboardLayout>
       <main className="overflow-y-auto flex-1 text-white p-6 md:p-8">
-        <div className="max-w-6xl mx-auto">
+        <div className="manual-hoja max-w-6xl mx-auto">
 
           {/* Portada. En pantalla estorba (el título ya está abajo), así que solo
               existe en el papel, donde un manual sin portada no parece un manual. */}
@@ -310,7 +310,7 @@ export default function ManualPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-8 items-start">
+          <div className="manual-cuerpo grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-8 items-start">
             <nav className="hidden lg:block sticky top-6 print:hidden">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Contenido</p>
               <ul className="space-y-0.5">
@@ -327,7 +327,7 @@ export default function ManualPage() {
               </ul>
             </nav>
 
-            <div className="min-w-0">
+            <div className="manual-columna min-w-0">
               {filtradas.length === 0 ? (
                 <div className="text-center py-20 bg-white/5 rounded-3xl border border-dashed border-white/20">
                   <Search size={40} className="mx-auto text-slate-500 mb-3 opacity-30" />

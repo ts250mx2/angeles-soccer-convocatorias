@@ -61,7 +61,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <div className="tema-oscuro flex min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-slate-100">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="contenido-app flex-1 flex flex-col min-w-0 overflow-hidden">
         {permitido ? children : <SinAcceso paginas={paginas} />}
       </div>
       <AgentChatWidget />
