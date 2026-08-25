@@ -29,6 +29,7 @@ export type IconoNav =
     | 'Boxes'
     | 'CalendarDays'
     | 'CreditCard'
+    | 'GraduationCap'
     | 'QrCode'
     | 'Bot'
     | 'Ban'
@@ -158,6 +159,11 @@ export const NAV_ITEMS: NavItem[] = [
                 icono: 'UserCheck',
             },
             {
+                label: 'Becas',
+                href: '/jugadores/becas',
+                icono: 'GraduationCap',
+            },
+            {
                 label: 'Preregistros',
                 href: '/preregistros',
                 icono: 'UserPlus',
@@ -263,6 +269,7 @@ export const CLAVE_AGENTE = '/agente';
 export const CLAVE_INCORPORACIONES = '/incorporaciones';
 export const CLAVE_PREREGISTROS = '/preregistros';
 export const CLAVE_LISTA_JUGADORES = '/jugadores';
+export const CLAVE_BECAS = '/jugadores/becas';
 export const CLAVE_COPAS_LIGAS = '/copas-ligas';
 
 export interface PaginaCatalogo {

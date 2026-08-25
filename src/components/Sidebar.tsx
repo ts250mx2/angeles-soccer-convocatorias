@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useUser, usePermisos } from "@/contexts/user-context";
-import { NAV_ITEMS, puedeVerItem, type NavItem } from "@/lib/navegacion";
+import { NAV_ITEMS, claveDeRuta, puedeVerItem, type NavItem } from "@/lib/navegacion";
 import IconoNav from "./IconoNav";
 import {
   ChevronDown,
@@ -70,10 +70,13 @@ export default function Sidebar() {
     setOpenMenus((prev) => ({ ...prev, [label]: !abiertoAhora }));
   };
 
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
-  };
+  /**
+   * Qué entrada se resalta. Se pregunta al catálogo a qué MÓDULO pertenece la ruta en
+   * vez de comparar prefijos: con prefijos, estar en /jugadores/becas encendía también
+   * "Lista de Jugadores", porque su href es prefijo del de aquélla.
+   */
+  const claveActual = claveDeRuta(pathname);
+  const isActive = (href: string) => claveActual === href;
 
   const handleLogout = async () => {
     // Borra la cookie de sesión del servidor además del estado local.

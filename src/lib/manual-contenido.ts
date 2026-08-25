@@ -450,6 +450,42 @@ export const SECCIONES: SeccionManual[] = [
         ],
     },
     {
+        clave: '/jugadores/becas',
+        titulo: 'Becas',
+        audiencia: ['operacion', 'direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'El listado de **todos los jugadores con beca**, con el tipo y el porcentaje que tienen registrado. La beca es un dato de la **ficha del jugador**, no de la temporada: por eso esta pantalla no lleva selector de temporada y el corte que sí cambia la lectura es el estatus (activos o bajas).',
+            },
+            { tipo: 'subtitulo', texto: 'Los dos tipos de beca' },
+            {
+                tipo: 'tabla',
+                encabezados: ['Tipo', 'Sobre qué aplica'],
+                filas: [
+                    ['Inscripción y mensualidades', 'El descuento de la colegiatura. Solo la del **100%** exime de adeudo en el sistema: en Adeudos y en la Lista de Jugadores, un becado total nunca aparece debiendo mensualidades.'],
+                    ['Copas y ligas', 'Descuento sobre el precio de cada convocatoria de copas y ligas. Es el que aplica el precio sugerido al convocar.'],
+                    ['Ambas', 'El jugador trae los dos descuentos, y no tienen por qué ser del mismo porcentaje.'],
+                ],
+            },
+            { tipo: 'subtitulo', texto: 'Cómo se lee la pantalla' },
+            {
+                tipo: 'parrafo',
+                texto: 'Los cuatro indicadores de arriba cuentan sobre lo que dejaron sede, categoría, estatus y búsqueda. La **dona** reparte a esos mismos becados por nivel de beca de mensualidades, y **Solo copas y ligas** es el grupo de quienes no tienen descuento en colegiatura pero sí en convocatorias. Al tocar un nivel de la leyenda, la tabla se queda solo con esos jugadores.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Solo se listan becados',
+                texto: 'La pantalla trae únicamente a quien tiene algún porcentaje mayor que cero. Para ver a la plantilla completa, con becados y no becados juntos, está la Lista de Jugadores.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Los botones **Excel** y **PDF** exportan exactamente lo filtrado, con el desglose por tipo al pie.',
+            },
+        ],
+    },
+    {
         clave: '/inscripciones',
         titulo: 'Inscripciones por Sede',
         audiencia: ['operacion', 'direccion'],
