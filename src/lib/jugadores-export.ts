@@ -22,6 +22,8 @@ export interface JugadorListaRow {
     TelMadre: string | null;
     CorreoElectronicoPadre: string | null;
     CorreoElectronicoMadre: string | null;
+    /** Por qué se dio de baja (tblJugadores.ObservacionesVenta). Solo se lee en bajas. */
+    MotivoBaja: string | null;
     /** Fecha del primer pago de inscripción en la temporada consultada. */
     FechaInscripcion: string | null;
     Inscrito: number;
@@ -72,6 +74,9 @@ const BRAND: [number, number, number] = [37, 99, 235];
 const FOOT_BG: [number, number, number] = [241, 245, 249];
 const FOOT_TEXT: [number, number, number] = [30, 41, 59];
 
+/** ¿Hay alguna baja en el listado? Decide si vale la pena la columna del motivo. */
+const hayBajas = (rows: JugadorListaRow[]): boolean => rows.some((j) => j.Status === 2);
+
 const COLS = [
     { header: "ID", width: 9 },
     { header: "Jugador", width: 34 },
@@ -86,7 +91,12 @@ const COLS = [
     { header: "Estatus", width: 10 },
 ];
 
-const cells = (j: JugadorListaRow): (string | number)[] => [
+/* El motivo de baja va al final y solo cuando el listado trae bajas: en el corte
+   normal (activos) sería una columna vacía en todos los renglones. */
+const MOTIVO_COL = { header: "Motivo de baja", width: 46 };
+const columnas = (conMotivo: boolean) => (conMotivo ? [...COLS, MOTIVO_COL] : COLS);
+
+const cells = (j: JugadorListaRow, conMotivo = false): (string | number)[] => [
     j.IdJugador,
     j.Jugador,
     j.SedeNombre || "—",
@@ -98,9 +108,13 @@ const cells = (j: JugadorListaRow): (string | number)[] => [
     j.Inscrito === 1 || becaPct(j.Beca) >= 100 ? "SI" : j.Exento === 1 ? "N/A" : "NO",
     etiquetaAdeudo(j),
     j.Status === 0 ? "ACTIVO" : "BAJA",
+    // El motivo solo se afirma de una baja: en un activo el campo es otra cosa.
+    ...(conMotivo ? [j.Status === 2 ? j.MotivoBaja || "—" : "—"] : []),
 ];
 
 export function exportJugadoresToPdf(rows: JugadorListaRow[], titulo: string, subtitulo: string) {
+    const conMotivo = hayBajas(rows);
+    const cols = columnas(conMotivo);
     const doc = new jsPDF({ orientation: "landscape" });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
@@ -132,8 +146,8 @@ export function exportJugadoresToPdf(rows: JugadorListaRow[], titulo: string, su
 
     autoTable(doc, {
         startY: y,
-        head: [COLS.map((c) => c.header)],
-        body: rows.map((j) => cells(j).map(String)),
+        head: [cols.map((c) => c.header)],
+        body: rows.map((j) => cells(j, conMotivo).map(String)),
         theme: "grid",
         styles: { fontSize: 7.5, cellPadding: 1.8 },
         headStyles: { fillColor: BRAND, textColor: 255, fontStyle: "bold" },
@@ -142,6 +156,7 @@ export function exportJugadoresToPdf(rows: JugadorListaRow[], titulo: string, su
         foot: [[
             `TOTAL: ${rows.length} jugador(es)`, "", "", "", "", "", "",
             "", "", `${conAdeudo} con adeudo · ${sinInscripcion} sin inscripción`, "",
+            ...(conMotivo ? [""] : []),
         ]],
         footStyles: { fillColor: FOOT_BG, textColor: FOOT_TEXT, fontStyle: "bold" },
         margin: { left: margin, right: margin },
@@ -161,10 +176,12 @@ export function exportJugadoresToPdf(rows: JugadorListaRow[], titulo: string, su
 }
 
 export async function exportJugadoresToExcel(rows: JugadorListaRow[], titulo: string, subtitulo: string) {
+    const conMotivo = hayBajas(rows);
+    const cols = columnas(conMotivo);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Jugadores");
 
-    ws.mergeCells(1, 1, 1, COLS.length);
+    ws.mergeCells(1, 1, 1, cols.length);
     const t = ws.getCell("A1");
     t.value = titulo;
     t.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
@@ -172,15 +189,15 @@ export async function exportJugadoresToExcel(rows: JugadorListaRow[], titulo: st
     t.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     ws.getRow(1).height = 24;
 
-    ws.mergeCells(2, 1, 2, COLS.length);
+    ws.mergeCells(2, 1, 2, cols.length);
     const s = ws.getCell("A2");
     s.value = `${subtitulo}${subtitulo ? " · " : ""}Generado el ${stamp()}`;
     s.font = { size: 9, color: { argb: "FF64748B" } };
 
-    ws.columns = COLS.map((c) => ({ width: c.width }));
+    ws.columns = cols.map((c) => ({ width: c.width }));
 
     const header = ws.getRow(4);
-    header.values = COLS.map((c) => c.header);
+    header.values = cols.map((c) => c.header);
     header.font = { bold: true, color: { argb: "FFFFFFFF" } };
     header.eachCell((cell) => {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF334155" } };
@@ -190,7 +207,7 @@ export async function exportJugadoresToExcel(rows: JugadorListaRow[], titulo: st
     ws.views = [{ state: "frozen", ySplit: 4 }];
 
     rows.forEach((j) => {
-        const row = ws.addRow(cells(j));
+        const row = ws.addRow(cells(j, conMotivo));
         row.eachCell((cell) => {
             cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
         });
@@ -201,6 +218,7 @@ export async function exportJugadoresToExcel(rows: JugadorListaRow[], titulo: st
     const totalRow = ws.addRow([
         "TOTAL", `${rows.length} jugador(es)`, "", "", "", "", "", "", "",
         `${conAdeudo} con adeudo · ${sinInscripcion} sin inscripción`, "",
+        ...(conMotivo ? [""] : []),
     ]);
     totalRow.font = { bold: true };
     totalRow.eachCell((cell) => {

@@ -470,7 +470,7 @@ export default function JugadoresPage() {
                       <Th label="Beca" />
                       <Th label="Inscripción" />
                       <Th label="Adeudo" k="MesesDebe" />
-                      <Th label="Estatus" />
+                      <Th label="Estatus y motivo de baja" />
                       <Th label="" className="text-right" />
                     </tr>
                   </thead>
@@ -531,10 +531,17 @@ export default function JugadoresPage() {
                               {etiquetaAdeudo(j)}
                             </span>
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 max-w-[220px]">
                             <span className={`text-[10px] font-bold ${j.Status === 0 ? "text-emerald-400" : "text-rose-400"}`}>
                               {j.Status === 0 ? "ACTIVO" : "BAJA"}
                             </span>
+                            {/* Por qué se fue. Solo en las bajas: en un activo el mismo
+                                campo es una observación cualquiera. */}
+                            {j.Status === 2 && j.MotivoBaja && (
+                              <p title={j.MotivoBaja} className="text-[10px] text-slate-400 leading-snug line-clamp-2">
+                                {j.MotivoBaja}
+                              </p>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-right">
                             <button
@@ -730,6 +737,19 @@ function DetalleJugador({
               </div>
             </div>
           </div>
+
+          {/* Por qué se fue. Va antes de los datos generales porque, en una baja, es
+              lo que se abrió a consultar. */}
+          {jugador.Status === 2 && (
+            <div className="bg-rose-500/[0.07] border border-rose-500/25 rounded-2xl p-4">
+              <p className="text-[10px] font-black text-rose-300/80 uppercase tracking-widest mb-1.5">
+                Motivo de baja
+              </p>
+              <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line">
+                {jugador.MotivoBaja || "No se capturó el motivo."}
+              </p>
+            </div>
+          )}
 
           {/* Datos generales */}
           <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-4">

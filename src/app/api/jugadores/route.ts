@@ -58,6 +58,11 @@ export async function GET(request: Request) {
                 DATE_FORMAT(J.FechaAlta, '%d/%m/%Y') AS FechaAlta,
                 J.TelPadre,
                 J.TelMadre,
+                /* Motivo de la baja: se captura en ObservacionesVenta, no en
+                   MotivoBaja, que está vacía en la práctica. Solo se lee como motivo
+                   cuando el jugador está dado de baja; en un activo es una
+                   observación cualquiera. */
+                NULLIF(TRIM(COALESCE(J.ObservacionesVenta, '')), '') AS MotivoBaja,
                 J.CorreoElectronicoPadre,
                 J.CorreoElectronicoMadre,
                 FI.FechaInscripcion,

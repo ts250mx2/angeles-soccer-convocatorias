@@ -357,6 +357,12 @@ export async function GET(request: Request) {
                 DATE_FORMAT(J.FechaNacimiento, '%d/%m/%Y') as FechaNacimiento,
                 J.IdSede,
                 COALESCE(S.Sede, J.Sede) as SedeNombre,
+                /* Motivo de la baja. Se captura en ObservacionesVenta y no en
+                   MotivoBaja: esa columna existe pero está vacía (2 de 2518 bajas),
+                   mientras que aquí sí se escribe por qué se fue el jugador. En un
+                   activo el campo es una observación cualquiera, así que solo se
+                   presenta como motivo cuando el jugador está dado de baja. */
+                NULLIF(TRIM(COALESCE(J.ObservacionesVenta, '')), '') as MotivoBaja,
                 ${inscripcionPagadaSql} as InscripcionPagada
             FROM tblJugadores J
             LEFT JOIN tblSedes S ON J.IdSede = S.IdSede

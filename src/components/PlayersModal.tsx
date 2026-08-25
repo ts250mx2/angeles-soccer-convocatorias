@@ -260,6 +260,19 @@ export default function PlayersModal({
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-200 truncate">{p.Jugador}</p>
+                    {/* Por qué se fue. Solo en las bajas: en un activo el mismo campo
+                        es una observación cualquiera y llamarla "motivo" mentiría. */}
+                    {p.Status === 2 && p.MotivoBaja && (
+                      <p
+                        title={p.MotivoBaja}
+                        className="text-[11px] text-rose-300/90 mt-0.5 line-clamp-2"
+                      >
+                        <span className="font-black uppercase tracking-widest text-[9px] text-rose-400/70 mr-1">
+                          Motivo
+                        </span>
+                        {p.MotivoBaja}
+                      </p>
+                    )}
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                         ID {p.IdJugador}

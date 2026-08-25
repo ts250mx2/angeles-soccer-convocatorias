@@ -443,7 +443,14 @@ export const SECCIONES: SeccionManual[] = [
                     ['Beca', 'El porcentaje de beca en morado; sin insignia es que no tiene.'],
                     ['Inscripción', '**SÍ** con la fecha del pago, **NO** si está pendiente, **N/A** en clinics y venta al público. La beca del 100% cuenta como pagada y los porteros heredan su inscripción de temporadas anteriores.'],
                     ['Adeudo', 'Meses de mensualidad vencidos sin pagar. **Sin inscripción** cuando lo pendiente es la inscripción misma; **No aplica** cuando el jugador no paga mensualidad (clinics, venta al público).'],
+                    ['Estatus y motivo de baja', 'ACTIVO o BAJA. En las bajas, debajo sale **por qué se fue**, tal como se capturó en la ficha del jugador; el texto completo se ve al pasar el mouse, y entero en su detalle.'],
                 ],
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'De dónde sale el motivo de baja',
+                texto: 'Es el campo de **observaciones de venta** de la ficha del jugador, que es donde se viene capturando por qué se fue: la columna que el sistema llama "motivo de baja" está vacía en la práctica. Por eso el motivo solo se muestra en las bajas: en un jugador activo ese mismo campo guarda cualquier otra observación. Si un jugador dado de baja no trae nada escrito, es que no se capturó.',
             },
             { tipo: 'subtitulo', texto: 'Filtros y exportación' },
             {
@@ -516,7 +523,7 @@ export const SECCIONES: SeccionManual[] = [
                 filas: [
                     ['Jugadores Activos', 'La plantilla completa, dividida en sedes, keepers, futsal, venta al público y clinics. **No depende de la temporada.**'],
                     ['Total Inscritos', 'Quienes ya pagaron inscripción de esa temporada, separando **Nuevas** (primera inscripción histórica) de **Reinscripciones**.'],
-                    ['Total Bajas', 'Jugadores dados de baja que sí tenían inscripción en esa temporada.'],
+                    ['Total Bajas', 'Jugadores dados de baja que sí tenían inscripción en esa temporada. Al abrir el listado, cada renglón trae **el motivo de la baja** capturado en la ficha del jugador.'],
                     ['Sin inscripción', 'Están pagando mensualidades pero nunca pagaron la inscripción. Es una lista de cobro inmediata.'],
                 ],
             },

@@ -19,6 +19,8 @@ export interface PlayerRow {
     FechaNacimiento: string | null;
     IdSede: number;
     SedeNombre: string;
+    /** Por qué se dio de baja (tblJugadores.ObservacionesVenta). Solo se lee en bajas. */
+    MotivoBaja: string | null;
     FechaInscripcion: string | null;
     /** Códigos Anio*100+Mes de las mensualidades cubiertas, separados por coma */
     MesesPagados: string;
@@ -197,9 +199,13 @@ async function downloadWorkbook(wb: ExcelJS.Workbook, filename: string) {
 
 // ══ Lista de jugadores ══
 
+/** ¿Hay alguna baja en el listado? Decide si vale la pena la columna del motivo. */
+const hayBajas = (players: PlayerRow[]): boolean => players.some((p) => p.Status === 2);
+
 /* Las columnas de meses solo aparecen cuando hay temporada: sin ella no hay
-   rango que desglosar. */
-const playerCols = (config?: PlayersConfig): XCol[] => {
+   rango que desglosar. El motivo de baja va al final y solo si la lista trae bajas:
+   en un listado de inscritos sería una columna vacía en todos los renglones. */
+const playerCols = (config?: PlayersConfig, conMotivo = false): XCol[] => {
     const base: XCol[] = [
         { header: "ID", width: 10 },
         { header: "Jugador", width: 38 },
@@ -211,20 +217,24 @@ const playerCols = (config?: PlayersConfig): XCol[] => {
         { header: "Inscripción", width: 12 },
         { header: "Fecha de inscripción", width: 20 },
     ];
-    if (!config?.meses.length) return base;
+    const motivo: XCol[] = conMotivo ? [{ header: "Motivo de baja", width: 46 }] : [];
+    if (!config?.meses.length) return [...base, ...motivo];
     return [
         ...base,
         { header: "Meses pagados", width: 26 },
         { header: "Meses pendientes", width: 26 },
         { header: "Pagos anticipados", width: 16 },
+        ...motivo,
     ];
 };
 
 const nombresMeses = (codigos: number[], meses: MesTemporada[]): string =>
     meses.filter((m) => codigos.includes(m.codigo)).map((m) => MESES_CORTOS[m.mes - 1]).join(", ") || "—";
 
-const playerCells = (p: PlayerRow, config?: PlayersConfig) => {
+const playerCells = (p: PlayerRow, config?: PlayersConfig, conMotivo = false) => {
     const beca100 = esBeca100(p.Beca);
+    // El motivo solo se afirma de una baja: en un activo el campo es otra cosa.
+    const motivo = conMotivo ? [p.Status === 2 ? p.MotivoBaja || "—" : "—"] : [];
     const base = [
         p.IdJugador,
         p.Jugador,
@@ -236,7 +246,7 @@ const playerCells = (p: PlayerRow, config?: PlayersConfig) => {
         p.InscripcionPagada || beca100 ? "SI" : "NO",
         fecha(p.FechaInscripcion),
     ];
-    if (!config?.meses.length) return base;
+    if (!config?.meses.length) return [...base, ...motivo];
 
     const pagados = parseMesesPagados(p.MesesPagados);
     // La beca del 100% cubre todo, así que no deja meses pendientes.
@@ -248,13 +258,15 @@ const playerCells = (p: PlayerRow, config?: PlayersConfig) => {
         nombresMeses(cubiertos, config.meses),
         nombresMeses(pendientes, config.meses),
         p.PagosAnticipados > 0 ? String(p.PagosAnticipados) : "—",
+        ...motivo,
     ];
 };
 
 export function exportPlayersToPdf(
     players: PlayerRow[], title: string, subtitle: string, config?: PlayersConfig,
 ) {
-    const cols = playerCols(config);
+    const conMotivo = hayBajas(players);
+    const cols = playerCols(config, conMotivo);
     // Con el desglose de meses la tabla ya no cabe en vertical.
     const doc = new jsPDF({ orientation: cols.length > 9 ? "landscape" : "portrait" });
     const y = pdfHeader(doc, title, subtitle);
@@ -262,7 +274,7 @@ export function exportPlayersToPdf(
     autoTable(doc, {
         startY: y,
         head: [cols.map((c) => c.header)],
-        body: players.map((p) => playerCells(p, config).map(String)),
+        body: players.map((p) => playerCells(p, config, conMotivo).map(String)),
         theme: "grid",
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: BRAND, textColor: 255, fontStyle: "bold" },
@@ -472,11 +484,12 @@ export async function exportMovimientosToExcel(
 export async function exportPlayersToExcel(
     players: PlayerRow[], title: string, subtitle: string, config?: PlayersConfig,
 ) {
-    const cols = playerCols(config);
+    const conMotivo = hayBajas(players);
+    const cols = playerCols(config, conMotivo);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Jugadores");
     excelHeader(ws, title, subtitle, cols);
-    excelBody(ws, players.map((p) => playerCells(p, config)));
+    excelBody(ws, players.map((p) => playerCells(p, config, conMotivo)));
 
     const totalRow = ws.addRow([`TOTAL: ${players.length} jugador(es)`]);
     totalRow.font = { bold: true };
