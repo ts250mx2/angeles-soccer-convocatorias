@@ -169,16 +169,57 @@ export const SECCIONES: SeccionManual[] = [
                 tipo: 'parrafo',
                 texto: 'Una convocatoria es la lista de jugadores que van a un torneo: se define por **temporada, liga, categoría y color**. El color distingue dos equipos de la misma categoría; si no manejas equipos separados, puedes dejarlo vacío.',
             },
+            { tipo: 'subtitulo', texto: 'La portada: una tarjeta por copa o liga' },
+            {
+                tipo: 'parrafo',
+                texto: 'La pantalla abre mostrando **los torneos**, no las convocatorias sueltas. Cada tarjeta es una copa o una liga —lo dice su etiqueta— y resume el torneo completo: cuántas categorías tiene y **cuáles**, con los jugadores de cada una; el **total esperado** y el **recaudado**, y la **utilidad** de los dos. Al pulsarla se entra al detalle de siempre, ya acotado a ese torneo, y se vuelve con **← Copas y ligas**.',
+            },
+            {
+                tipo: 'tabla',
+                encabezados: ['Cifra de la tarjeta', 'De dónde sale'],
+                filas: [
+                    ['Total esperado', 'La suma de los precios de todos los jugadores convocados del torneo.'],
+                    ['Total recaudado', 'Lo que de esos jugadores ya se cobró.'],
+                    ['Utilidad esperada', 'El total esperado menos los tres costos del torneo (liga, profesor y árbitro), sumados de todas sus convocatorias.'],
+                    ['Utilidad recaudada', 'Lo mismo, pero partiendo de lo que ya se cobró. Es la que puede salir en rojo mientras falte cobranza.'],
+                ],
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Categorías y convocatorias no son lo mismo',
+                texto: 'Una categoría convocada en dos colores son **dos convocatorias pero una sola categoría**, así que la tarjeta enseña las dos cifras cuando no coinciden. El interruptor **Ver Cerradas** y el buscador siguen mandando: la portada cuenta solo lo que dejan pasar, así que con las cerradas ocultas las cifras son las de los torneos en curso.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Pagos sin convocatoria: se avisan, no se crean solos',
+                texto: 'Cuando alguien paga una copa o liga de una categoría que todavía no tiene convocatoria, la pantalla lo **avisa** arriba, agrupado por torneo, y el botón lleva a la pantalla de alta con esas categorías **ya precargadas**. Antes esas convocatorias se creaban solas al entrar; ahora las da de alta quien captura, después de mirarlas. Lo que sí se sigue haciendo solo, porque no crea nada: a quien ya pagó se le marca como convocado en la convocatoria que ya existe, y los precios se refrescan.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Dentro de un torneo, junto a su escudo, el botón **Editar torneo** abre la MISMA pantalla del alta pero cargada con ese torneo: **todas sus categorías**, con sus fechas, profesor, jornadas y costos, listas para corregir, y ahí mismo se agregan las que falten. El **nombre**, el **tipo** y el **escudo** solo se muestran: se cambian en el catálogo de Copas y Ligas, junto con los precios. De una liga cuelgan convocatorias, pagos y reportes de otras temporadas, así que su identidad no se toca desde la pantalla de captura diaria.',
+            },
             { tipo: 'subtitulo', texto: 'Armar una convocatoria' },
             {
                 tipo: 'pasos',
                 items: [
-                    'Crea la convocatoria con su temporada, liga, categoría, fechas y profesor responsable.',
-                    'Ábrela: verás a todos los jugadores de esa categoría, con el estado Disponible.',
+                    'Pulsa **+ Nueva Convocatoria**: se abre una pantalla propia para dar de alta todas las categorías de un torneo de una sola vez.',
+                    'Arriba eliges la **copa o liga**. Si ya tiene categorías dadas de alta, aparecen abajo para corregirlas; las que agregues se suman.',
+                    'En el bloque de en medio capturas lo que se repite en las **nuevas**: fechas, profesor, jornadas, eliminatoria y los tres costos.',
+                    'Abajo agregas las **categorías**. Cada una entra como un renglón que hereda esos valores; si alguna cambia, se corrige en su renglón.',
+                    'Guarda: se crean todas juntas y cada renglón queda marcado con su resultado.',
+                    'Abre una convocatoria: verás a todos los jugadores de esa categoría, con el estado Disponible.',
                     'Pulsa **Convocar** en cada jugador que participa. El sistema le asigna el precio de la liga.',
                     'Si necesitas a alguien de otra categoría, agrégalo como **invitado**; queda marcado para distinguirlo.',
                     'Al terminar, marca la convocatoria como **cerrada**.',
                 ],
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Guardar no es todo o nada',
+                texto: 'Si de ocho categorías una ya tenía convocatoria, las otras siete se crean igual y esa queda marcada como **Ya existía**; las que ya existían y cambiaste quedan como **Actualizada**. Los renglones con fondo verde son los nuevos. La columna **Jug.** dice, en los nuevos, a cuánta gente activa va a sembrar la convocatoria, y en los existentes cuántos llevan convocados. El botón **Aplicar a todos** baja el profesor, las fechas y los costos de arriba a TODOS los renglones. La categoría de un renglón que ya existe no se edita: es su identidad.',
             },
             {
                 tipo: 'imagen',
@@ -208,7 +249,7 @@ export const SECCIONES: SeccionManual[] = [
                 tipo: 'nota',
                 estilo: 'ojo',
                 titulo: 'Qué no aparece aquí',
-                texto: '**Clinics** e **INTERASE** no se convocan desde este módulo: no salen en el listado, no se ofrecen al crear y la creación automática por pagos los salta. Sus cobros siguen intactos y se consultan en **Pagos de Copas y Ligas**.',
+                texto: '**Clinics** e **INTERASE** no se convocan desde este módulo: no salen en el listado, no se ofrecen al crear y el aviso de pagos sin convocatoria los salta. Sus cobros siguen intactos y se consultan en **Pagos de Copas y Ligas**.',
             },
             { tipo: 'subtitulo', texto: 'Precios, pagos y saldo' },
             {

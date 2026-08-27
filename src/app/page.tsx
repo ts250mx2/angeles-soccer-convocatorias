@@ -1,13 +1,11 @@
 "use client";
 import { useRouter } from 'next/navigation';
 import {
-  Search, ChevronDown, History, Info, LayoutGrid, List,
-  X, FileSpreadsheet, FileText, UserPlus, Loader2,
+  Search, History, Info, LayoutGrid, List,
+  X, FileSpreadsheet, FileText, UserPlus, Loader2, Trophy,
 } from 'lucide-react';
-import { useRef } from 'react';
 import { useUser } from '@/contexts/user-context';
 import { useEffect, useState } from 'react';
-import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -15,6 +13,8 @@ import DashboardLayout from '@/components/DashboardLayout';
 import PlayerPagosModal, { type PagosTarget } from '@/components/PlayerPagosModal';
 import ConvocatoriaPlayersTable from '@/components/ConvocatoriaPlayersTable';
 import { ELIMINATORIAS, etiquetaJornadas } from '@/lib/convocatoria-opciones';
+import TarjetaCopaLiga from '@/components/TarjetaCopaLiga';
+import { resumirPorCopaLiga, totalesGenerales } from '@/lib/convocatorias-resumen';
 
 /**
  * Porcentaje de beca del jugador, normalizado a 0-100. La columna guarda texto
@@ -39,6 +39,8 @@ interface ConvocatoriaSummary {
   IdProfesor?: number;
   Profesor?: string;
   Liga: string;
+  /** tblLigas.IdTipoLiga: 1 liga, 2 copa. */
+  IdTipoLiga?: number;
   FechaInicio: string;
   FechaFin: string;
   Cerrada: number;
@@ -83,37 +85,10 @@ export default function Home() {
      tarjeta completa. */
   const puedeEditar = !!user;
   const [convocatorias, setConvocatorias] = useState<ConvocatoriaSummary[]>([]);
-  const [leagues, setLeagues] = useState<any[]>([]);
   const [profesores, setProfesores] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  // Create Modal State
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const today = new Date().toISOString().split('T')[0];
-  const [newConvocatoria, setNewConvocatoria] = useState({
-    leagueId: '',
-    idProfesor: '',
-    categoria: '',
-    fechaInicio: today,
-    fechaFin: today,
-    color: '',
-    costoLiga: '',
-    costoProfesor: '',
-    costoArbitro: '',
-    cantidadJornadas: '',
-    eliminatoria: ''
-  });
-  const [dbCategories, setDbCategories] = useState<string[]>([]);
-  const [categorySearchQuery, setCategorySearchQuery] = useState('');
-  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
-  const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
-  const [leagueSearchQuery, setLeagueSearchQuery] = useState('');
-  const [isLeagueDropdownOpen, setIsLeagueDropdownOpen] = useState(false);
-  const leagueDropdownRef = useRef<HTMLDivElement>(null);
 
-  const [profesorSearchQuery, setProfesorSearchQuery] = useState('');
-  const [isProfesorDropdownOpen, setIsProfesorDropdownOpen] = useState(false);
-  const profesorDropdownRef = useRef<HTMLDivElement>(null);
 
   // Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -177,20 +152,23 @@ export default function Home() {
 
 
   /**
-   * Da de alta las convocatorias de ligas y copas ya pagadas que aún no existen.
+   * Pone al corriente lo que YA existe y averigua qué faltaría.
    *
-   * Corre antes de pedir el resumen para que aparezcan en la misma carga. Solo lo
-   * dispara la administración: crea convocatorias sin profesor asignado, que un
-   * profesor ni siquiera vería en su propio resumen, así que su visita no tiene por
-   * qué escribir en la base. Si falla, no se interrumpe la pantalla: el resumen se
-   * carga igual y a lo sumo faltará alguna convocatoria por capturar a mano.
+   * Antes esta llamada creaba sola las convocatorias de las ligas y copas pagadas.
+   * Ahora solo avisa: las que falten se dan de alta desde la pantalla de alta, con los
+   * renglones precargados. Lo que sí sigue haciendo el servidor es marcar como
+   * convocado a quien ya pagó y refrescar precios, que no crea nada.
+   *
+   * Solo lo dispara la administración, y si falla no se interrumpe la pantalla.
    */
-  const autogenerarConvocatorias = async () => {
+  const revisarPendientes = async () => {
     if (!puedeEditar) return;
     try {
-      await fetch('/api/convocatorias/autogenerar', { method: 'POST' });
+      const res = await fetch('/api/convocatorias/pendientes', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) setFaltantes(json.faltantes ?? []);
     } catch (error) {
-      console.error('Error autogenerando convocatorias:', error);
+      console.error('Error revisando convocatorias pendientes:', error);
     }
   };
 
@@ -198,7 +176,7 @@ export default function Home() {
   const fetchConvocatorias = async () => {
     setIsLoading(true);
     try {
-      await autogenerarConvocatorias();
+      await revisarPendientes();
       const response = await fetch(`/api/convocatorias/summary`);
       const data = await response.json();
       if (data.success) {
@@ -233,15 +211,6 @@ export default function Home() {
       })
       .catch(err => console.error('Error fetching season:', err));
 
-    fetch('/api/leagues')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setLeagues(data.leagues);
-        }
-      })
-      .catch(err => console.error('Error fetching leagues:', err));
-
     fetch('/api/users')
       .then(res => res.json())
       .then(data => {
@@ -251,32 +220,13 @@ export default function Home() {
       })
       .catch(err => console.error('Error fetching professors:', err));
 
-    fetch('/api/convocatorias/categories')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setDbCategories(data.data.map((item: any) => item.Categoria));
-        }
-      })
-      .catch(err => console.error('Error fetching categories:', err));
   }, [setSeason]);
 
-  // Click outside to close category dropdown
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
-        setIsCategoryDropdownOpen(false);
-      }
-      if (leagueDropdownRef.current && !leagueDropdownRef.current.contains(event.target as Node)) {
-        setIsLeagueDropdownOpen(false);
-      }
-      if (profesorDropdownRef.current && !profesorDropdownRef.current.contains(event.target as Node)) {
-        setIsProfesorDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  /* Portada por torneo: null = se ven las copas y ligas; con IdLiga, el detalle de
+     ese torneo, que es la misma vista de tarjetas y tabla de siempre. */
+  const [ligaAbierta, setLigaAbierta] = useState<number | null>(null);
+  /* Pagos de copas y ligas sin convocatoria: se avisan, no se crean solas. */
+  const [faltantes, setFaltantes] = useState<Array<{ idLiga: number; liga: string; categoria: string; jugadores: number }>>([]);
 
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -286,7 +236,9 @@ export default function Home() {
     setSortConfig({ key, direction });
   };
 
-  const filteredConvocatorias = convocatorias.filter((item) => {
+  /* Lo que el usuario puede ver ahora mismo, sin acotar todavía a un torneo: de aquí
+     sale el resumen de la portada, que tiene que contar TODAS las copas y ligas. */
+  const convocatoriasVisibles = convocatorias.filter((item) => {
     // Filter by closed status if toggle is off
     if (!showClosed && item.Cerrada === 1) return false;
 
@@ -299,6 +251,40 @@ export default function Home() {
       (item.Color ?? '').toLowerCase().includes(q)
     );
   });
+
+  /* Y lo mismo acotado al torneo abierto. Todo lo que había antes —tabla, tarjetas,
+     exportaciones y el pie— cuelga de aquí, así que al entrar a una copa se ve y se
+     exporta solo esa. */
+  const filteredConvocatorias = ligaAbierta === null
+    ? convocatoriasVisibles
+    : convocatoriasVisibles.filter((item) => item.IdLiga === ligaAbierta);
+
+  const resumenLigas = resumirPorCopaLiga(convocatoriasVisibles);
+  /* Copas y ligas van en bloques aparte: son dos negocios distintos —la copa es un
+     torneo con fecha, la liga es un ciclo— y mezclarlas en una sola rejilla obligaba a
+     leer la etiqueta de cada tarjeta para saber qué se estaba comparando. */
+  const copas = resumenLigas.filter((r) => r.esCopa);
+  const ligas = resumenLigas.filter((r) => !r.esCopa);
+  const totalesCopas = totalesGenerales(copas);
+  const totalesLigas = totalesGenerales(ligas);
+  const totalesPortada = totalesGenerales(resumenLigas);
+  const ligaActual = ligaAbierta === null
+    ? null
+    : resumenLigas.find((r) => r.idLiga === ligaAbierta) ?? null;
+
+  /* El aviso se agrupa por torneo: dar de alta se hace por copa o liga, con todas sus
+     categorías juntas, que es como está armada la pantalla de alta. */
+  const faltantesPorLiga = Object.values(
+    faltantes.reduce<Record<number, { idLiga: number; liga: string; categorias: string[]; jugadores: number }>>(
+      (acc, f) => {
+        const g = acc[f.idLiga] ?? { idLiga: f.idLiga, liga: f.liga, categorias: [], jugadores: 0 };
+        g.categorias.push(f.categoria);
+        g.jugadores += f.jugadores;
+        return { ...acc, [f.idLiga]: g };
+      },
+      {},
+    ),
+  );
 
   const sortedConvocatorias = [...filteredConvocatorias].sort((a, b) => {
     if (!sortConfig) return 0;
@@ -330,64 +316,6 @@ export default function Home() {
       month: 'short',
       day: 'numeric'
     });
-  };
-
-  const handleCreateConvocatoria = async () => {
-    if (!seasonId || !newConvocatoria.leagueId || !newConvocatoria.categoria || !newConvocatoria.fechaInicio || !newConvocatoria.fechaFin) {
-      alert('Por favor complete todos los campos');
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/convocatorias/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          seasonId,
-          leagueId: newConvocatoria.leagueId,
-          categoria: newConvocatoria.categoria,
-          fechaInicio: newConvocatoria.fechaInicio,
-          fechaFin: newConvocatoria.fechaFin,
-          color: newConvocatoria.color,
-          idProfesor: newConvocatoria.idProfesor,
-          costoLiga: newConvocatoria.costoLiga,
-          costoProfesor: newConvocatoria.costoProfesor,
-          costoArbitro: newConvocatoria.costoArbitro,
-          cantidadJornadas: newConvocatoria.cantidadJornadas,
-          eliminatoria: newConvocatoria.eliminatoria
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        alert('Convocatoria creada exitosamente');
-        setIsCreateModalOpen(false);
-        setNewConvocatoria({
-          leagueId: '',
-          idProfesor: '',
-          categoria: '',
-          fechaInicio: today,
-          fechaFin: today,
-          color: '',
-          costoLiga: '',
-          costoProfesor: '',
-          costoArbitro: '',
-          cantidadJornadas: '',
-          eliminatoria: ''
-        });
-        // Refresh the list
-        const refreshResponse = await fetch('/api/convocatorias/summary');
-        const refreshData = await refreshResponse.json();
-        if (refreshData.success) {
-          setConvocatorias(refreshData.data);
-        }
-      } else {
-        alert('Error al crear convocatoria: ' + data.message);
-      }
-    } catch (error) {
-      console.error('Error creating convocatoria:', error);
-      alert('Error al procesar la solicitud');
-    }
   };
 
   const handleOpenEditModal = (item: ConvocatoriaSummary) => {
@@ -1138,7 +1066,7 @@ export default function Home() {
                   </div>
                 )}
                 <button
-                  onClick={() => setIsCreateModalOpen(true)}
+                  onClick={() => router.push('/convocatorias/torneo')}
                   disabled={!puedeEditar}
                   className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   title={!puedeEditar ? "Inicia sesión para crear convocatorias" : ""}
@@ -1150,6 +1078,7 @@ export default function Home() {
 
 
 
+              {ligaAbierta !== null && (
               <div className="mb-3 flex justify-end">
                 <div className="flex bg-white/5 border border-white/10 p-1 rounded-lg">
                   <button
@@ -1168,11 +1097,12 @@ export default function Home() {
                   </button>
                 </div>
               </div>
+              )}
 
               <div className="mb-3 bg-white/5 p-3 rounded-lg border border-white/10 shadow-sm">
                 <div className="flex items-center gap-2 mb-2 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
                   <Search size={14} />
-                  Buscar Convocatoria
+                  {ligaAbierta === null ? 'Buscar copa, liga o categoría' : 'Buscar Convocatoria'}
                 </div>
                 <input
                   type="text"
@@ -1183,6 +1113,175 @@ export default function Home() {
                 />
               </div>
 
+              {/* ── Pagos de copas y ligas sin convocatoria ──
+                  Antes estas se creaban solas al entrar. Ahora se avisan y se dan de
+                  alta a mano: así nadie se encuentra en la base renglones que no
+                  capturó, y quien decide es quien está viendo la pantalla. */}
+              {ligaAbierta === null && puedeEditar && faltantesPorLiga.length > 0 && (
+                <div className="mb-4 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-2 mb-3">
+                    <Info size={15} className="text-amber-300 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-black text-amber-200">
+                        Hay pagos de copas y ligas sin convocatoria
+                      </p>
+                      <p className="text-[11px] text-amber-200/70 mt-0.5">
+                        {faltantes.length} categoría(s) con gente que ya pagó y todavía no tienen convocatoria en
+                        este ciclo. Revísalas y dales de alta desde la pantalla de alta.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {faltantesPorLiga.map((g) => (
+                      <button
+                        key={g.idLiga}
+                        onClick={() =>
+                          router.push(
+                            `/convocatorias/torneo?liga=${g.idLiga}&categorias=${encodeURIComponent(g.categorias.join(','))}`,
+                          )
+                        }
+                        title={`Categorías: ${g.categorias.join(', ')}`}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-100 text-xs font-bold hover:bg-amber-500/25 transition-colors"
+                      >
+                        {g.liga}
+                        <span className="text-[10px] font-black text-amber-200/70">
+                          {g.categorias.length} categoría(s) · {g.jugadores} jugador(es)
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Portada: una tarjeta por copa o liga ── */}
+              {ligaAbierta === null && (
+                <>
+                  {isLoading ? (
+                    <div className="py-12 text-center text-slate-400 bg-white/5 rounded-xl border border-white/10">
+                      Cargando convocatorias...
+                    </div>
+                  ) : resumenLigas.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 bg-white/5 rounded-xl border border-white/10">
+                      No se encontraron copas ni ligas.
+                    </div>
+                  ) : (
+                    <div className="space-y-8">
+                      {[
+                        { clave: 'copas', titulo: 'Copas', lista: copas, totales: totalesCopas, chip: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+                        { clave: 'ligas', titulo: 'Ligas', lista: ligas, totales: totalesLigas, chip: 'bg-blue-500/15 text-blue-300 border-blue-500/30' },
+                      ].filter((bloque) => bloque.lista.length > 0).map((bloque) => (
+                        <section key={bloque.clave}>
+                          <div className="flex flex-wrap items-center justify-between gap-3 mb-3 pb-2 border-b border-white/10">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${bloque.chip}`}>
+                                {bloque.titulo}
+                              </span>
+                              <span className="text-xs font-bold text-slate-400">
+                                {bloque.lista.length} · {bloque.totales.categorias} categoría(s) · {bloque.totales.jugadores} jugador(es)
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold tabular-nums">
+                              <span className="text-slate-400">
+                                Esperado <span className="text-slate-200">{moneda(bloque.totales.esperado)}</span>
+                              </span>
+                              <span className="text-slate-400">
+                                Recaudado <span className="text-emerald-300">{moneda(bloque.totales.recaudado)}</span>
+                              </span>
+                              <span className="text-slate-400">
+                                Utilidad rec.{' '}
+                                <span className={bloque.totales.utilidadRecaudada >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+                                  {moneda(bloque.totales.utilidadRecaudada)}
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {bloque.lista.map((r) => (
+                              <TarjetaCopaLiga key={r.idLiga} resumen={r} onAbrir={() => setLigaAbierta(r.idLiga)} />
+                            ))}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-8 pt-6 border-t border-white/10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-slate-400">
+                    <h3 className="text-lg md:text-xl font-bold italic">
+                      {isLoading
+                        ? 'Cargando...'
+                        : `${copas.length} copa(s) y ${ligas.length} liga(s) · ${totalesPortada.categorias} categoría(s) · ${totalesPortada.jugadores} jugador(es)`}
+                    </h3>
+                    {!isLoading && (
+                      <p className="text-sm font-bold self-center tabular-nums">
+                        Esperado {moneda(totalesPortada.esperado)} · Recaudado{' '}
+                        <span className="text-emerald-300">{moneda(totalesPortada.recaudado)}</span>
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* ── Torneo abierto: de aquí para abajo, el detalle de siempre ── */}
+              {ligaAbierta !== null && (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3 bg-white/5 border border-white/10 rounded-lg p-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      onClick={() => setLigaAbierta(null)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 text-slate-300 hover:text-white hover:bg-white/10 text-xs font-bold transition-colors"
+                    >
+                      ← Copas y ligas
+                    </button>
+                    {/* El escudo del torneo: es lo que lo identifica de un vistazo. */}
+                    {ligaActual?.tieneFoto ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/copas-ligas/foto/${ligaActual.idLiga}?v=${ligaActual.fotoVersion ?? '0'}`}
+                        alt=""
+                        className="w-10 h-10 rounded-lg object-contain bg-white/5 border border-white/10 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
+                        <Trophy size={16} className="text-slate-500" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-white truncate">{ligaActual?.liga ?? ''}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        {ligaActual?.esCopa ? 'Copa' : 'Liga'} · {ligaActual?.categorias.length ?? 0} categoría(s) ·{' '}
+                        {ligaActual?.jugadores ?? 0} jugador(es)
+                      </p>
+                    </div>
+                    {ligaActual && puedeEditar && (
+                      <button
+                        onClick={() => router.push(`/convocatorias/torneo?liga=${ligaActual.idLiga}`)}
+                        title="Editar la ficha del torneo y todas sus categorías"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 text-slate-300 hover:text-white hover:bg-white/10 text-xs font-bold transition-colors flex-shrink-0"
+                      >
+                        Editar torneo
+                      </button>
+                    )}
+                  </div>
+                  {ligaActual && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold tabular-nums">
+                      <span className="text-slate-400">
+                        Esperado <span className="text-slate-200">{moneda(ligaActual.esperado)}</span>
+                      </span>
+                      <span className="text-slate-400">
+                        Recaudado <span className="text-emerald-300">{moneda(ligaActual.recaudado)}</span>
+                      </span>
+                      <span className="text-slate-400">
+                        Utilidad rec.{' '}
+                        <span className={ligaActual.utilidadRecaudada >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+                          {moneda(ligaActual.utilidadRecaudada)}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {ligaAbierta !== null && (
+              <>
               {/* En pantallas chicas la tabla se desplaza en horizontal. */}
               <div className={`${viewMode === 'table' ? 'block' : 'hidden'} overflow-x-auto shadow-xl rounded-xl border border-white/10`}>
                 <table className="min-w-full bg-white/5">
@@ -1667,343 +1766,11 @@ export default function Home() {
                   {isLoading ? 'Cargando...' : `${sortedConvocatorias.length} Convocatorias en total`}
                 </h3>
               </div>
+              </>
+              )}
             </div>
           </div>
       </main>
-
-      {/* Create Convocatoria Modal */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
-          <div className="bg-[#0f172a] backdrop-blur-sm rounded-lg p-6 w-[500px] shadow-lg relative">
-            <button
-              onClick={() => {
-                setIsCreateModalOpen(false);
-                setNewConvocatoria({
-                  leagueId: '',
-                  idProfesor: '',
-                  categoria: '',
-                  fechaInicio: today,
-                  fechaFin: today,
-                  color: '',
-                  costoLiga: '',
-                  costoProfesor: '',
-                  costoArbitro: '',
-                  cantidadJornadas: '',
-                  eliminatoria: ''
-                });
-              }}
-              className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <h3 className="text-xl font-bold mb-4 text-white">Nueva Convocatoria</h3>
-
-            <div className="space-y-4">
-              <div className="relative" ref={leagueDropdownRef}>
-                <label className="block text-sm font-medium text-slate-200 mb-2">Liga o Torneo</label>
-                <div 
-                  className="w-full bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg flex justify-between items-center cursor-pointer hover:border-blue-500 transition-all"
-                  onClick={() => setIsLeagueDropdownOpen(!isLeagueDropdownOpen)}
-                >
-                  <span className={newConvocatoria.leagueId ? "text-white font-medium" : "text-slate-500"}>
-                    {leagues.find(l => l.IdLiga.toString() === newConvocatoria.leagueId.toString())?.Liga || "Seleccione una liga"}
-                  </span>
-                  <ChevronDown size={18} className={`text-slate-500 transition-transform duration-200 ${isLeagueDropdownOpen ? 'rotate-180' : ''}`} />
-                </div>
-
-                {isLeagueDropdownOpen && (
-                  <div className="absolute z-[70] w-full mt-1 bg-slate-900 border border-white/15 rounded-lg shadow-2xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-2 sticky top-0 bg-white/5 border-b border-white/10">
-                      <div className="relative">
-                        <Search className="absolute left-2 top-2.5 text-slate-500" size={14} />
-                        <input
-                          type="text"
-                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-white/5 border-none rounded-md focus:ring-0 placeholder-slate-400"
-                          placeholder="Buscar liga..."
-                          value={leagueSearchQuery}
-                          onChange={(e) => setLeagueSearchQuery(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <div className="py-1">
-                      {leagues
-                        .filter(l => l.Liga.toLowerCase().includes(leagueSearchQuery.toLowerCase()))
-                        .length > 0 ? (
-                        leagues
-                          .filter(l => l.Liga.toLowerCase().includes(leagueSearchQuery.toLowerCase()))
-                          .map((league) => (
-                            <div
-                              key={league.IdLiga}
-                              className="px-4 py-2 text-sm text-slate-200 hover:bg-blue-500/10 hover:text-blue-300 cursor-pointer transition-colors"
-                              onClick={() => {
-                                setNewConvocatoria(prev => ({ ...prev, leagueId: league.IdLiga.toString() }));
-                                setIsLeagueDropdownOpen(false);
-                                setLeagueSearchQuery('');
-                              }}
-                            >
-                              {league.Liga}
-                            </div>
-                          ))
-                      ) : (
-                        <div className="px-4 py-3 text-sm text-slate-400 text-center">No se encontraron ligas</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="relative" ref={profesorDropdownRef}>
-                <label className="block text-sm font-medium text-slate-200 mb-2">Profesor</label>
-                <div 
-                  className="w-full bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg flex justify-between items-center cursor-pointer hover:border-blue-500 transition-all"
-                  onClick={() => setIsProfesorDropdownOpen(!isProfesorDropdownOpen)}
-                >
-                  <span className={newConvocatoria.idProfesor ? "text-white font-medium" : "text-slate-500"}>
-                    {profesores.find(p => p.IdUsuario.toString() === newConvocatoria.idProfesor.toString())?.Usuario || "Seleccione Profesor"}
-                  </span>
-                  <ChevronDown size={18} className={`text-slate-500 transition-transform duration-200 ${isProfesorDropdownOpen ? 'rotate-180' : ''}`} />
-                </div>
-
-                {isProfesorDropdownOpen && (
-                  <div className="absolute z-[70] w-full mt-1 bg-slate-900 border border-white/15 rounded-lg shadow-2xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-2 sticky top-0 bg-white/5 border-b border-white/10">
-                      <div className="relative">
-                        <Search className="absolute left-2 top-2.5 text-slate-500" size={14} />
-                        <input
-                          type="text"
-                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-white/5 border-none rounded-md focus:ring-0 placeholder-slate-400"
-                          placeholder="Buscar profesor..."
-                          value={profesorSearchQuery}
-                          onChange={(e) => setProfesorSearchQuery(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <div className="py-1">
-                      {profesores
-                        .filter(p => p.Usuario.toLowerCase().includes(profesorSearchQuery.toLowerCase()))
-                        .length > 0 ? (
-                        profesores
-                          .filter(p => p.Usuario.toLowerCase().includes(profesorSearchQuery.toLowerCase()))
-                          .map((prof) => (
-                            <div
-                              key={prof.IdUsuario}
-                              className="px-4 py-2 text-sm text-slate-200 hover:bg-blue-500/10 hover:text-blue-300 cursor-pointer transition-colors"
-                              onClick={() => {
-                                setNewConvocatoria(prev => ({ ...prev, idProfesor: prof.IdUsuario.toString() }));
-                                setIsProfesorDropdownOpen(false);
-                                setProfesorSearchQuery('');
-                              }}
-                            >
-                              {prof.Usuario}
-                            </div>
-                          ))
-                      ) : (
-                        <div className="px-4 py-3 text-sm text-slate-400 text-center">No se encontraron profesores</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="relative" ref={categoryDropdownRef}>
-                <label className="block text-sm font-medium text-slate-200 mb-2">Categoría</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={newConvocatoria.categoria}
-                    onFocus={() => setIsCategoryDropdownOpen(true)}
-                    onChange={(e) => {
-                      setNewConvocatoria(prev => ({ ...prev, categoria: e.target.value.toUpperCase() }));
-                      setCategorySearchQuery(e.target.value);
-                      setIsCategoryDropdownOpen(true);
-                    }}
-                    className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 pl-3 pr-10 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase transition-all"
-                    placeholder="Escriba o seleccione categoría"
-                  />
-                  <div 
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 cursor-pointer text-slate-500"
-                    onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
-                  >
-                    <ChevronDown size={18} className={`transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
-                  </div>
-                </div>
-
-                {isCategoryDropdownOpen && (
-                  <div className="absolute z-[60] w-full mt-1 bg-slate-900 border border-white/15 rounded-lg shadow-2xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-2 sticky top-0 bg-white/5 border-b border-white/10">
-                      <div className="relative">
-                        <Search className="absolute left-2 top-2.5 text-slate-500" size={14} />
-                        <input
-                          type="text"
-                          className="w-full pl-8 pr-3 py-1.5 text-sm bg-white/5 border-none rounded-md focus:ring-0 placeholder-slate-400"
-                          placeholder="Buscar categoría existente..."
-                          value={categorySearchQuery}
-                          onChange={(e) => setCategorySearchQuery(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <div className="py-1">
-                      {dbCategories
-                        .filter(cat => cat.toLowerCase().includes(categorySearchQuery.toLowerCase()))
-                        .length > 0 ? (
-                        dbCategories
-                          .filter(cat => cat.toLowerCase().includes(categorySearchQuery.toLowerCase()))
-                          .map((cat, idx) => (
-                            <div
-                              key={idx}
-                              className="px-4 py-2.5 text-sm text-slate-200 hover:bg-blue-500/10 hover:text-blue-300 cursor-pointer transition-colors flex justify-between items-center group"
-                              onClick={() => {
-                                setNewConvocatoria(prev => ({ ...prev, categoria: cat }));
-                                setCategorySearchQuery('');
-                                setIsCategoryDropdownOpen(false);
-                              }}
-                            >
-                              <span className="font-medium">{cat}</span>
-                              <span className="text-[10px] bg-white/10 text-slate-400 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">Seleccionar</span>
-                            </div>
-                          ))
-                      ) : (
-                        <div className="px-4 py-3 text-sm text-slate-400 text-center">
-                          {categorySearchQuery ? (
-                            <>
-                              No se encontró "<span className="font-semibold">{categorySearchQuery}</span>"
-                              <p className="text-xs mt-1">Puedes seguir escribiendo para crear una nueva.</p>
-                            </>
-                          ) : (
-                            "No hay categorías disponibles"
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">Color Distintivo (Rojo, Azul, etc.)</label>
-                <input
-                  type="text"
-                  value={newConvocatoria.color}
-                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, color: e.target.value.toUpperCase() }))}
-                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500 uppercase"
-                  placeholder="Ej: ROJO, AZUL, BLANCO"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">Fecha Inicio</label>
-                <input
-                  type="date"
-                  value={newConvocatoria.fechaInicio}
-                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, fechaInicio: e.target.value }))}
-                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">Fecha Fin</label>
-                <input
-                  type="date"
-                  value={newConvocatoria.fechaFin}
-                  onChange={(e) => setNewConvocatoria(prev => ({ ...prev, fechaFin: e.target.value }))}
-                  className="w-full appearance-none bg-white/5 border border-white/15 text-slate-200 py-2 px-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo Liga</label>
-                  <input
-                    type="number"
-                    value={newConvocatoria.costoLiga}
-                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoLiga: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo Profesor</label>
-                  <input
-                    type="number"
-                    value={newConvocatoria.costoProfesor}
-                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoProfesor: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Costo Árbitro</label>
-                  <input
-                    type="number"
-                    value={newConvocatoria.costoArbitro}
-                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, costoArbitro: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Cantidad de Jornadas</label>
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={newConvocatoria.cantidadJornadas}
-                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, cantidadJornadas: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
-                    placeholder="Ej. 10"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Eliminatoria</label>
-                  <select
-                    value={newConvocatoria.eliminatoria}
-                    onChange={(e) => setNewConvocatoria(prev => ({ ...prev, eliminatoria: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/15 text-slate-200 py-1.5 px-3 rounded-lg text-sm focus:border-blue-500 outline-none"
-                  >
-                    <option value="">Sin eliminatoria</option>
-                    {ELIMINATORIAS.map((e) => <option key={e} value={e}>{e}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => {
-                  setIsCreateModalOpen(false);
-                  setNewConvocatoria({
-                    leagueId: '',
-                    idProfesor: '',
-                    categoria: '',
-                    fechaInicio: today,
-                    fechaFin: today,
-                    color: '',
-                    costoLiga: '',
-                    costoProfesor: '',
-                    costoArbitro: '',
-                    cantidadJornadas: '',
-                    eliminatoria: ''
-                  });
-                }}
-                className="bg-white/10 hover:bg-white/15 text-white font-bold py-2 px-4 rounded transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleCreateConvocatoria}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors"
-              >
-                Guardar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Edit Convocatoria Modal */}
       {isEditModalOpen && selectedConvocatoria && (

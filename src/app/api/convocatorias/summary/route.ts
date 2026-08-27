@@ -33,6 +33,8 @@ export async function GET() {
                 U.Usuario AS Profesor,
                 B.Temporada,
                 C.Liga,
+                -- Copa o liga: lo dice el catalogo, y la portada agrupa por torneo.
+                C.IdTipoLiga,
                 -- Escudo del torneo (catálogo de Copas y Ligas). Solo viaja si lo hay y
                 -- cuándo cambió; la imagen la pide el navegador a /api/copas-ligas/foto.
                 CASE WHEN C.Foto IS NOT NULL AND C.Foto <> '' THEN 1 ELSE 0 END AS TieneFoto,
@@ -75,6 +77,7 @@ export async function GET() {
               AND NOT ${sqlFueraDeConvocatorias('C.Liga')}
               AND NOT ${sqlFueraDeConvocatorias('A.Categoria')}
             GROUP BY A.IdTemporada, A.IdLiga, A.Categoria, A.Color, A.IdProfesor, U.Usuario, B.Temporada, C.Liga,
+                     C.IdTipoLiga,
                      TieneFoto, FotoVersion,
                      A.FechaInicio, A.FechaFin, A.Cerrada, A.CostoLiga, A.CostoProfesor, A.CostoArbitro,
                      A.CantidadJornadas, A.Eliminatoria, PAGOS.TotalPagos

@@ -85,6 +85,8 @@ export const NAV_ITEMS: NavItem[] = [
                 label: 'Convocatorias',
                 href: '/',
                 icono: 'ClipboardList',
+                // El alta de varias categorías vive en su propia pantalla.
+                cubre: ['/convocatorias'],
             },
             {
                 label: 'Pagos de Copas y Ligas',

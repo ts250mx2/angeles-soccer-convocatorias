@@ -12,11 +12,17 @@ import { sqlFueraDeConvocatorias } from '@/lib/convocatorias-excluidas';
  */
 export async function GET() {
     try {
+        /* Viaja también cuánta gente ACTIVA tiene cada categoría: la pantalla de alta
+           la muestra al agregar el renglón, que es lo que dice si se está convocando al
+           grupo que se quería. Las bajas no se cuentan aunque el alta las siembre en el
+           detalle: nadie convoca a un jugador dado de baja. */
         const query = `
-            SELECT DISTINCT Categoria AS Categoria
+            SELECT Categoria AS Categoria, COUNT(*) AS Jugadores
             FROM tblJugadores J
             WHERE J.Categoria IS NOT NULL AND J.Categoria != ''
+              AND J.Status = 0
               AND NOT ${sqlFueraDeConvocatorias('J.Categoria')}
+            GROUP BY Categoria
             ORDER BY Categoria ASC
         `;
 
