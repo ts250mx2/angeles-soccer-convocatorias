@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import GastosEfectivoDetalle, { type GastoEfectivo } from "@/components/GastosEfectivoDetalle";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -38,6 +39,8 @@ interface CorteData {
   };
   ventasEfectivo: number;
   gastosEfectivo: number;
+  /** Los gastos en efectivo uno por uno: lo que compone la cifra de arriba. */
+  detalleGastosEfectivo: GastoEfectivo[];
   efectivoCaja: number;
   efectivoCaptura: number;
   diferencia: number;
@@ -1012,6 +1015,7 @@ export default function CortesMensualesPage() {
                         <CorteRow label="Fondo Caja" money value={corteData.fondoCaja} />
                         <CorteRow label="Vtas Efectivo" money value={corteData.ventasEfectivo} tone="emerald" />
                         <CorteRow label="Gastos Efectivo" money value={corteData.gastosEfectivo} tone="rose" />
+                        <GastosEfectivoDetalle gastos={corteData.detalleGastosEfectivo ?? []} />
                         <div className="border-t border-white/5 my-1" />
                         <CorteRow label="Efectivo Caja" money value={corteData.efectivoCaja} strong />
                         <CorteRow label="Efectivo Captura" money value={corteData.efectivoCaptura} strong />

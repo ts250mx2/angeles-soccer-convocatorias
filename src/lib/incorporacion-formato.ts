@@ -2,6 +2,7 @@
 
 import { jsPDF } from "jspdf";
 import { BAJA, type IncorporacionRow } from "@/lib/incorporaciones";
+import { leerLogoClub } from "@/lib/logo-club";
 
 /**
  * El formato de incorporación de UN renglón, listo para imprimir y archivar.
@@ -31,7 +32,6 @@ export interface ListaFormato {
 
 const CLUB = "ANGELES SOCCER ELITE";
 const TITULO = "INCORPORACION";
-const LOGO = "/logo-ase.png";
 
 const TINTA: [number, number, number] = [24, 32, 46];
 const GRIS: [number, number, number] = [113, 121, 134];
@@ -58,26 +58,6 @@ const fechaHora = (valor: string | null): string => {
 };
 
 const safeName = (s: string) => s.replace(/[^\w\sáéíóúñÁÉÍÓÚÑ-]/gi, "").replace(/\s+/g, "_").slice(0, 60);
-
-/**
- * El escudo, en base64 para jsPDF. Si por lo que sea no se puede leer, el formato sale
- * sin él: un papel sin logo se entiende, uno que no se imprime no.
- */
-async function leerLogo(): Promise<string | null> {
-    try {
-        const res = await fetch(LOGO, { cache: "force-cache" });
-        if (!res.ok) return null;
-        const blob = await res.blob();
-        return await new Promise<string | null>((resolve) => {
-            const lector = new FileReader();
-            lector.onloadend = () => resolve(typeof lector.result === "string" ? lector.result : null);
-            lector.onerror = () => resolve(null);
-            lector.readAsDataURL(blob);
-        });
-    } catch {
-        return null;
-    }
-}
 
 export async function imprimirFormatoIncorporacion({
     fila, ciclo, grupo, yaAplicado,
@@ -122,7 +102,7 @@ export async function imprimirFormatoIncorporacion({
     };
 
     // ── Escudo y título ──
-    const logo = await leerLogo();
+    const logo = await leerLogoClub();
     if (logo) {
         try {
             doc.addImage(logo, "PNG", margen, 11, 22, 22);

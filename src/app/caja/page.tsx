@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import GastosEfectivoDetalle, { type GastoEfectivo } from "@/components/GastosEfectivoDetalle";
+import { leerLogoClub } from "@/lib/logo-club";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -40,6 +42,8 @@ interface CorteData {
   };
   ventasEfectivo: number;
   gastosEfectivo: number;
+  /** Los gastos en efectivo uno por uno: lo que compone la cifra de arriba. */
+  detalleGastosEfectivo: GastoEfectivo[];
   efectivoCaja: number;
   efectivoCaptura: number;
   diferencia: number;
@@ -190,7 +194,7 @@ export default function CajaPage() {
   }, []);
 
   // Exporta el corte de caja abierto a un PDF presentable.
-  const handleExportCortePDF = () => {
+  const handleExportCortePDF = async () => {
     if (!corteData) return;
     const c = corteData;
     const money = (n: number) => fmt(Number(n) || 0);
@@ -199,22 +203,42 @@ export default function CajaPage() {
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
 
-    // ── Encabezado ──
-    doc.setFillColor(30, 58, 138);
-    doc.rect(0, 0, pageW, 28, "F");
-    doc.setTextColor(255, 255, 255);
+    /* ── Encabezado ──
+       Sin banda de color: el escudo a la izquierda, el titulo en tinta oscura y una
+       raya debajo. Un bloque azul a sangre en la cabecera se come el toner de la
+       impresora de la sede y no aporta nada al papel que se archiva. */
+    const logo = await leerLogoClub();
+    if (logo) {
+      try {
+        doc.addImage(logo, "PNG", 14, 10, 20, 20);
+      } catch {
+        /* si el escudo no se puede pintar, el corte sigue sin él */
+      }
+    }
+
+    doc.setTextColor(113, 121, 134);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(17);
-    doc.text("CORTE DE CAJA", 14, 13);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text("Ángeles Soccer", 14, 21);
+    doc.setFontSize(9);
+    doc.text("ANGELES SOCCER ELITE", 38, 17);
+    doc.setTextColor(24, 32, 46);
+    doc.setFontSize(19);
+    doc.text("CORTE DE CAJA", 38, 27, { charSpace: 0.8 });
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.text(`Apertura #${c.idApertura}`, pageW - 14, 12, { align: "right" });
-    doc.setFont("helvetica", "normal");
+    doc.text(`Apertura #${c.idApertura}`, pageW - 14, 15, { align: "right" });
+    // El estado va en color de tinta, no de fondo: cerrado en verde, en curso en ambar.
+    doc.setTextColor(...(c.cerrado ? [21, 101, 60] : [161, 98, 7]) as [number, number, number]);
     doc.setFontSize(9);
-    doc.text(c.cerrado ? "CERRADO" : "EN CURSO", pageW - 14, 19, { align: "right" });
+    doc.text(c.cerrado ? "CERRADO" : "EN CURSO", pageW - 14, 21, { align: "right" });
+    doc.setTextColor(113, 121, 134);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(c.sede || "—", pageW - 14, 27, { align: "right" });
+
+    doc.setDrawColor(30, 41, 59);
+    doc.setLineWidth(0.6);
+    doc.line(14, 33, pageW - 14, 33);
 
     const fechaAp = new Date(c.fechaApertura).toLocaleDateString("es-MX", {
       weekday: "long", day: "2-digit", month: "long", year: "numeric",
@@ -223,13 +247,15 @@ export default function CajaPage() {
 
     doc.setTextColor(30, 41, 59);
 
-    const headStyles = { fillColor: [37, 99, 235] as [number, number, number], textColor: 255, fontStyle: "bold" as const, halign: "left" as const };
+    /* Los titulos de cada bloque, en gris claro con tinta oscura: se distinguen del
+       cuerpo sin pintar la hoja. */
+    const headStyles = { fillColor: [237, 241, 246] as [number, number, number], textColor: [24, 32, 46] as [number, number, number], fontStyle: "bold" as const, halign: "left" as const };
     const labelCol = { 0: { cellWidth: 65 } };
     const money2 = { 1: { halign: "right" as const, fontStyle: "bold" as const } };
 
     // ── Datos generales ──
     autoTable(doc, {
-      startY: 34,
+      startY: 39,
       head: [[{ content: "DATOS GENERALES", colSpan: 2 }]],
       body: [
         ["Sede", c.sede || "—"],
@@ -313,6 +339,37 @@ export default function CajaPage() {
         }
       },
     });
+
+    // ── Detalle de los gastos en efectivo ──
+    /* Va justo después del arqueo, que es donde aparece su total: el papel del corte se
+       archiva, y la cifra de gastos es la única que no se puede contrastar contra los
+       recibos de la caja si no viene desglosada. Si son muchos, autoTable los pasa a la
+       hoja siguiente repitiendo el encabezado. */
+    const gastos = c.detalleGastosEfectivo ?? [];
+    if (gastos.length > 0) {
+      const finY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+      autoTable(doc, {
+        startY: finY + 5,
+        head: [
+          [{ content: "DETALLE DE GASTOS EN EFECTIVO", colSpan: 5 }],
+          ["Fecha", "Concepto", "Pagar a", "Recibo", "Importe"],
+        ],
+        body: gastos.map((g) => [g.fecha, g.concepto, g.pagarA, g.recibo, money(g.total)]),
+        foot: [[`TOTAL · ${gastos.length} gasto(s)`, "", "", "", money(c.gastosEfectivo)]],
+        // El total, solo al final: repetido en cada hoja parece el total de la hoja.
+        showFoot: "lastPage",
+        theme: "grid",
+        headStyles,
+        bodyStyles: { fontSize: 7.5 },
+        footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: "bold", fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 26 },
+          2: { cellWidth: 38 },
+          3: { cellWidth: 18, halign: "center" },
+          4: { cellWidth: 24, halign: "right" },
+        },
+      });
+    }
 
     // ── Firmas + pie ──
     let y = (doc as any).lastAutoTable.finalY + 24;
@@ -919,6 +976,7 @@ export default function CajaPage() {
                         <CorteRow label="Fondo Caja" money value={corteData.fondoCaja} />
                         <CorteRow label="Vtas Efectivo" money value={corteData.ventasEfectivo} tone="emerald" />
                         <CorteRow label="Gastos Efectivo" money value={corteData.gastosEfectivo} tone="rose" />
+                        <GastosEfectivoDetalle gastos={corteData.detalleGastosEfectivo ?? []} />
                         <div className="border-t border-white/5 my-1" />
                         <CorteRow label="Efectivo Caja" money value={corteData.efectivoCaja} strong />
                         <CorteRow label="Efectivo Captura" money value={corteData.efectivoCaptura} strong />

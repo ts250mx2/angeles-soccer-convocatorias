@@ -677,6 +677,12 @@ export const SECCIONES: SeccionManual[] = [
                 alt: 'Ventana del corte de caja en tres columnas: Datos de la apertura, Captura de lo que hay por cada forma de pago, y Efectivo con el fondo, las ventas, los gastos, el esperado, el capturado y la diferencia.',
                 pie: 'La columna de en medio es lo único que se captura a mano. La de la derecha calcula sola y termina en la **Diferencia**.',
             },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Los gastos en efectivo, uno por uno',
+                texto: 'Bajo el renglón de **Gastos Efectivo** cuelga su desglose: cada gasto con su concepto, a quién se le pagó, la hora y el importe. Es la única cifra del arqueo que el cajero no puede contrastar contra algo que tenga en la mano —el fondo y las ventas salen de la caja y de los recibos—, así que sin el desglose no hay forma de ver qué la compone ni de detectar un gasto capturado en la apertura equivocada. El mismo desglose sale en el **PDF del corte**, con su total al pie, para que el papel que se archiva diga lo mismo que la pantalla.',
+            },
             { tipo: 'subtitulo', texto: 'Qué ves en cada apertura' },
             {
                 tipo: 'lista',

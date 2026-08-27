@@ -112,14 +112,37 @@ export async function GET(
             [idSd, idAp]
         ) as any[];
 
-        // ── Gastos en efectivo: FormaPago 1 ──
+        /* ── Gastos en efectivo: FormaPago 1, uno por uno ──
+           El detalle y el total salen de la MISMA consulta y el total se suma aquí: si
+           viniera de un SUM aparte, el día que un filtro cambiara en una consulta y no
+           en la otra, el arqueo diría una cifra y su desglose otra. */
         const [gEf] = await pool.query(
-            `SELECT COALESCE(SUM(A.Total), 0) AS SumTotal
+            `SELECT
+                A.IdEgreso,
+                DATE_FORMAT(A.FechaEgreso, '%d/%m/%Y %H:%i')             AS Fecha,
+                COALESCE(NULLIF(TRIM(A.ConceptoEgreso), ''), '—')        AS Concepto,
+                COALESCE(NULLIF(TRIM(A.PagarA), ''), '—')                AS PagarA,
+                /* El recibo se captura como '0' cuando no hay: es lo mismo que vacío. */
+                COALESCE(NULLIF(NULLIF(TRIM(A.Recibo), ''), '0'), '—')   AS Recibo,
+                COALESCE(A.Total, 0)                                     AS Total
              FROM tblEgresos A
              WHERE A.IdSedePago = ? AND A.IdApertura = ?
-               AND A.Status = 0 AND A.IdFormaPago = 1`,
+               AND A.Status = 0 AND A.IdFormaPago = 1
+             ORDER BY A.FechaEgreso, A.IdEgreso`,
             [idSd, idAp]
-        ) as any[];
+        ) as [Array<{
+            IdEgreso: number; Fecha: string; Concepto: string;
+            PagarA: string; Recibo: string; Total: number;
+        }>, unknown];
+
+        const detalleGastosEfectivo = gEf.map((g) => ({
+            idEgreso: Number(g.IdEgreso) || 0,
+            fecha: String(g.Fecha ?? ''),
+            concepto: String(g.Concepto ?? '—'),
+            pagarA: String(g.PagarA ?? '—'),
+            recibo: String(g.Recibo ?? '—'),
+            total: Number(g.Total) || 0,
+        }));
 
         const num = (v: any) => Number(v) || 0;
 
@@ -129,7 +152,12 @@ export async function GET(
         const ventasDolares    = num(vDol[0].SumPago);
         const totalGastos      = num(gTot[0].SumTotal);
         const ventasEfectivo   = num(vEf[0].SumPago);
-        const gastosEfectivo   = num(gEf[0].SumTotal);
+        /* A centavos: sumar en JavaScript deja residuo de coma flotante (255013.41999...
+           donde la base decía 255013.42), y de ese total cuelga la diferencia del
+           arqueo, que se pinta verde solo cuando es EXACTAMENTE cero. */
+        const gastosEfectivo   = Math.round(
+            detalleGastosEfectivo.reduce((suma, g) => suma + g.total, 0) * 100,
+        ) / 100;
 
         const efectivoCap   = num(ap.Efectivo);   // EFECTIVO CAPTURA = forma de pago Efectivo
         const dolaresCap    = num(ap.Dolares);
@@ -175,6 +203,7 @@ export async function GET(
                 // Bloque Efectivo (arqueo)
                 ventasEfectivo,
                 gastosEfectivo,
+                detalleGastosEfectivo,
                 efectivoCaja,
                 efectivoCaptura: efectivoCap,
                 diferencia,
