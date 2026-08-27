@@ -172,7 +172,7 @@ export const SECCIONES: SeccionManual[] = [
             { tipo: 'subtitulo', texto: 'La portada: una tarjeta por copa o liga' },
             {
                 tipo: 'parrafo',
-                texto: 'La pantalla abre mostrando **los torneos**, no las convocatorias sueltas. Cada tarjeta es una copa o una liga —lo dice su etiqueta— y resume el torneo completo: cuántas categorías tiene y **cuáles**, con los jugadores de cada una; el **total esperado** y el **recaudado**, y la **utilidad** de los dos. Al pulsarla se entra al detalle de siempre, ya acotado a ese torneo, y se vuelve con **← Copas y ligas**.',
+                texto: 'La pantalla abre mostrando **los torneos**, no las convocatorias sueltas, con las **copas** y las **ligas** en bloques aparte y ordenadas por **cuándo arrancan** —la fecha de inicio más temprana de sus categorías, que aparece junto a la etiqueta—, del más próximo al más lejano. Cada tarjeta resume el torneo completo: cuántas categorías tiene y **cuáles**, con los jugadores de cada una; el **total esperado** y el **recaudado**, y la **utilidad** de los dos. Al pulsarla se entra al detalle de siempre, ya acotado a ese torneo, y se vuelve con **← Copas y ligas**.',
             },
             {
                 tipo: 'tabla',

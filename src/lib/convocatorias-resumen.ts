@@ -25,6 +25,8 @@ export interface FilaResumen {
     Categoria: string;
     Color?: string;
     Cerrada: number;
+    /** 'YYYY-MM-DD' o ISO; del torneo se guarda la más temprana de sus categorías. */
+    FechaInicio?: string;
     JugadoresConvocados: number;
     Total: number;
     Pagos: number;
@@ -52,6 +54,8 @@ export interface ResumenCopaLiga {
     idLiga: number;
     liga: string;
     esCopa: boolean;
+    /** 'YYYY-MM-DD': cuándo arranca lo primero del torneo. Ordena la portada. */
+    desde: string | null;
     tieneFoto: boolean;
     fotoVersion: string | null;
     /** Filas del resumen: liga + categoría + color. */
@@ -69,6 +73,14 @@ export interface ResumenCopaLiga {
 
 const num = (v: number | undefined | null): number => Number(v) || 0;
 
+/* Solo el día: la fecha llega como instante UTC ('2026-08-01T06:00:00.000Z' es el 1 de
+   agosto local), así que se corta en seco en lugar de pasarla por Date, que la correría
+   un día. Como texto 'YYYY-MM-DD' se compara y se ordena igual de bien. */
+const dia = (v: string | undefined): string | null => {
+    const d = String(v ?? '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+};
+
 /** Los tres costos del torneo de una convocatoria. */
 export const costosDe = (f: FilaResumen): number =>
     num(f.CostoLiga) + num(f.CostoProfesor) + num(f.CostoArbitro);
@@ -83,6 +95,7 @@ export function resumirPorCopaLiga(filas: FilaResumen[]): ResumenCopaLiga[] {
                 idLiga: f.IdLiga,
                 liga: f.Liga,
                 esCopa: esCopa(f.IdTipoLiga),
+                desde: null,
                 tieneFoto: f.TieneFoto === 1,
                 fotoVersion: f.FotoVersion ?? null,
                 convocatorias: 0,
@@ -98,6 +111,9 @@ export function resumirPorCopaLiga(filas: FilaResumen[]): ResumenCopaLiga[] {
             };
             porLiga.set(f.IdLiga, r);
         }
+
+        const inicio = dia(f.FechaInicio);
+        if (inicio && (r.desde === null || inicio < r.desde)) r.desde = inicio;
 
         r.convocatorias += 1;
         if (f.Cerrada !== 1) r.abiertas += 1;
@@ -126,7 +142,16 @@ export function resumirPorCopaLiga(filas: FilaResumen[]): ResumenCopaLiga[] {
             utilidadEsperada: r.esperado - r.costos,
             utilidadRecaudada: r.recaudado - r.costos,
         }))
-        .sort((a, b) => a.liga.localeCompare(b.liga));
+        /* Por cuándo arranca el torneo, del más próximo al más lejano: es el orden en
+           que se trabajan. Un torneo sin fecha se va al final, y el nombre desempata. */
+        .sort((a, b) => {
+            if (a.desde !== b.desde) {
+                if (a.desde === null) return 1;
+                if (b.desde === null) return -1;
+                return a.desde < b.desde ? -1 : 1;
+            }
+            return a.liga.localeCompare(b.liga);
+        });
 }
 
 /** Los totales de todas las copas y ligas juntas, para el pie de la portada. */

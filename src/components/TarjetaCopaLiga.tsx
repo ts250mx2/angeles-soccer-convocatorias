@@ -17,6 +17,15 @@ import type { ResumenCopaLiga } from "@/lib/convocatorias-resumen";
 const moneda = (n: number): string =>
     new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n || 0);
 
+const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+/* 'YYYY-MM-DD' partido a mano: pasarlo por Date lo interpreta en UTC y corre el día. */
+const fechaCorta = (dia: string | null): string | null => {
+    if (!dia) return null;
+    const [anio, mes, d] = dia.split("-").map(Number);
+    return anio && mes && d ? `${d} ${MESES[mes - 1]} ${anio}` : null;
+};
+
 /** Cifra del bloque de dinero. `negativa` la pinta en rojo: una utilidad puede serlo. */
 function Cifra({ etiqueta, valor, clase }: { etiqueta: string; valor: number; clase: string }) {
     return (
@@ -36,6 +45,8 @@ export default function TarjetaCopaLiga({
     const r = resumen;
     const escudo = r.tieneFoto ? `/api/copas-ligas/foto/${r.idLiga}?v=${r.fotoVersion ?? "0"}` : null;
     const pct = r.esperado > 0 ? Math.round((r.recaudado / r.esperado) * 100) : 0;
+    // La portada se ordena por esta fecha, así que tiene que verse.
+    const arranca = fechaCorta(r.desde);
 
     return (
         <button
@@ -76,6 +87,14 @@ export default function TarjetaCopaLiga({
                         ) : (
                             <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
                                 Todas cerradas
+                            </span>
+                        )}
+                        {arranca && (
+                            <span
+                                title="Arranque de la primera categoría del torneo"
+                                className="text-[9px] font-bold uppercase tracking-widest text-slate-500"
+                            >
+                                · {arranca}
                             </span>
                         )}
                     </div>
