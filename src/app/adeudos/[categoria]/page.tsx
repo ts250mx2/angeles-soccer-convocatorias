@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ChevronLeft, Search, User, CheckCircle2, XCircle, Clock, CreditCard, FileDown } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import jsPDF from 'jspdf';
+import { presentarPdf } from '@/lib/pdf-preview';
 import autoTable from 'jspdf-autotable';
 import DashboardLayout from '@/components/DashboardLayout';
 
@@ -330,7 +331,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ categ
       }
     });
     
-    doc.save(`Adeudos_${categoria.replace(/\s+/g, '_')}.pdf`);
+    presentarPdf(doc, `Adeudos_${categoria.replace(/\s+/g, '_')}.pdf`);
   };
 
 

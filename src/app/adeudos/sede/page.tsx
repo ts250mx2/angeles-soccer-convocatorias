@@ -1167,19 +1167,23 @@ export default function AdeudosSedePage() {
           {/* ── KPIs a pantalla completa (el desglose por sede se abre desde cada panel) ── */}
           {isLoading ? (
             <div className="space-y-5">
-              {/* Temporada anterior y plantilla arrancan plegadas (barras); en medio,
-                  la temporada en curso con su alto completo. */}
-              <div className="h-[4.75rem] bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+              {/* El mismo orden y los mismos altos que lo ya cargado, para que la
+                  pantalla no dé un salto al aparecer: primero la temporada en curso con
+                  su alto completo, y debajo la anterior y la plantilla, que arrancan
+                  plegadas y son dos barras. */}
               <div className="h-[40rem] bg-white/5 rounded-2xl animate-pulse border border-white/10" />
+              <div className="h-[4.75rem] bg-white/5 rounded-2xl animate-pulse border border-white/10" />
               <div className="h-[4.75rem] bg-white/5 rounded-2xl animate-pulse border border-white/10" />
             </div>
           ) : (
             <div className="space-y-5">
-              {/* La temporada anterior encabeza la pantalla: plegada es una barra y
-                  expandida ocupa el ancho completo, sin mover nada de lo de abajo. */}
-              {tarjetaDe('anterior', sedes, true)}
-              {/* Lo que se consulta a diario, a todo lo ancho. */}
+              {/* La temporada en curso encabeza la pantalla: es lo que se consulta a
+                  diario, y va a todo lo ancho. */}
               {tarjetaDe('actual', sedes, true)}
+              {/* La anterior va debajo: solo se revisa cuando se va a cobrar rezago, y
+                  por eso arranca plegada. Plegada es una barra y expandida ocupa el
+                  ancho completo, sin mover nada de lo de abajo. */}
+              {tarjetaDe('anterior', sedes, true)}
               {/* La plantilla cierra la pantalla: es el contexto sobre el que se leen
                   los adeudos de arriba, no algo que se consulte por sí solo. */}
               <TarjetaPlantillaDoble

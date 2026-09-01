@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, Search, User, CheckCircle2, XCircle, Clock, CreditCard, FileDown, Layers } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import jsPDF from 'jspdf';
+import { presentarPdf } from '@/lib/pdf-preview';
 import autoTable from 'jspdf-autotable';
 import DashboardLayout from '@/components/DashboardLayout';
 
@@ -271,7 +272,7 @@ function MultiCategoryContent() {
       }
     });
     
-    doc.save(`Adeudos_Combinado.pdf`);
+    presentarPdf(doc, `Adeudos_Combinado.pdf`);
   };
 
 
