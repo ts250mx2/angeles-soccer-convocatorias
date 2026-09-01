@@ -1,6 +1,7 @@
 import type { Pool, PoolConnection } from 'mysql2/promise';
 import { normalizarEliminatoria, normalizarJornadas } from '@/lib/convocatoria-opciones';
 import { joinPrecioManual, preciosManualesDisponibles } from '@/lib/convocatorias-precios';
+import { sqlFactorBecaDeTorneo } from '@/lib/beca-torneo';
 
 /**
  * Alta de una convocatoria, en un solo lugar.
@@ -77,7 +78,8 @@ export async function crearConvocatoria(db: Ejecutor, c: NuevaConvocatoria): Pro
 }
 
 /**
- * Pone el precio de cada convocado al del producto de la liga, con su BecaLigas aplicada.
+ * Pone el precio de cada convocado al del producto de la liga, con su beca de torneo
+ * aplicada: la de copas si es copa, la de ligas si es liga (ver @/lib/beca-torneo).
  *
  * El precio del sistema manda mientras nadie diga lo contrario: antes solo se escribía al
  * convocar, así que un cambio de tarifa o de beca dejaba a los ya convocados con el
@@ -98,6 +100,7 @@ export async function sincronizarPrecios(
     const [res] = await db.query(
         `UPDATE tblDetalleConvocatorias D
          INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
+         INNER JOIN tblLigas L ON L.IdLiga = D.IdLiga
          INNER JOIN (
              SELECT IdLiga, MAX(Precio) AS Precio
              FROM tblProductos
@@ -105,12 +108,10 @@ export async function sincronizarPrecios(
              GROUP BY IdLiga
          ) PR ON PR.IdLiga = D.IdLiga
          ${respetaManuales ? joinPrecioManual('D') : ''}
-         SET D.Precio = ROUND(
-                 PR.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2)
+         SET D.Precio = ROUND(PR.Precio * ${sqlFactorBecaDeTorneo('J', 'L')}, 2)
          WHERE D.IdTemporada = ? AND D.IdLiga = ? AND D.EsConvocado = 1
            ${respetaManuales ? 'AND MAN.IdJugador IS NULL' : ''}
-           AND D.Precio <> ROUND(
-                 PR.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2)`,
+           AND D.Precio <> ROUND(PR.Precio * ${sqlFactorBecaDeTorneo('J', 'L')}, 2)`,
         [leagueId, seasonId, leagueId],
     );
     return (res as { affectedRows?: number }).affectedRows ?? 0;
@@ -150,11 +151,12 @@ export async function sincronizarPagados(
              GROUP BY P.IdJugador
          ) PAG ON PAG.IdJugador = D.IdJugador
          INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
+         INNER JOIN tblLigas L ON L.IdLiga = D.IdLiga
          ${respetaManuales ? joinPrecioManual('D') : ''}
          SET D.EsConvocado = 1,
              D.Precio = ${respetaManuales ? 'IF(MAN.IdJugador IS NOT NULL, D.Precio, ' : ''}COALESCE(
                  NULLIF(D.Precio, 0),
-                 ROUND(PAG.Precio * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2),
+                 ROUND(PAG.Precio * ${sqlFactorBecaDeTorneo('J', 'L')}, 2),
                  0
              )${respetaManuales ? ')' : ''}
          WHERE D.IdTemporada = ? AND D.IdLiga = ?

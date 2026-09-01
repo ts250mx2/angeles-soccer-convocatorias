@@ -9,7 +9,7 @@ import {
 import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModal";
 import {
   type PlayerRow, type PlayersConfig, exportPlayersToPdf, exportPlayersToExcel,
-  exportMovimientosToExcel,
+  exportMovimientosToExcel, telefonosDe, correosDe,
   fecha, MESES_CORTOS, esBeca100, parseMesesPagados, MESES_ANTICIPO_SOSPECHOSO,
 } from "@/lib/inscripciones-export";
 
@@ -273,6 +273,14 @@ export default function PlayersModal({
                         {p.MotivoBaja}
                       </p>
                     )}
+                    {/* Contacto de los papás: quien abre un listado casi siempre es
+                        para localizar a alguien. El correo va en el título para no
+                        alargar el renglón. */}
+                    {telefonosDe(p) && (
+                      <p title={correosDe(p) || undefined} className="text-[10px] text-slate-400 mt-0.5 truncate">
+                        {telefonosDe(p)}
+                      </p>
+                    )}
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                         ID {p.IdJugador}
@@ -292,7 +300,9 @@ export default function PlayersModal({
                           <MapPin size={9} /> {p.SedeNombre}
                         </span>
                       )}
-                      {p.Beca && String(p.Beca) !== "0" && (
+                      {/* `p.Beca != null` y no `p.Beca &&`: la columna es numérica, y un 0
+                          en un `&&` de JSX se pinta como el texto "0". */}
+                      {p.Beca != null && String(p.Beca) !== "0" && (
                         <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/25">
                           BECA {p.Beca}
                         </span>

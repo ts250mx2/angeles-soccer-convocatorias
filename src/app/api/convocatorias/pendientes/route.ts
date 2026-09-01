@@ -39,6 +39,8 @@ interface Temporada {
 interface FaltanteRow {
     IdLiga: number;
     Liga: string;
+    /** 1 liga, 2 copa: la pantalla acotada a un tipo solo avisa de los suyos. */
+    IdTipoLiga: number | null;
     Categoria: string;
     Jugadores: number;
 }
@@ -75,7 +77,7 @@ export async function POST() {
            informan con cuánta gente pagó, que es lo que decide si vale la pena darlas de
            alta o si fue un cobro suelto mal capturado. */
         const [faltantes] = (await pool.query(
-            `SELECT PR.IdLiga, L.Liga, J.Categoria, COUNT(DISTINCT P.IdJugador) AS Jugadores
+            `SELECT PR.IdLiga, L.Liga, L.IdTipoLiga, J.Categoria, COUNT(DISTINCT P.IdJugador) AS Jugadores
              FROM tblPagos P
              INNER JOIN tblProductos PR ON PR.IdProducto = P.IdProducto
              INNER JOIN tblJugadores J ON J.IdJugador = P.IdJugador
@@ -93,7 +95,7 @@ export async function POST() {
                      AND C.IdLiga = PR.IdLiga
                      AND C.Categoria = J.Categoria
                )
-             GROUP BY PR.IdLiga, L.Liga, J.Categoria
+             GROUP BY PR.IdLiga, L.Liga, L.IdTipoLiga, J.Categoria
              ORDER BY L.Liga, J.Categoria`,
             [temporada.IdTemporada],
         )) as unknown as [FaltanteRow[], unknown];
@@ -105,6 +107,7 @@ export async function POST() {
             faltantes: faltantes.map((f) => ({
                 idLiga: Number(f.IdLiga),
                 liga: String(f.Liga ?? ''),
+                idTipoLiga: Number(f.IdTipoLiga) || 1,
                 categoria: String(f.Categoria ?? ''),
                 jugadores: Number(f.Jugadores) || 0,
             })),

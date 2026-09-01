@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { pool } from '@/lib/db';
-import { CLAVE_COPAS_LIGAS } from '@/lib/navegacion';
-import { requierePagina } from '@/lib/permisos';
+import { CLAVES_CATALOGO } from '@/lib/navegacion';
+import { requiereAlgunaPagina } from '@/lib/permisos';
 import { actualizarProductoSchema } from '@/lib/copas-ligas';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
  * donde `sincronizarPrecios` pone al corriente lo que aún no se ha pagado.
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ idProducto: string }> }) {
-    const guardia = await requierePagina(CLAVE_COPAS_LIGAS);
+    const guardia = await requiereAlgunaPagina(CLAVES_CATALOGO);
     if (!guardia.ok) {
         return NextResponse.json({ success: false, message: guardia.message }, { status: guardia.status });
     }

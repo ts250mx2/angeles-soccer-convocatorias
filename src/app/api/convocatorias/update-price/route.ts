@@ -12,7 +12,7 @@ import {
  * Cambia el precio de un jugador dentro de una convocatoria.
  *
  * Además de guardarlo, decide si es un AJUSTE que hay que proteger: si el importe difiere
- * del que pondría el sistema (producto de la liga con su BecaLigas), se marca y a partir
+ * del que pondría el sistema (producto de la liga con la beca de torneo que le toque), se marca y a partir
  * de ahí ningún automatismo lo vuelve a mover. Si es exactamente el del sistema, se borra
  * la marca y el jugador regresa al precio automático: esa es la forma de deshacer un
  * ajuste sin una pantalla aparte.

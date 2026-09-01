@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { estadoEnTemporada } from '@/lib/convocatoria-elegibilidad';
 import { joinPrecioManual, preciosManualesDisponibles } from '@/lib/convocatorias-precios';
+import { sqlBecaDeTorneo } from '@/lib/beca-torneo';
 
 interface FilaJugador {
     IdJugador: number;
@@ -32,15 +33,23 @@ export async function GET(request: Request) {
 
         const selectQuery = `
             SELECT A.IdJugador, B.Jugador, B.Categoria, A.Precio, A.EsConvocado, A.EsEliminado,
-                   -- La beca que aplica aquí es BecaLigas, no la de mensualidades: son
-                   -- descuentos distintos y un jugador puede tener uno sin el otro.
-                   COALESCE(B.BecaLigas, 0) AS Beca,
+                   -- La beca que aplica aquí es la del TORNEO, no la de mensualidades:
+                   -- BecaCopas en una copa y BecaLigas en una liga (ver @/lib/beca-torneo).
+                   -- De ahí el JOIN contra tblLigas, que es quien dice cuál de las dos es.
+                   ${sqlBecaDeTorneo('B', 'L')} AS Beca,
                    CASE WHEN A.Categoria <> B.Categoria THEN 1 ELSE 0 END AS EsInvitado,
+                   /* La foto NO viaja en el JSON: son data URIs de hasta 120 KB y una
+                      categoría entera los arrastraría todos. Solo va si la hay y cuándo
+                      cambió; la imagen la pide el navegador a /api/jugadores/foto, que
+                      sí se cachea. */
+                   CASE WHEN B.Foto IS NOT NULL AND B.Foto <> '' THEN 1 ELSE 0 END AS TieneFoto,
+                   DATE_FORMAT(B.FechaAct, '%Y%m%d%H%i%s') AS FotoVersion,
                    ${respetaManuales ? 'CASE WHEN MAN.IdJugador IS NULL THEN 0 ELSE 1 END' : '0'} AS PrecioManual,
                    CASE WHEN A.EsConvocado = 1 THEN COALESCE(PAGOS.TotalPago, 0) ELSE 0 END AS PagoJugador,
                    CASE WHEN A.EsConvocado = 1 THEN (A.Precio - COALESCE(PAGOS.TotalPago, 0)) ELSE 0 END AS CXC
             FROM tblDetalleConvocatorias A 
-            INNER JOIN tblJugadores B ON A.IdJugador = B.IdJugador 
+            INNER JOIN tblJugadores B ON A.IdJugador = B.IdJugador
+            INNER JOIN tblLigas L ON L.IdLiga = A.IdLiga
             LEFT JOIN (
                 SELECT P.IdJugador, SUM(P.Pago) as TotalPago
                 FROM tblPagos P

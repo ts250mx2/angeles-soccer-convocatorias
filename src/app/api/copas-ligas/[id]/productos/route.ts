@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { pool } from '@/lib/db';
-import { CLAVE_COPAS_LIGAS } from '@/lib/navegacion';
-import { requierePagina } from '@/lib/permisos';
+import { CLAVES_CATALOGO } from '@/lib/navegacion';
+import { requiereAlgunaPagina } from '@/lib/permisos';
 import { crearProductoSchema } from '@/lib/copas-ligas';
 import { insertaProducto } from '@/lib/copas-ligas-db';
 
@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
  * precio por categoría), y cada una es un renglón propio en tblProductos.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-    const guardia = await requierePagina(CLAVE_COPAS_LIGAS);
+    const guardia = await requiereAlgunaPagina(CLAVES_CATALOGO);
     if (!guardia.ok) {
         return NextResponse.json({ success: false, message: guardia.message }, { status: guardia.status });
     }

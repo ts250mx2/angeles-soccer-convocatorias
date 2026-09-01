@@ -1,9 +1,11 @@
 import type { Pool, PoolConnection } from 'mysql2/promise';
+import { sqlFactorBecaDeTorneo } from '@/lib/beca-torneo';
 
 /**
  * Precios de convocatoria fijados a mano.
  *
- * El precio de un convocado sale del producto de la liga con su BecaLigas aplicada, y
+ * El precio de un convocado sale del producto de la liga con su beca de torneo aplicada
+ * —la de copas si es copa, la de ligas si es liga— y
  * la pantalla lo pone al corriente en cada visita (ver `sincronizarPrecios`) para que un
  * cambio de tarifa alcance a las convocatorias vigentes. Ese automatismo pisaba los
  * ajustes manuales: el precio especial de un jugador duraba hasta la siguiente carga de
@@ -136,8 +138,12 @@ export async function tienePrecioManual(db: Ejecutor, clave: ClavePrecio): Promi
 }
 
 /**
- * Precio que el sistema le pone a este jugador en esta liga: el del producto con su
- * BecaLigas aplicada. `null` cuando la liga no tiene producto con precio.
+ * Precio que el sistema le pone a este jugador en esta liga: el del producto con su beca
+ * de torneo aplicada. `null` cuando la liga no tiene producto con precio.
+ *
+ * La beca sale de `sqlFactorBecaDeTorneo`, así que una copa se rebaja con BecaCopas y una
+ * liga con BecaLigas. De ahí el JOIN contra tblLigas: sin él no se sabría cuál de las dos
+ * toca.
  *
  * Es el mismo cálculo que hace `sincronizarPrecios`, en un solo lugar: si los dos
  * difirieran, un precio "igual al del sistema" quedaría marcado como manual para
@@ -149,8 +155,9 @@ export async function precioDelSistema(
     playerId: number | string,
 ): Promise<number | null> {
     const [filas] = (await db.query(
-        `SELECT ROUND(MAX(PR.Precio) * (1 - LEAST(GREATEST(COALESCE(J.BecaLigas, 0), 0), 100) / 100), 2) AS Precio
+        `SELECT ROUND(MAX(PR.Precio) * ${sqlFactorBecaDeTorneo('J', 'L')}, 2) AS Precio
          FROM tblProductos PR
+         INNER JOIN tblLigas L ON L.IdLiga = PR.IdLiga
          CROSS JOIN tblJugadores J
          WHERE PR.IdLiga = ? AND PR.IdTipoProducto IN (3, 4) AND J.IdJugador = ?`,
         [leagueId, playerId],

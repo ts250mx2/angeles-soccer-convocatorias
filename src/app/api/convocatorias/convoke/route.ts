@@ -18,7 +18,8 @@ export async function POST(request: Request) {
         const advertencia = advertenciaConvocatoria(estados.get(Number(playerId)));
 
         /* Precio de la liga con la beca del jugador ya aplicada. La beca que cuenta aquí
-           es BecaLigas, no la de mensualidades: son descuentos distintos. Se guarda ya
+           es la del torneo —BecaCopas en una copa, BecaLigas en una liga—, no la de
+           mensualidades: son descuentos distintos. Se guarda ya
            rebajado porque es contra este número que la pantalla saca el saldo; dejarlo
            completo cobraría de más a un becado.
 

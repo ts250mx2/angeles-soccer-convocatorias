@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, History, Ban, Check, DollarSign, Lock } from "lucide-react";
+import AvatarJugador from "@/components/AvatarJugador";
 
 /**
  * Lista de jugadores de una convocatoria.
@@ -20,7 +21,7 @@ export interface JugadorConvocatoria {
   EsConvocado: number;
   EsEliminado: number;
   EsInvitado: number;
-  /** Porcentaje de BecaLigas, el descuento que aplica a ligas y copas. */
+  /** Porcentaje de la beca del torneo: BecaCopas en una copa, BecaLigas en una liga. */
   Beca: string | number | null;
   PagoJugador: number;
   CXC: number;
@@ -35,6 +36,10 @@ export interface JugadorConvocatoria {
    * capturar un importe distinto al del sistema y se quita al volver a ese importe.
    */
   PrecioManual?: number;
+  /** Tiene foto en su ficha. La imagen la sirve /api/jugadores/foto. */
+  TieneFoto?: number;
+  /** Sello para romper el caché del navegador cuando la foto cambia. */
+  FotoVersion?: string | null;
 }
 
 interface Props {
@@ -184,6 +189,13 @@ export default function ConvocatoriaPlayersTable({
                   {/* Jugador */}
                   <td className={`px-4 py-2.5 border-l-4 ${borde}`}>
                     <div className="flex items-center gap-2 flex-wrap">
+                      <AvatarJugador
+                        idJugador={p.IdJugador}
+                        nombre={p.Jugador}
+                        tieneFoto={p.TieneFoto}
+                        fotoVersion={p.FotoVersion}
+                        tamano={26}
+                      />
                       <span className="text-[10px] font-mono text-slate-400 tabular-nums">
                         {p.IdJugador}
                       </span>
