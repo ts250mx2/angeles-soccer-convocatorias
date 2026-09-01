@@ -19,6 +19,7 @@ export const metadata: Metadata = {
 
 import { UserProvider } from "@/contexts/user-context";
 import { AgentChatProvider } from "@/hooks/use-agent-chat";
+import VistaPreviaPdf from "@/components/VistaPreviaPdf";
 
 
 export default function RootLayout({
@@ -38,6 +39,10 @@ export default function RootLayout({
               navegar entre pantallas. */}
           <AgentChatProvider>
             {children}
+            {/* La presentación preliminar de los PDF. Va aquí, y no en DashboardLayout,
+                para que cubra también las pantallas que no pasan por él; se muestra sola
+                cuando una exportación deja un documento (ver @/lib/pdf-preview). */}
+            <VistaPreviaPdf />
           </AgentChatProvider>
         </UserProvider>
       </body>

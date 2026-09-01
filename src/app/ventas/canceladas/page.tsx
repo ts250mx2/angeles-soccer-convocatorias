@@ -6,6 +6,7 @@ import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import {
   Ban, Search, RefreshCw, Calendar, X,
@@ -214,7 +215,7 @@ export default function VentasCanceladasPage() {
         columnStyles: { 6: { halign: "right" } },
         margin: { left: 14, right: 14 },
       });
-      doc.save(`Ventas_canceladas_${fileSuffix}.pdf`);
+      presentarPdf(doc, `Ventas_canceladas_${fileSuffix}.pdf`);
     } finally {
       setExporting(false);
     }

@@ -5,6 +5,7 @@ import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import {
   CalendarDays, RefreshCw, X, AlertCircle, MapPin, DollarSign, Calendar, Layers,
@@ -199,7 +200,7 @@ export default function VentasPorDiaPage() {
       footStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold" },
       columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" } },
     });
-    doc.save(`Ventas_por_dia_${dateFrom}_${dateTo}.pdf`);
+    presentarPdf(doc, `Ventas_por_dia_${dateFrom}_${dateTo}.pdf`);
   };
 
   // ── Exportar detalle agrupado por día ──
@@ -297,7 +298,7 @@ export default function VentasPorDiaPage() {
         });
         y = (doc as any).lastAutoTable.finalY + 6;
       }
-      doc.save(`Detalle_por_dia_${dateFrom}_${dateTo}.pdf`);
+      presentarPdf(doc, `Detalle_por_dia_${dateFrom}_${dateTo}.pdf`);
     } finally {
       setExporting(false);
     }

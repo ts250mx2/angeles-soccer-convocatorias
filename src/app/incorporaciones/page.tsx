@@ -6,6 +6,7 @@ import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import {
   UserRoundPlus, Plus, RefreshCw, Search, AlertCircle, Pencil, Ban, RotateCcw, ArrowRight, Check,
@@ -357,7 +358,7 @@ export default function IncorporacionesPage() {
         },
       });
 
-      doc.save(`${archivo}.pdf`);
+      presentarPdf(doc, `${archivo}.pdf`);
     } finally {
       setExportando(false);
     }

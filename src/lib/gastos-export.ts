@@ -1,6 +1,7 @@
 "use client";
 
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
 
@@ -251,7 +252,7 @@ export function exportEgresosResumenToPdf(resumen: ResumenEgresos, periodo: stri
     }
 
     pdfFooter(doc);
-    doc.save(`${safeName(title)}_${safeName(periodo)}.pdf`);
+    presentarPdf(doc, `${safeName(title)}_${safeName(periodo)}.pdf`);
 }
 
 export async function exportEgresosResumenToExcel(resumen: ResumenEgresos, periodo: string) {
@@ -341,7 +342,7 @@ export function exportEgresosDetalleToPdf(filas: EgresoRow[], title: string, sub
     });
 
     pdfFooter(doc);
-    doc.save(`${safeName(title)}_${safeName(subtitle)}.pdf`);
+    presentarPdf(doc, `${safeName(title)}_${safeName(subtitle)}.pdf`);
 }
 
 export async function exportEgresosDetalleToExcel(filas: EgresoRow[], title: string, subtitle: string) {

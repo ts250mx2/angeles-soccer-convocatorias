@@ -1,6 +1,7 @@
 "use client";
 
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
 
@@ -270,7 +271,7 @@ export function exportAnswerToPdf(content: string, question: string) {
     doc.setTextColor(150);
     doc.text("Generado por el Agente Inteligente", margin, pageH - 8);
 
-    doc.save(`Agente_${fileStamp()}.pdf`);
+    presentarPdf(doc, `Agente_${fileStamp()}.pdf`);
 }
 
 /** Exporta las tablas de la respuesta a Excel (una hoja por tabla). */

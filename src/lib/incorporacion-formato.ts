@@ -1,6 +1,7 @@
 "use client";
 
 import { jsPDF } from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import { BAJA, type IncorporacionRow } from "@/lib/incorporaciones";
 import { leerLogoClub } from "@/lib/logo-club";
 
@@ -252,5 +253,5 @@ export async function imprimirFormatoIncorporacion({
         margen, alto - 10,
     );
 
-    doc.save(`Incorporacion_${String(fila.IdIncorporacion).padStart(6, "0")}_${safeName(fila.Jugador ?? "")}.pdf`);
+    presentarPdf(doc, `Incorporacion_${String(fila.IdIncorporacion).padStart(6, "0")}_${safeName(fila.Jugador ?? "")}.pdf`);
 }

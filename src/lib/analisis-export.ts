@@ -1,6 +1,7 @@
 "use client";
 
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 
 const BRAND: [number, number, number] = [99, 102, 241]; // Violet-500 matching modal accent
@@ -280,5 +281,5 @@ export function exportAnalisisToPdf(analisis: string, title: string, subtitle: s
         doc.text(`Página ${i} de ${pages}`, pageW - margin, pageH - 8, { align: "right" });
     }
 
-    doc.save(`Analisis_Profundo_${safeName(subtitle || 'Adeudos')}.pdf`);
+    presentarPdf(doc, `Analisis_Profundo_${safeName(subtitle || 'Adeudos')}.pdf`);
 }

@@ -6,6 +6,7 @@ import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import {
   UserPlus, Search, RefreshCw, Calendar, X, MapPin, Layers, AlertCircle,
@@ -284,7 +285,7 @@ export default function PreregistrosPage() {
         headStyles: { fillColor: [29, 78, 216], fontSize: 7 },
         margin: { left: 14, right: 14 },
       });
-      doc.save(`Preregistros_${sufijo}.pdf`);
+      presentarPdf(doc, `Preregistros_${sufijo}.pdf`);
     } finally {
       setExporting(false);
     }

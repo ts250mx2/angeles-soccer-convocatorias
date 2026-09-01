@@ -5,6 +5,7 @@ import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import GastosEfectivoDetalle, { type GastoEfectivo } from "@/components/GastosEfectivoDetalle";
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import {
   KeyRound, DollarSign, TrendingDown, Lock, MapPin,
@@ -539,7 +540,7 @@ export default function CortesMensualesPage() {
       footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: "bold" },
     });
 
-    doc.save(`Cortes_por_Mes_${year}_${sedeLabel.replace(/\s+/g, "_")}.pdf`);
+    presentarPdf(doc, `Cortes_por_Mes_${year}_${sedeLabel.replace(/\s+/g, "_")}.pdf`);
   };
 
   // Exportar el detalle del mes abierto — un renglón por IdApertura
@@ -589,7 +590,7 @@ export default function CortesMensualesPage() {
       footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: "bold" },
     });
 
-    doc.save(`Detalle_Cortes_${MESES[monthDetail.mes - 1]}_${year}_${sedeLabel.replace(/\s+/g, "_")}.pdf`);
+    presentarPdf(doc, `Detalle_Cortes_${MESES[monthDetail.mes - 1]}_${year}_${sedeLabel.replace(/\s+/g, "_")}.pdf`);
   };
 
   return (

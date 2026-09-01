@@ -1,6 +1,7 @@
 "use client";
 
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
 
@@ -351,7 +352,7 @@ export function exportVentasToPdf(filas: VentaRow[], subtitle: string, totales?:
     });
 
     pdfFooter(doc);
-    doc.save(`${safeName(TITULO)}_${safeName(subtitle)}.pdf`);
+    presentarPdf(doc, `${safeName(TITULO)}_${safeName(subtitle)}.pdf`);
 }
 
 export async function exportVentasToExcel(filas: VentaRow[], subtitle: string, totales?: TotalesPeriodo) {

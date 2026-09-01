@@ -1,6 +1,7 @@
 "use client";
 
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
 
@@ -188,7 +189,7 @@ export function exportAdeudosToPdf(
         doc.text(`Página ${i} de ${pages}`, pageW - margin, pageH - 8, { align: "right" });
     }
 
-    doc.save(`${safeName(title)}_${safeName(subtitle)}.pdf`);
+    presentarPdf(doc, `${safeName(title)}_${safeName(subtitle)}.pdf`);
 }
 
 export async function exportAdeudosToExcel(

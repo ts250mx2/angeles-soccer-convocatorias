@@ -1,6 +1,7 @@
 "use client";
 
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
 import { MESES_ANTICIPO_SOSPECHOSO } from "@/lib/temporada";
@@ -27,7 +28,19 @@ export interface PlayerRow {
     InscripcionPagada: number;
     /** Mensualidades cobradas 3+ meses antes de que iniciara la temporada */
     PagosAnticipados: number;
+    TelPadre?: string | null;
+    TelMadre?: string | null;
+    CorreoElectronicoPadre?: string | null;
+    CorreoElectronicoMadre?: string | null;
 }
+
+/** Los dos teléfonos en una línea, que es como se leen y como se exportan. */
+export const telefonosDe = (p: PlayerRow): string =>
+    [p.TelPadre, p.TelMadre].map((t) => String(t ?? '').trim()).filter(Boolean).join(' / ');
+
+export const correosDe = (p: PlayerRow): string =>
+    [p.CorreoElectronicoPadre, p.CorreoElectronicoMadre]
+        .map((c) => String(c ?? '').trim()).filter(Boolean).join(' / ');
 
 export interface MesTemporada {
     codigo: number;
@@ -218,13 +231,20 @@ const playerCols = (config?: PlayersConfig, conMotivo = false): XCol[] => {
         { header: "Fecha de inscripción", width: 20 },
     ];
     const motivo: XCol[] = conMotivo ? [{ header: "Motivo de baja", width: 46 }] : [];
-    if (!config?.meses.length) return [...base, ...motivo];
+    /* Contacto al final: es lo que se copia para llamar, y ponerlo antes empujaría las
+       columnas que se leen de un vistazo. */
+    const contacto: XCol[] = [
+        { header: "Teléfonos", width: 26 },
+        { header: "Correos", width: 34 },
+    ];
+    if (!config?.meses.length) return [...base, ...motivo, ...contacto];
     return [
         ...base,
         { header: "Meses pagados", width: 26 },
         { header: "Meses pendientes", width: 26 },
         { header: "Pagos anticipados", width: 16 },
         ...motivo,
+        ...contacto,
     ];
 };
 
@@ -235,6 +255,7 @@ const playerCells = (p: PlayerRow, config?: PlayersConfig, conMotivo = false) =>
     const beca100 = esBeca100(p.Beca);
     // El motivo solo se afirma de una baja: en un activo el campo es otra cosa.
     const motivo = conMotivo ? [p.Status === 2 ? p.MotivoBaja || "—" : "—"] : [];
+    const contacto = [telefonosDe(p) || "—", correosDe(p) || "—"];
     const base = [
         p.IdJugador,
         p.Jugador,
@@ -246,7 +267,7 @@ const playerCells = (p: PlayerRow, config?: PlayersConfig, conMotivo = false) =>
         p.InscripcionPagada || beca100 ? "SI" : "NO",
         fecha(p.FechaInscripcion),
     ];
-    if (!config?.meses.length) return [...base, ...motivo];
+    if (!config?.meses.length) return [...base, ...motivo, ...contacto];
 
     const pagados = parseMesesPagados(p.MesesPagados);
     // La beca del 100% cubre todo, así que no deja meses pendientes.
@@ -259,6 +280,7 @@ const playerCells = (p: PlayerRow, config?: PlayersConfig, conMotivo = false) =>
         nombresMeses(pendientes, config.meses),
         p.PagosAnticipados > 0 ? String(p.PagosAnticipados) : "—",
         ...motivo,
+        ...contacto,
     ];
 };
 
@@ -276,7 +298,8 @@ export function exportPlayersToPdf(
         head: [cols.map((c) => c.header)],
         body: players.map((p) => playerCells(p, config, conMotivo).map(String)),
         theme: "grid",
-        styles: { fontSize: 8, cellPadding: 2 },
+        // Con el desglose de meses y el contacto son catorce columnas: a 8 pt no caben.
+        styles: { fontSize: cols.length > 11 ? 6.5 : 8, cellPadding: cols.length > 11 ? 1.4 : 2 },
         headStyles: { fillColor: BRAND, textColor: 255, fontStyle: "bold" },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
@@ -291,7 +314,7 @@ export function exportPlayersToPdf(
     });
 
     pdfFooter(doc);
-    doc.save(`${safeName(title)}_${safeName(subtitle)}.pdf`);
+    presentarPdf(doc, `${safeName(title)}_${safeName(subtitle)}.pdf`);
 }
 
 // ══ Movimientos (pagos) de todos los jugadores del listado ══
@@ -544,7 +567,7 @@ export function exportPagosToPdf(pagos: PagoRow[], jugador: string, subtitle: st
     });
 
     pdfFooter(doc);
-    doc.save(`Pagos_${safeName(jugador)}.pdf`);
+    presentarPdf(doc, `Pagos_${safeName(jugador)}.pdf`);
 }
 
 export async function exportPagosToExcel(pagos: PagoRow[], jugador: string, subtitle: string, total: number) {

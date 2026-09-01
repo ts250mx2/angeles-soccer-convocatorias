@@ -6,6 +6,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import GastosEfectivoDetalle, { type GastoEfectivo } from "@/components/GastosEfectivoDetalle";
 import { leerLogoClub } from "@/lib/logo-club";
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import {
   KeyRound, DollarSign, TrendingDown, Lock, MapPin,
@@ -386,7 +387,7 @@ export default function CajaPage() {
     doc.setTextColor(150);
     doc.text(`Generado el ${new Date().toLocaleString("es-MX")}`, 14, pageH - 8);
 
-    doc.save(`Corte_Caja_${(c.sede || "Sede").replace(/\s+/g, "_")}_Apertura${c.idApertura}.pdf`);
+    presentarPdf(doc, `Corte_Caja_${(c.sede || "Sede").replace(/\s+/g, "_")}_Apertura${c.idApertura}.pdf`);
   };
 
   // Ventas modal (desglose por forma de pago — frmProcCorteCaja)
