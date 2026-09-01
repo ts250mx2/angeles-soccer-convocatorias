@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Award,
   LayoutDashboard,
   Trophy,
   Users,
@@ -15,6 +16,7 @@ import {
   LayoutGrid,
   Boxes,
   CalendarDays,
+  CalendarCheck,
   CreditCard,
   GraduationCap,
   QrCode,
@@ -25,6 +27,8 @@ import {
   UserCog,
   UserPlus,
   UserRoundPlus,
+  Shirt,
+  Goal,
 } from "lucide-react";
 import type { IconoNav as NombreIcono } from "@/lib/navegacion";
 
@@ -34,6 +38,7 @@ import type { IconoNav as NombreIcono } from "@/lib/navegacion";
  * así que la traducción vive aquí y la usan el menú y la pantalla de permisos.
  */
 const ICONOS: Record<NombreIcono, React.ElementType> = {
+  Award,
   LayoutDashboard,
   Trophy,
   Users,
@@ -48,6 +53,7 @@ const ICONOS: Record<NombreIcono, React.ElementType> = {
   LayoutGrid,
   Boxes,
   CalendarDays,
+  CalendarCheck,
   CreditCard,
   GraduationCap,
   QrCode,
@@ -58,6 +64,8 @@ const ICONOS: Record<NombreIcono, React.ElementType> = {
   UserCog,
   UserPlus,
   UserRoundPlus,
+  Shirt,
+  Goal,
 };
 
 export default function IconoNav({

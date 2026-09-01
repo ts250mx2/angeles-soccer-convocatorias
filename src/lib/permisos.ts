@@ -121,6 +121,24 @@ export async function requierePagina(clave: string): Promise<ResultadoGuardia> {
     return { ok: true, user: sesion.user, paginas: sesion.paginas };
 }
 
+/**
+ * Exige CUALQUIERA de varias claves.
+ *
+ * Hace falta desde que un módulo se parte en dos entradas de menú —el catálogo completo
+ * y sus mitades de copas y ligas— y las tres comparten la misma API: pedir solo la clave
+ * de la pantalla completa dejaría fuera a quien únicamente tiene las copas.
+ */
+export async function requiereAlgunaPagina(claves: string[]): Promise<ResultadoGuardia> {
+    const sesion = await getSesionConPermisos();
+    if (!sesion) {
+        return { ok: false, status: 401, message: 'Sesión no válida o expirada. Inicia sesión de nuevo.' };
+    }
+    if (!claves.some((c) => sesion.paginas.has(c))) {
+        return { ok: false, status: 403, message: 'No tienes acceso a este módulo.' };
+    }
+    return { ok: true, user: sesion.user, paginas: sesion.paginas };
+}
+
 /** Igual que requierePagina, pero a partir de una ruta cualquiera de la aplicación. */
 export async function requiereRuta(ruta: string): Promise<ResultadoGuardia> {
     const clave = claveDeRuta(ruta);

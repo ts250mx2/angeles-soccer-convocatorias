@@ -12,8 +12,10 @@
  * La CLAVE de un módulo es su `href`. Es la misma clave que usa el manual y la que se
  * guarda en tblPerfilPaginas, de modo que un módulo nuevo solo se declara una vez.
  */
+import type { TipoTorneo } from '@/lib/acento-torneo';
 
 export type IconoNav =
+    | 'Award'
     | 'LayoutDashboard'
     | 'Trophy'
     | 'Users'
@@ -28,6 +30,7 @@ export type IconoNav =
     | 'LayoutGrid'
     | 'Boxes'
     | 'CalendarDays'
+    | 'CalendarCheck'
     | 'CreditCard'
     | 'GraduationCap'
     | 'QrCode'
@@ -37,7 +40,9 @@ export type IconoNav =
     | 'ShieldCheck'
     | 'UserCog'
     | 'UserRoundPlus'
-    | 'UserPlus';
+    | 'UserPlus'
+    | 'Shirt'
+    | 'Goal';
 
 export interface NavItem {
     label: string;
@@ -56,6 +61,22 @@ export interface NavItem {
      * Sin esto, `/adeudos/multi` no tendría dueño y quedaría fuera del control.
      */
     cubre?: string[];
+    /**
+     * El módulo NO se pinta en el menú, pero sigue existiendo: conserva su clave, su
+     * permiso y su sección del manual.
+     *
+     * Hace falta para la raíz `/`: se llega a ella desde Copas y Ligas, y sacarla del
+     * catálogo la dejaría sin dueño —`claveDeRuta('/')` devolvería null— y por tanto sin
+     * control de acceso, visible para cualquiera con sesión.
+     */
+    oculto?: boolean;
+    /**
+     * De qué torneos es la entrada, para pintarla de su color.
+     *
+     * Seis entradas del menú son tres pantallas repetidas —Convocatorias, Pagos y
+     * Catálogo, cada una en copas y en ligas—, y con el nombre solo se confunden.
+     */
+    acento?: TipoTorneo;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -82,17 +103,49 @@ export const NAV_ITEMS: NavItem[] = [
         icono: 'Trophy',
         children: [
             {
-                label: 'Convocatorias',
+                /* La portada completa. No se pinta en el menú —ahí van Copas y Ligas
+                   por separado—, pero sigue siendo el módulo dueño de la raíz y de la
+                   pantalla de alta: sin él, `/` se quedaría sin permiso. */
+                label: 'Convocatorias (todas)',
                 href: '/',
                 icono: 'ClipboardList',
-                // El alta de varias categorías vive en su propia pantalla.
-                cubre: ['/convocatorias'],
+                cubre: ['/convocatorias/torneo'],
+                oculto: true,
             },
             {
-                label: 'Pagos de Copas y Ligas',
+                label: 'Convocatorias Copas',
+                href: '/convocatorias/copas',
+                icono: 'Trophy',
+                acento: 'copa',
+            },
+            {
+                label: 'Convocatorias Ligas',
+                href: '/convocatorias/ligas',
+                icono: 'ClipboardList',
+                acento: 'liga',
+            },
+            {
+                /* La pantalla completa. Se queda fuera del menú —ahí van copas y ligas
+                   por separado— pero sigue siendo el módulo dueño de la ruta. */
+                label: 'Pagos de Copas y Ligas (todos)',
                 href: '/pagos-copas',
                 icono: 'Trophy',
                 adminOnly: true,
+                oculto: true,
+            },
+            {
+                label: 'Pagos de Copas',
+                href: '/pagos-copas/copas',
+                icono: 'Trophy',
+                adminOnly: true,
+                acento: 'copa',
+            },
+            {
+                label: 'Pagos de Ligas',
+                href: '/pagos-copas/ligas',
+                icono: 'Trophy',
+                adminOnly: true,
+                acento: 'liga',
             },
             {
                 label: 'Incorporaciones',
@@ -101,10 +154,26 @@ export const NAV_ITEMS: NavItem[] = [
                 adminOnly: true,
             },
             {
-                label: 'Catálogo de Copas y Ligas',
+                /* Igual que arriba: fuera del menú, dueño de la ruta y de su API. */
+                label: 'Catálogo de Copas y Ligas (todos)',
                 href: '/copas-ligas',
                 icono: 'Boxes',
                 adminOnly: true,
+                oculto: true,
+            },
+            {
+                label: 'Catálogo de Copas',
+                href: '/copas-ligas/copas',
+                icono: 'Boxes',
+                adminOnly: true,
+                acento: 'copa',
+            },
+            {
+                label: 'Catálogo de Ligas',
+                href: '/copas-ligas/ligas',
+                icono: 'Boxes',
+                adminOnly: true,
+                acento: 'liga',
             },
         ],
     },
@@ -161,9 +230,19 @@ export const NAV_ITEMS: NavItem[] = [
                 icono: 'UserCheck',
             },
             {
+                label: 'Categorías',
+                href: '/jugadores/categorias',
+                icono: 'LayoutGrid',
+            },
+            {
                 label: 'Becas',
                 href: '/jugadores/becas',
                 icono: 'GraduationCap',
+            },
+            {
+                label: 'Lealtad',
+                href: '/jugadores/lealtad',
+                icono: 'Award',
             },
             {
                 label: 'Preregistros',
@@ -177,6 +256,25 @@ export const NAV_ITEMS: NavItem[] = [
                 icono: 'MapPin',
                 adminOnly: true,
                 cubre: ['/adeudos'],
+            },
+        ],
+    },
+    {
+        /* El grupo es solo rótulo: la clave del permiso es el href de su hijo
+           ('/administracion-deportiva/plantillas'), que NO cambia. Por eso renombrarlo
+           no toca tblPerfilPaginas ni le quita el módulo a nadie. */
+        label: 'Admon Deportiva',
+        icono: 'Shirt',
+        children: [
+            {
+                label: 'Plantilla de Equipos',
+                href: '/administracion-deportiva/plantillas',
+                icono: 'Goal',
+            },
+            {
+                label: 'Asistencia',
+                href: '/administracion-deportiva/asistencia',
+                icono: 'CalendarCheck',
             },
         ],
     },
@@ -272,7 +370,41 @@ export const CLAVE_INCORPORACIONES = '/incorporaciones';
 export const CLAVE_PREREGISTROS = '/preregistros';
 export const CLAVE_LISTA_JUGADORES = '/jugadores';
 export const CLAVE_BECAS = '/jugadores/becas';
+export const CLAVE_LEALTAD = '/jugadores/lealtad';
+export const CLAVE_CATEGORIAS = '/jugadores/categorias';
+export const CLAVE_PLANTILLAS = '/administracion-deportiva/plantillas';
+export const CLAVE_ASISTENCIA = '/administracion-deportiva/asistencia';
 export const CLAVE_COPAS_LIGAS = '/copas-ligas';
+export const CLAVE_COPAS = '/convocatorias/copas';
+/** Las tres claves del catálogo: la completa y las dos mitades. Su API acepta cualquiera. */
+export const CLAVES_CATALOGO = ['/copas-ligas', '/copas-ligas/copas', '/copas-ligas/ligas'];
+export const CLAVE_LIGAS = '/convocatorias/ligas';
+
+/**
+ * Los módulos que muestran la FOTO de un jugador, y por tanto pueden pedirla.
+ *
+ * La foto de un menor no es un dato cualquiera: basta con tener sesión para pedir
+ * cualquier IdJugador, así que /api/jugadores/foto la reserva a estos módulos. La lista
+ * vive aquí y no dentro de la ruta porque son cinco pantallas las que la pintan —lista,
+ * becas, plantilla y las dos de convocatorias— y con la comprobación repartida, agregar
+ * una sexta significaría acordarse de tocar la ruta.
+ *
+ * Antes de sumar una clave aquí, la pregunta es si ese módulo tiene razón para ver la
+ * cara del niño, no si le resulta cómodo.
+ */
+export const CLAVES_VEN_FOTO_JUGADOR = [
+    CLAVE_LISTA_JUGADORES,
+    CLAVE_BECAS,
+    // Lealtad pinta la lista con la foto de cada alumno, igual que la Lista.
+    CLAVE_LEALTAD,
+    CLAVE_CATEGORIAS,
+    CLAVE_PLANTILLAS,
+    CLAVE_ASISTENCIA,
+    CLAVE_COPAS,
+    CLAVE_LIGAS,
+    // La portada completa de convocatorias, que es la dueña de la raíz.
+    '/',
+];
 
 export interface PaginaCatalogo {
     /** href del módulo: la misma clave del manual y de tblPerfilPaginas. */

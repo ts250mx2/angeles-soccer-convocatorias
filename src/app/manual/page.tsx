@@ -174,20 +174,22 @@ export default function ManualPage() {
      puede ver. Si mañana se agrega o restringe un módulo, el manual lo sigue solo. */
   const visibles = useMemo<SeccionVisible[]>(() => {
     const out: SeccionVisible[] = [];
-    const vistas = new Set<string>();
+    /* Por sección, no por clave: una pantalla partida en dos entradas de menú
+       —copas y ligas— tiene un solo capítulo, y se escribe una sola vez. */
+    const vistas = new Set<SeccionManual>();
 
     const agrega = (clave: string, href?: string, ruta?: string) => {
       const seccion = POR_CLAVE[clave];
-      if (!seccion || vistas.has(clave)) return;
-      vistas.add(clave);
+      if (!seccion || vistas.has(seccion)) return;
+      vistas.add(seccion);
       out.push({ seccion, href, ruta });
     };
 
     for (const item of NAV_ITEMS) {
-      if (!puedeVerItem(item, paginas)) continue;
+      if (item.oculto || !puedeVerItem(item, paginas)) continue;
 
       if (item.children) {
-        const hijosVisibles = item.children.filter((c) => puedeVerItem(c, paginas));
+        const hijosVisibles = item.children.filter((c) => !c.oculto && puedeVerItem(c, paginas));
         if (hijosVisibles.length === 0) continue;
         /* Un grupo puede tener una sección de conjunto (p. ej. Ventas) y ADEMÁS
            secciones propias de algunos hijos; se pintan las dos cosas. */

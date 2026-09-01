@@ -31,6 +31,14 @@ export type Bloque =
 export interface SeccionManual {
     /** Clave del menú: href del módulo, o `grupo:<label>` para un grupo completo. */
     clave: string;
+    /**
+     * Otras claves que responden a esta misma sección.
+     *
+     * Hace falta desde que una pantalla se parte en dos entradas de menú —copas por un
+     * lado, ligas por el otro—: el módulo completo ya no se pinta, así que sin alias su
+     * capítulo desaparecería del manual aunque las dos mitades sí se vean.
+     */
+    alias?: string[];
     titulo: string;
     audiencia: Audiencia[];
     bloques: Bloque[];
@@ -162,6 +170,7 @@ export const CIERRE: SeccionManual[] = [
 export const SECCIONES: SeccionManual[] = [
     {
         clave: '/',
+        alias: ['/convocatorias/copas', '/convocatorias/ligas'],
         titulo: 'Convocatorias',
         audiencia: ['operacion'],
         bloques: [
@@ -172,7 +181,7 @@ export const SECCIONES: SeccionManual[] = [
             { tipo: 'subtitulo', texto: 'La portada: una tarjeta por copa o liga' },
             {
                 tipo: 'parrafo',
-                texto: 'La pantalla abre mostrando **los torneos**, no las convocatorias sueltas, con las **copas** y las **ligas** en bloques aparte y ordenadas por **cuándo arrancan** —la fecha de inicio más temprana de sus categorías, que aparece junto a la etiqueta—, del más próximo al más lejano. Cada tarjeta resume el torneo completo: cuántas categorías tiene y **cuáles**, con los jugadores de cada una; el **total esperado** y el **recaudado**, y la **utilidad** de los dos. Al pulsarla se entra al detalle de siempre, ya acotado a ese torneo, y se vuelve con **← Copas y ligas**.',
+                texto: 'El menú trae dos entradas de la misma pantalla: **Convocatorias Copas** y **Convocatorias Ligas**. Son permisos distintos, así que se le puede dar a alguien únicamente las copas. Las dos abren mostrando **los torneos**, no las convocatorias sueltas, con las **copas** y las **ligas** en bloques aparte y ordenadas por **cuándo arrancan** —la fecha de inicio más temprana de sus categorías, que aparece junto a la etiqueta—, del más próximo al más lejano. Cada tarjeta resume el torneo completo: cuántas categorías tiene y **cuáles**, con los jugadores de cada una; el **total esperado** y el **recaudado**, y la **utilidad** de los dos. Al pulsarla se entra al detalle de siempre, ya acotado a ese torneo, y se vuelve con **← Copas y ligas**.',
             },
             {
                 tipo: 'tabla',
@@ -404,12 +413,17 @@ export const SECCIONES: SeccionManual[] = [
     },
     {
         clave: '/copas-ligas',
+        alias: ['/copas-ligas/copas', '/copas-ligas/ligas'],
         titulo: 'Catálogo de Copas y Ligas',
         audiencia: ['direccion'],
         bloques: [
             {
                 tipo: 'parrafo',
                 texto: 'Es el padrón de torneos: lo que existe aquí es lo que después se puede convocar y cobrar. Cada tarjeta es una copa o una liga, con su foto, su nombre y sus precios.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'El menú trae dos entradas de esta pantalla: **Catálogo de Copas** y **Catálogo de Ligas**. Es la misma, ya filtrada —por eso ahí no aparece el selector de tipo—, y son **permisos distintos**, así que se le puede dar a alguien únicamente las copas.',
             },
             { tipo: 'subtitulo', texto: 'Copa o liga, y por qué importa' },
             {
@@ -441,12 +455,17 @@ export const SECCIONES: SeccionManual[] = [
     },
     {
         clave: '/pagos-copas',
+        alias: ['/pagos-copas/copas', '/pagos-copas/ligas'],
         titulo: 'Pagos de Copas y Ligas',
         audiencia: ['direccion'],
         bloques: [
             {
                 tipo: 'parrafo',
                 texto: 'Concentra lo recaudado por concepto de torneos en la temporada: el total, el acumulado y el desglose por categoría. Sirve para responder "¿cuánto dejaron las copas este año y qué categorías aportaron más?".',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'El menú trae dos entradas de esta pantalla: **Pagos de Copas** y **Pagos de Ligas**. Es la misma, cada una con sus torneos; el tipo lo dice el producto cobrado, el mismo que se eligió en el catálogo. Son **permisos distintos**, así que se le puede dar a alguien únicamente las copas, y los totales de arriba cuentan **solo lo que se está viendo**.',
             },
             {
                 tipo: 'imagen',
@@ -495,7 +514,8 @@ export const SECCIONES: SeccionManual[] = [
                 tipo: 'tabla',
                 encabezados: ['Columna', 'Qué significa'],
                 filas: [
-                    ['Categoría', 'La categoría del jugador, resaltada en azul.'],
+                    ['Categoría', 'El año o los años de nacimiento del grupo, resaltados en azul: 2015, 2009-2010.'],
+                    ['Equipo', 'Lo que va después del año dentro de la misma categoría: A, SUR, A SLT, CLINICS, PORTEROLM.'],
                     ['Beca', 'El porcentaje de beca en morado; sin insignia es que no tiene.'],
                     ['Inscripción', '**SÍ** con la fecha del pago, **NO** si está pendiente, **N/A** en clinics y venta al público. La beca del 100% cuenta como pagada y los porteros heredan su inscripción de temporadas anteriores.'],
                     ['Adeudo', 'Meses de mensualidad vencidos sin pagar. **Sin inscripción** cuando lo pendiente es la inscripción misma; **No aplica** cuando el jugador no paga mensualidad (clinics, venta al público).'],
@@ -508,14 +528,79 @@ export const SECCIONES: SeccionManual[] = [
                 titulo: 'De dónde sale el motivo de baja',
                 texto: 'Es el campo de **observaciones de venta** de la ficha del jugador, que es donde se viene capturando por qué se fue: la columna que el sistema llama "motivo de baja" está vacía en la práctica. Por eso el motivo solo se muestra en las bajas: en un jugador activo ese mismo campo guarda cualquier otra observación. Si un jugador dado de baja no trae nada escrito, es que no se capturó.',
             },
+            { tipo: 'subtitulo', texto: 'La categoría son dos datos' },
+            {
+                tipo: 'parrafo',
+                texto: 'La categoría se captura de corrido —**2013SUR**, **2015A SLT**, **2009-2010F**—, pero ahí van dos cosas: el **año** (o el rango de años) de nacimiento del grupo, y el **equipo**, que es todo lo que sigue. La pantalla las separa en dos columnas y en dos filtros, para poder pedir "todos los 2015" sin importar el equipo, o "todos los SUR" sin importar el año.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'El guion no siempre es un rango',
+                texto: 'El año se lee solo al **principio**: en **2009-2010F** el rango son los años, pero en **2017PORTERO7-8** el guion es parte del nombre del equipo. Y los equipos que se ofrecen dependen de la sede y del año ya elegidos, para no acabar con la tabla vacía.',
+            },
             { tipo: 'subtitulo', texto: 'Filtros y exportación' },
             {
                 tipo: 'parrafo',
-                texto: 'Se puede buscar por nombre o ID y cortar por sede, categoría, beca, estatus (activos/bajas) y situación de pago. Los indicadores de arriba y los botones **Excel** y **PDF** trabajan sobre lo filtrado: lo que se ve es lo que se exporta.',
+                texto: 'Se puede buscar por nombre o ID y cortar por sede, **categoría**, **equipo**, beca, estatus (activos/bajas) y situación de pago. La tabla va **paginada** —25, 50, 100, 500, 1000 por página, o todos de un jalón— para que abrir la pantalla no arrastre las cuatro mil filas de golpe. Los indicadores de arriba y los botones **Excel** y **PDF** trabajan sobre **todo lo filtrado**, no solo la página a la vista: lo que dicen los filtros es lo que se exporta, con la categoría y el equipo también en columnas aparte.',
             },
             {
                 tipo: 'parrafo',
                 texto: 'Al tocar un renglón se abre el detalle del jugador con sus datos generales (nacimiento, edad, alta, teléfonos y correos) y el botón **Historial de pagos**, que es el mismo modal de pagos de Inscripciones y Adeudos, también exportable.',
+            },
+            { tipo: 'subtitulo', texto: 'La foto, pedida a los papás' },
+            {
+                tipo: 'parrafo',
+                texto: 'En la Hoja de Registro, debajo del recuadro de la fotografía, está **Pedir a los papás**: genera una liga que se manda por WhatsApp —directo al teléfono del padre o de la madre si están capturados, con el mensaje ya escrito— para que ellos tomen la foto desde su celular y la ficha se actualice sola, sin volver a citar al niño en la oficina. El mismo botón aparece al **tocar la foto** en el modal de pagos y datos generales, así que también se puede pedir desde Plantilla, Asistencia, Lealtad, Inscripciones y Adeudos.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'La liga vence a los 7 días',
+                texto: 'Y solo sirve para subir la foto: no enseña la foto actual ni ningún otro dato del jugador, apenas su nombre de pila y la categoría. Mientras está vigente, el papá puede volver a subirla si la primera salió mal; vencida, se genera otra desde la misma ficha.',
+            },
+        ],
+    },
+    {
+        clave: '/jugadores/categorias',
+        titulo: 'Categorías',
+        audiencia: ['operacion', 'direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: 'Los **grupos** que hoy tienen gente inscrita en la temporada, cada uno con cómo va de pagos. Sirve para la pregunta del entrenador y de la oficina: quiénes son mi grupo, cuántos son y quién debe.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Un grupo es categoría + sede',
+                texto: 'La misma categoría en dos sedes son **dos grupos**, cada uno con su gente y su entrenador; juntarlos daría un número que no le sirve a nadie. Por eso la tarjeta lleva siempre la sede debajo del nombre.',
+            },
+            {
+                tipo: 'tabla',
+                encabezados: ['Cifra', 'Qué cuenta'],
+                filas: [
+                    ['Total inscritos', 'Los inscritos del ciclo, con la MISMA regla que Inscripciones: pagaron su inscripción o, si son porteros, ya arrancaron la temporada. **Incluye a los becados** —lo dice la etiqueta—, porque es la plantilla del grupo y no el padrón de quien paga.'],
+                    ['Con adeudos', 'Los que arrastran mensualidades vencidas, con la regla completa de Adeudos por Sede.'],
+                    ['Becados', 'Los que tienen beca de mensualidades. Salen también en el total de inscritos: no se restan.'],
+                ],
+            },
+            { tipo: 'subtitulo', texto: 'El listado del grupo' },
+            {
+                tipo: 'parrafo',
+                texto: 'Al tocar un grupo se abre su **listado de alumnos**: el mismo de Inscripciones y Adeudos, así que dice exactamente lo mismo se llegue por donde se llegue. Cada renglón trae el **teléfono de papá y mamá** —los correos, al pasar el mouse—, la palomita de inscripción y los cuadritos de mensualidades.',
+            },
+            {
+                tipo: 'lista',
+                items: [
+                    '**PDF**: el listado para imprimir o mandar.',
+                    '**Excel**: el mismo listado en columnas, con los teléfonos y los correos al final.',
+                    '**Excel de Movimientos**: además, el detalle de pagos de cada alumno del grupo.',
+                ],
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Arriba se busca por **categoría o sede**, y la vista cambia entre **tarjetas** y **renglones**: las tarjetas para revisar de un vistazo, los renglones para comparar muchos grupos a la vez.',
             },
         ],
     },
@@ -552,6 +637,54 @@ export const SECCIONES: SeccionManual[] = [
             {
                 tipo: 'parrafo',
                 texto: 'Los botones **Excel** y **PDF** exportan exactamente lo filtrado, con el desglose por tipo al pie.',
+            },
+        ],
+    },
+    {
+        clave: '/jugadores/lealtad',
+        titulo: 'Lealtad',
+        audiencia: ['operacion', 'direccion'],
+        bloques: [
+            {
+                tipo: 'parrafo',
+                texto: '**Cuánto tiempo lleva cada alumno en la escuela.** La permanencia se cuenta por las **inscripciones que ha pagado**: el club cobra una inscripción por semestre a todo el mundo, así que mientras el niño siga reinscribiéndose, sigue aquí. Como no depende de una temporada en particular —es su historia completa— esta pantalla no lleva selector de temporada.',
+            },
+            { tipo: 'subtitulo', texto: 'Ciclos y años' },
+            {
+                tipo: 'tabla',
+                encabezados: ['Columna', 'Qué dice'],
+                filas: [
+                    ['Ciclos', 'Cuántos semestres de inscripción tiene pagados. Es el dato duro del que sale todo lo demás.'],
+                    ['Años', '**Dos ciclos son un año.** Ocho ciclos son cuatro años, que es lo máximo que hoy se puede tener: el registro de inscripciones empieza en agosto de 2022.'],
+                    ['Desde / Hasta', 'Su primer y su último semestre inscrito. Sirven para ver el lapso de punta a punta.'],
+                    ['REGRESÓ', 'Entre su primer semestre y el último hay más semestres que los que pagó: se fue y volvió.'],
+                    ['Inscrito', 'Su presente: **SÍ** o **NO** está inscrito en la **temporada activa**, con la misma regla que la pantalla de Inscripciones. **N/A** en clinics, que no manejan inscripción. Así se ve de un vistazo al veterano de años que todavía no se reinscribe.'],
+                ],
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Los años cuentan lo pagado, no el calendario',
+                texto: 'Quien se inscribió en 2023, desapareció dos años y volvió este agosto lleva **un año** en la escuela, no tres. Por eso la columna Años se calcula con los ciclos pagados y no con la distancia entre Desde y Hasta; el caso se puede ver igual con la marca REGRESÓ y con el botón del mismo nombre.',
+            },
+            { tipo: 'subtitulo', texto: 'Cómo se lee la pantalla' },
+            {
+                tipo: 'parrafo',
+                texto: 'Los cinco indicadores y la gráfica cuentan sobre lo que dejaron sede, categoría, estatus y búsqueda. Las **barras** reparten a los alumnos con historial por tramo de permanencia; al tocar un tramo, la tabla se queda solo con esos. **Permanencia media** es el promedio de años, y se saca únicamente entre quienes tienen historial.',
+            },
+            {
+                tipo: 'nota',
+                estilo: 'ojo',
+                titulo: 'Sin registro',
+                texto: 'Son alumnos sin ninguna inscripción capturada como producto de inscripción: no se les puede medir la permanencia. La pantalla arranca escondiéndolos pero los cuenta en su indicador, porque saber de cuántos no hay constancia es parte de lo que este reporte debe delatar. Se ven eligiendo **Sin registro** en el filtro de historial.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Cada renglón trae la **foto** del alumno (sus iniciales mientras no tenga), y al **tocarlo se abre su detalle**: los datos generales de la ficha y el historial de pagos, el mismo modal de la Lista de Jugadores, Inscripciones y Adeudos.',
+            },
+            {
+                tipo: 'parrafo',
+                texto: 'Los botones **Excel** y **PDF** exportan exactamente lo filtrado, con el reparto por tramo y el promedio al pie.',
             },
         ],
     },
@@ -1164,9 +1297,9 @@ export const SECCIONES: SeccionManual[] = [
     },
 ];
 
-/** Índice por clave, para que la pantalla resuelva rápido. */
+/** Índice por clave (y por alias), para que la pantalla resuelva rápido. */
 export const POR_CLAVE: Record<string, SeccionManual> = Object.fromEntries(
-    SECCIONES.map((s) => [s.clave, s]),
+    SECCIONES.flatMap((s) => [s.clave, ...(s.alias ?? [])].map((c) => [c, s] as const)),
 );
 
 /** Un bloque como texto plano, para alimentar al agente. */

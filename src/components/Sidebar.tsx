@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useUser, usePermisos } from "@/contexts/user-context";
 import { NAV_ITEMS, claveDeRuta, puedeVerItem, type NavItem } from "@/lib/navegacion";
+import { ACENTO_TORNEO } from "@/lib/acento-torneo";
 import IconoNav from "./IconoNav";
 import {
   ChevronDown,
@@ -78,6 +79,10 @@ export default function Sidebar() {
   const claveActual = claveDeRuta(pathname);
   const isActive = (href: string) => claveActual === href;
 
+  /* El color de la entrada cuando es de copas o de ligas. Sin acento, el azul de
+     siempre: es el que llevan las otras veintitantas entradas del menú. */
+  const acentoDe = (item: NavItem) => (item.acento ? ACENTO_TORNEO[item.acento] : null);
+
   const handleLogout = async () => {
     // Borra la cookie de sesión del servidor además del estado local.
     try {
@@ -102,7 +107,7 @@ export default function Sidebar() {
     const out: NavItem[] = [];
 
     for (const item of NAV_ITEMS) {
-      if (!puedeVerItem(item, paginas)) continue;
+      if (item.oculto || !puedeVerItem(item, paginas)) continue;
 
       if (!item.children) {
         if (!buscando || normaliza(item.label).includes(consulta)) out.push(item);
@@ -110,8 +115,11 @@ export default function Sidebar() {
       }
 
       const coincideGrupo = !buscando || normaliza(item.label).includes(consulta);
+      /* `oculto` saca el módulo del menú sin sacarlo del catálogo: sigue teniendo su
+         permiso y su sección del manual, solo que no se llega a él por aquí. */
       const hijos = item.children.filter(
         (hijo) =>
+          !hijo.oculto &&
           puedeVerItem(hijo, paginas) &&
           (coincideGrupo || normaliza(hijo.label).includes(consulta)),
       );
@@ -275,6 +283,7 @@ export default function Sidebar() {
             if (!item.children) {
               // Simple link
               const active = item.href ? isActive(item.href) : false;
+              const acento = acentoDe(item);
               return (
                 <Link
                   key={item.label}
@@ -283,14 +292,16 @@ export default function Sidebar() {
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative
                     ${
                       active
-                        ? "bg-blue-600/20 text-blue-300 border border-blue-500/30"
+                        ? `border ${acento ? acento.menuActivo : "bg-blue-600/20 text-blue-300 border-blue-500/30"}`
                         : "text-slate-400 hover:text-white hover:bg-white/8 border border-transparent"
                     }
                     ${collapsed ? "justify-center" : ""}`}
                 >
                   <span
                     className={`flex-shrink-0 transition-colors ${
-                      active ? "text-blue-400" : "group-hover:text-white"
+                      active
+                        ? acento ? acento.icono : "text-blue-400"
+                        : acento ? acento.icono : "group-hover:text-white"
                     }`}
                   >
                     <IconoNav nombre={item.icono} size={18} />
@@ -301,7 +312,7 @@ export default function Sidebar() {
                     </span>
                   )}
                   {active && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-blue-400 rounded-r-full" />
+                    <span className={`absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full ${acento ? acento.barra : "bg-blue-400"}`} />
                   )}
                 </Link>
               );
@@ -364,6 +375,7 @@ export default function Sidebar() {
                       const childActive = child.href
                         ? isActive(child.href)
                         : false;
+                      const acento = acentoDe(child);
                       return (
                         <Link
                           key={child.label}
@@ -371,15 +383,15 @@ export default function Sidebar() {
                           className={`flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all duration-200 group relative
                             ${
                               childActive
-                                ? "bg-blue-600/20 text-blue-300 border border-blue-500/20"
+                                ? `border ${acento ? acento.menuActivo : "bg-blue-600/20 text-blue-300 border-blue-500/20"}`
                                 : "text-slate-500 hover:text-white hover:bg-white/5 border border-transparent"
                             }`}
                         >
                           <span
                             className={`flex-shrink-0 ${
                               childActive
-                                ? "text-blue-400"
-                                : "group-hover:text-slate-300"
+                                ? acento ? acento.icono : "text-blue-400"
+                                : acento ? acento.icono : "group-hover:text-slate-300"
                             }`}
                           >
                             <IconoNav nombre={child.icono} size={16} />
@@ -388,7 +400,7 @@ export default function Sidebar() {
                             {child.label}
                           </span>
                           {childActive && (
-                            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-blue-400 rounded-r-full" />
+                            <span className={`absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-r-full ${acento ? acento.barra : "bg-blue-400"}`} />
                           )}
                         </Link>
                       );
