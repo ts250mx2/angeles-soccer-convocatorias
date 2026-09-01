@@ -1,8 +1,10 @@
 "use client";
 
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
+import { partirCategoria } from '@/lib/categoria-equipo';
 import { becaPct } from "@/lib/adeudos-export";
 
 /** Fila de la Lista de Jugadores, tal como la entrega /api/jugadores. */
@@ -15,6 +17,10 @@ export interface JugadorListaRow {
     Beca: string;
     IdSede: number;
     SedeNombre: string;
+    /** Tiene foto en su ficha; la imagen la sirve /api/jugadores/foto. */
+    TieneFoto?: number;
+    /** Sello para romper el caché del navegador cuando la foto cambia. */
+    FotoVersion?: string | null;
     FechaNacimiento: string | null;
     Edad: number | null;
     FechaAlta: string | null;
@@ -81,7 +87,8 @@ const COLS = [
     { header: "ID", width: 9 },
     { header: "Jugador", width: 34 },
     { header: "Sede", width: 20 },
-    { header: "Categoría", width: 13 },
+    { header: "Categoría", width: 11 },
+    { header: "Equipo", width: 13 },
     { header: "Nacimiento", width: 13 },
     { header: "Edad", width: 7 },
     { header: "Teléfonos", width: 24 },
@@ -100,7 +107,8 @@ const cells = (j: JugadorListaRow, conMotivo = false): (string | number)[] => [
     j.IdJugador,
     j.Jugador,
     j.SedeNombre || "—",
-    j.Categoria || "—",
+    partirCategoria(j.Categoria).anio || "—",
+    partirCategoria(j.Categoria).equipo || "—",
     j.FechaNacimiento || "—",
     j.Edad ?? "—",
     telefonos(j) || "—",
@@ -172,7 +180,7 @@ export function exportJugadoresToPdf(rows: JugadorListaRow[], titulo: string, su
         doc.text(`Página ${i} de ${pages}`, pageW - margin, pageH - 8, { align: "right" });
     }
 
-    doc.save(`${safeName(titulo)}_${safeName(subtitulo)}.pdf`);
+    presentarPdf(doc, `${safeName(titulo)}_${safeName(subtitulo)}.pdf`);
 }
 
 export async function exportJugadoresToExcel(rows: JugadorListaRow[], titulo: string, subtitulo: string) {

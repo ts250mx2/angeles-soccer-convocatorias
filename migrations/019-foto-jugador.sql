@@ -1,0 +1,35 @@
+-- Deja tblJugadores.Foto en condiciones de guardar la foto del jugador.
+--
+-- La columna NO es nueva: existe desde siempre, declarada como blob, y esta vacia en
+-- los 4,458 jugadores. Nada la escribe ni la lee. El sistema de escritorio no guarda
+-- las fotos en la base: frmCapFotoNuevo las escribe como JPG en el recurso compartido
+-- \Fotos\ y solo marca banderas (tblSocios.EsJpg, ModificadoFoto), y ademas solo para
+-- socios y empleados, no para jugadores. Asi que esta columna quedo de algun plan que
+-- no se termino, y esta migracion la aprovecha en vez de agregar una segunda.
+--
+-- Dos cambios, y los dos importan:
+--
+--   blob -> longtext   Un blob tope a 65,535 bytes. La foto viaja y se guarda como
+--                      data URI en base64 ('data:image/webp;base64,...'), que para una
+--                      foto de 640 px ronda los 40-120 KB: no cabe. Se pasa a longtext
+--                      para igualar a tblLigas.Foto, que ya guarda escudos en ese mismo
+--                      formato (el mayor pesa 123,559 caracteres) y que ya sabe leer y
+--                      servir la aplicacion.
+--
+--   El cambio de tipo es SIN PERDIDA porque no hay un solo renglon con dato. Si algun
+--   dia lo hubiera, un blob binario convertido a texto se corromperia; por eso conviene
+--   confirmar antes de aplicarla en otra base:
+--
+--       SELECT COUNT(*) FROM tblJugadores WHERE Foto IS NOT NULL AND LENGTH(Foto) > 0;
+--
+--   Debe dar 0. Si no da 0, NO apliques esto: primero hay que decidir que hacer con lo
+--   que ya este guardado.
+--
+-- El sistema de escritorio no se ve afectado: frmCapJugador hace SELECT A.* pero nunca
+-- toca rs!Foto, asi que la columna le pasa de largo con cualquier tipo.
+--
+-- Para revertir (solo si sigue vacia; si ya hay fotos, revertir las TRUNCA a 64 KB y
+-- las deja inservibles):
+--   ALTER TABLE tblJugadores MODIFY Foto BLOB NULL;
+
+ALTER TABLE tblJugadores MODIFY Foto LONGTEXT NULL;

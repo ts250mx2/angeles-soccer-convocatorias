@@ -3,57 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ImagePlus, Trash2, Loader2, AlertCircle } from "lucide-react";
 import { FORMATOS_FOTO, MAX_FOTO_BASE64 } from "@/lib/copas-ligas";
+import { imagenADataUrl } from "@/lib/imagen";
 
 /**
  * Carga de una imagen por las tres vías que la gente intenta: arrastrarla, pegarla con
  * Ctrl+V o elegir el archivo.
  *
- * La imagen se reduce en el navegador ANTES de mandarla. Sin ese paso, la foto que sale
- * de un celular pesa varios MB, y como se guarda en la base (tblLigas.Foto) cada
- * consulta del catálogo la arrastraría. Un escudo de 512 px basta de sobra para lo que
- * la pantalla muestra.
+ * La imagen se reduce en el navegador ANTES de mandarla (ver `@/lib/imagen`). Sin ese
+ * paso, la foto que sale de un celular pesa varios MB, y como se guarda en la base
+ * (tblLigas.Foto) cada consulta del catálogo la arrastraría. Un escudo de 512 px basta
+ * de sobra para lo que la pantalla muestra.
  */
 
-/** Lado mayor al que se reduce la imagen. */
+/** Lado mayor al que se reduce el escudo. */
 const MAX_LADO = 512;
-
-/** Calidad de la recompresión. 0.9 no se nota a la vista y baja mucho el peso. */
-const CALIDAD = 0.9;
-
-/**
- * Reduce la imagen y la devuelve como data URI.
- *
- * Se pide WEBP porque conserva la transparencia (los escudos suelen tener fondo
- * transparente) y pesa menos que PNG. Si el navegador no sabe escribirlo, `toDataURL`
- * devuelve PNG por su cuenta: los dos están entre los formatos aceptados, así que no
- * hay que detectar nada.
- */
-async function imagenADataUrl(archivo: Blob): Promise<string> {
-    const url = URL.createObjectURL(archivo);
-    try {
-        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-            const el = new Image();
-            el.onload = () => resolve(el);
-            el.onerror = () => reject(new Error("No se pudo leer la imagen"));
-            el.src = url;
-        });
-
-        const escala = Math.min(1, MAX_LADO / Math.max(img.width, img.height));
-        const ancho = Math.max(1, Math.round(img.width * escala));
-        const alto = Math.max(1, Math.round(img.height * escala));
-
-        const canvas = document.createElement("canvas");
-        canvas.width = ancho;
-        canvas.height = alto;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("No se pudo procesar la imagen");
-        ctx.drawImage(img, 0, 0, ancho, alto);
-
-        return canvas.toDataURL("image/webp", CALIDAD);
-    } finally {
-        URL.revokeObjectURL(url);
-    }
-}
 
 export default function FotoUploader({
     valor,
@@ -82,7 +45,7 @@ export default function FotoUploader({
 
             setProcesando(true);
             try {
-                const dataUrl = await imagenADataUrl(archivo);
+                const dataUrl = await imagenADataUrl(archivo, { maxLado: MAX_LADO });
                 if (dataUrl.length > MAX_FOTO_BASE64) {
                     setError("La imagen sigue siendo demasiado grande. Prueba con otra.");
                     return;

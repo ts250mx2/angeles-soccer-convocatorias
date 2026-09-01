@@ -48,6 +48,12 @@ export async function GET(request: Request) {
             `SELECT
                 J.IdJugador,
                 J.Jugador,
+                /* La foto NO viaja en el JSON: son data URIs de hasta 120 KB y una
+                   lista de miles de filas los arrastraría todos. Solo va si la hay y
+                   cuándo cambió; la imagen la pide el navegador a /api/jugadores/foto,
+                   que sí se cachea. */
+                CASE WHEN J.Foto IS NOT NULL AND J.Foto <> '' THEN 1 ELSE 0 END AS TieneFoto,
+                DATE_FORMAT(J.FechaAct, '%Y%m%d%H%i%s') AS FotoVersion,
                 J.Categoria,
                 J.Status,
                 COALESCE(NULLIF(TRIM(J.Beca), ''), '0') AS Beca,

@@ -53,11 +53,15 @@ export async function GET(request: Request) {
                 J.Padre, J.TelPadre, J.CorreoElectronicoPadre,
                 J.Madre, J.TelMadre, J.CorreoElectronicoMadre,
                 J.TelCasa, J.ContactoEmergencia, J.ViveCon,
-                J.Escuela, J.BecaLigas, J.Coach, J.Grupo,
+                J.Escuela, J.BecaCopas, J.BecaLigas, J.Coach, J.Grupo,
                 J.Calle, J.NumExterior, J.NumInterior, J.Colonia,
                 J.CodigoPostal, J.Municipio, J.Estado,
                 DATE_FORMAT(J.FechaAlta, '%d/%m/%Y') as FechaAlta,
-                J.Alerta, J.Observaciones, J.MotivoBaja
+                J.Alerta, J.Observaciones, J.MotivoBaja,
+                -- La foto no viaja aquí: la sirve /api/jugadores/foto. Solo si la hay
+                -- y cuándo cambió, que es lo que la pantalla necesita para pedirla.
+                CASE WHEN J.Foto IS NOT NULL AND J.Foto <> '' THEN 1 ELSE 0 END AS TieneFoto,
+                DATE_FORMAT(J.FechaAct, '%Y%m%d%H%i%s') AS FotoVersion
              FROM tblJugadores J
              LEFT JOIN tblSedes S ON J.IdSede = S.IdSede
              WHERE J.IdJugador = ?`,

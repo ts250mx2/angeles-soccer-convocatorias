@@ -357,6 +357,13 @@ export async function GET(request: Request) {
                 DATE_FORMAT(J.FechaNacimiento, '%d/%m/%Y') as FechaNacimiento,
                 J.IdSede,
                 COALESCE(S.Sede, J.Sede) as SedeNombre,
+                /* Contacto de los papás: quien abre el listado de un grupo casi siempre
+                   es para localizar a alguien, y tenerlo aquí evita ir jugador por
+                   jugador a su ficha. */
+                J.TelPadre,
+                J.TelMadre,
+                J.CorreoElectronicoPadre,
+                J.CorreoElectronicoMadre,
                 /* Motivo de la baja. Se captura en ObservacionesVenta y no en
                    MotivoBaja: esa columna existe pero está vacía (2 de 2518 bajas),
                    mientras que aquí sí se escribe por qué se fue el jugador. En un

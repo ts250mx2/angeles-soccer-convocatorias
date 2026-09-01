@@ -8,13 +8,17 @@ import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModa
 import {
   Users, Search, RefreshCw, X, AlertCircle, FileSpreadsheet, FileText,
   Receipt, ChevronUp, ChevronDown, GraduationCap, CalendarDays, Phone,
-  Mail, MapPin, IdCard, Loader2,
+  Mail, MapPin, IdCard, Loader2, UserPlus, Pencil,
+  ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight,
 } from "lucide-react";
+import JugadorModal, { type OpcionSede } from "@/components/JugadorModal";
+import AvatarJugador from "@/components/AvatarJugador";
 import {
   type JugadorListaRow, type EstadoPago, estadoPago, etiquetaAdeudo, telefonos,
   exportJugadoresToPdf, exportJugadoresToExcel,
 } from "@/lib/jugadores-export";
 import { becaPct, becaLabel } from "@/lib/adeudos-export";
+import { partirCategoria } from "@/lib/categoria-equipo";
 
 /**
  * Lista de Jugadores: la plantilla completa, jugador por jugador, con su situación en
@@ -32,7 +36,7 @@ interface Temporada {
 type FiltroBeca = "todos" | "becados" | "sin-beca";
 type FiltroEstatus = "activos" | "bajas" | "todos";
 type FiltroPago = "todos" | EstadoPago;
-type OrdenKey = "Jugador" | "SedeNombre" | "Categoria" | "Edad" | "MesesDebe";
+type OrdenKey = "Jugador" | "SedeNombre" | "Categoria" | "Equipo" | "Edad" | "MesesDebe";
 /** Indicadores de arriba; cada uno es un atajo a su propia lista de jugadores. */
 type KpiJugadores = "total" | "inscritos" | "becados" | "adeudo" | "sin-inscripcion";
 
@@ -84,7 +88,10 @@ export default function JugadoresPage() {
 
   const [busqueda, setBusqueda] = useState("");
   const [sedeFiltro, setSedeFiltro] = useState("");
+  /* La categoría del jugador son dos datos pegados —el año y el equipo— y se filtran
+     por separado: "todos los 2015" y "todos los SUR" son dos preguntas distintas. */
   const [categoriaFiltro, setCategoriaFiltro] = useState("");
+  const [equipoFiltro, setEquipoFiltro] = useState("");
   const [becaFiltro, setBecaFiltro] = useState<FiltroBeca>("todos");
   /* Corte de inscripción. No va en el desplegable de "Situación" porque no es
      excluyente con él: un inscrito puede además traer adeudo. Se enciende y se apaga
@@ -94,8 +101,21 @@ export default function JugadoresPage() {
   const [pagoFiltro, setPagoFiltro] = useState<FiltroPago>("todos");
   const [orden, setOrden] = useState<{ key: OrdenKey; dir: "asc" | "desc" } | null>(null);
 
+  /* Paginación de la tabla. Son unas cuatro mil filas y pintarlas todas de golpe
+     entorpece la pantalla; los indicadores siguen contando sobre la lista completa y
+     Excel y PDF exportan todo lo filtrado, no solo la página a la vista. El 0 es
+     "Todos": quien quiera la tabla entera de un jalón la sigue teniendo. */
+  const [porPagina, setPorPagina] = useState(100);
+  const [pagina, setPagina] = useState(1);
+
   const [detalle, setDetalle] = useState<JugadorListaRow | null>(null);
   const [pagosTarget, setPagosTarget] = useState<PagosTarget | null>(null);
+
+  /* La ficha de captura. `null` es "cerrada"; dentro, un IdJugador para editar o `null`
+     para dar de alta —por eso el estado guarda un objeto y no solo el id: si no, no
+     habría manera de distinguir "alta" de "cerrada". */
+  const [ficha, setFicha] = useState<{ idJugador: number | null } | null>(null);
+  const [sedesCatalogo, setSedesCatalogo] = useState<OpcionSede[]>([]);
 
   useEffect(() => {
     if (isInitialized && !user) router.push("/login");
@@ -118,6 +138,21 @@ export default function JugadoresPage() {
       } catch {
         setError("Error de conexión");
         setIsLoading(false);
+      }
+    })();
+  }, [user, puedeVer]);
+
+  /* Las sedes, para el selector de la ficha. Se piden una vez al entrar y no al abrir
+     el formulario: son treinta y siempre las mismas, y así la ficha abre en seco. */
+  useEffect(() => {
+    if (!user || !puedeVer) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/jugadores/catalogos");
+        const json = await res.json();
+        if (json.success) setSedesCatalogo(json.data.sedes);
+      } catch {
+        /* Sin sedes la ficha no deja guardar y lo dice; la lista sigue funcionando. */
       }
     })();
   }, [user, puedeVer]);
@@ -155,8 +190,21 @@ export default function JugadoresPage() {
   );
   const categorias = useMemo(() => {
     const base = sedeFiltro ? filas.filter((f) => f.SedeNombre === sedeFiltro) : filas;
-    return [...new Set(base.map((f) => f.Categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    return [...new Set(base.map((f) => partirCategoria(f.Categoria).anio).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
   }, [filas, sedeFiltro]);
+
+  /* Los equipos cuelgan de la sede y del año ya elegidos: ofrecer el A de una categoría
+     que no está a la vista solo sirve para dejar la tabla vacía. */
+  const equipos = useMemo(() => {
+    const base = filas.filter(
+      (f) =>
+        (!sedeFiltro || f.SedeNombre === sedeFiltro) &&
+        (!categoriaFiltro || partirCategoria(f.Categoria).anio === categoriaFiltro),
+    );
+    return [...new Set(base.map((f) => partirCategoria(f.Categoria).equipo).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+  }, [filas, sedeFiltro, categoriaFiltro]);
 
   /* Base del reporte: sede, categoría, estatus y búsqueda, SIN los cortes de beca y
      situación de pago. Los indicadores se cuentan sobre esta base para que sigan
@@ -169,11 +217,15 @@ export default function JugadoresPage() {
       if (estatusFiltro === "activos" && f.Status !== 0) return false;
       if (estatusFiltro === "bajas" && f.Status !== 2) return false;
       if (sedeFiltro && f.SedeNombre !== sedeFiltro) return false;
-      if (categoriaFiltro && f.Categoria !== categoriaFiltro) return false;
+      if (categoriaFiltro || equipoFiltro) {
+        const { anio, equipo } = partirCategoria(f.Categoria);
+        if (categoriaFiltro && anio !== categoriaFiltro) return false;
+        if (equipoFiltro && equipo !== equipoFiltro) return false;
+      }
       if (q && !f.Jugador.toLowerCase().includes(q) && String(f.IdJugador) !== q) return false;
       return true;
     });
-  }, [filas, busqueda, sedeFiltro, categoriaFiltro, estatusFiltro]);
+  }, [filas, busqueda, sedeFiltro, categoriaFiltro, equipoFiltro, estatusFiltro]);
 
   const filtrados = useMemo(() => {
     let out = base.filter((f) => {
@@ -189,11 +241,40 @@ export default function JugadoresPage() {
       out = [...out].sort((a, b) => {
         if (orden.key === "Edad") return ((a.Edad ?? 0) - (b.Edad ?? 0)) * dir;
         if (orden.key === "MesesDebe") return (a.MesesDebe - b.MesesDebe) * dir;
+        /* Categoría y Equipo salen del mismo campo. Cada una ordena por lo suyo y
+           desempata con la otra, para que los 2015 queden juntos y en orden de equipo,
+           y al ordenar por equipo los A queden juntos y en orden de año. */
+        if (orden.key === "Categoria" || orden.key === "Equipo") {
+          const pa = partirCategoria(a.Categoria);
+          const pb = partirCategoria(b.Categoria);
+          const cmp = orden.key === "Categoria"
+            ? pa.anio.localeCompare(pb.anio) || pa.equipo.localeCompare(pb.equipo)
+            : pa.equipo.localeCompare(pb.equipo) || pa.anio.localeCompare(pb.anio);
+          return cmp * dir;
+        }
         return String(a[orden.key] ?? "").localeCompare(String(b[orden.key] ?? "")) * dir;
       });
     }
     return out;
   }, [base, becaFiltro, inscripcionFiltro, pagoFiltro, orden]);
+
+  /* Cualquier cambio de filtros, orden, temporada o tamaño de página regresa a la
+     primera: quedarse parado en la página 7 de una lista que acaba de cambiar enseña
+     un pedazo cualquiera. */
+  useEffect(() => {
+    setPagina(1);
+  }, [busqueda, sedeFiltro, categoriaFiltro, equipoFiltro, becaFiltro, inscripcionFiltro,
+    estatusFiltro, pagoFiltro, orden, temporadaId, porPagina]);
+
+  const totalPaginas = porPagina === 0 ? 1 : Math.max(1, Math.ceil(filtrados.length / porPagina));
+  /* Acotada por si la lista encogió con la página avanzada: nunca una página vacía. */
+  const paginaActual = Math.min(pagina, totalPaginas);
+  const visibles = useMemo(
+    () => (porPagina === 0
+      ? filtrados
+      : filtrados.slice((paginaActual - 1) * porPagina, paginaActual * porPagina)),
+    [filtrados, porPagina, paginaActual],
+  );
 
   const kpis = useMemo(() => ({
     total: base.length,
@@ -237,7 +318,7 @@ export default function JugadoresPage() {
   };
 
   const hayFiltros = Boolean(
-    busqueda || sedeFiltro || categoriaFiltro || becaFiltro !== "todos" ||
+    busqueda || sedeFiltro || categoriaFiltro || equipoFiltro || becaFiltro !== "todos" ||
     estatusFiltro !== "activos" || pagoFiltro !== "todos" || inscripcionFiltro !== "todos",
   );
 
@@ -245,6 +326,7 @@ export default function JugadoresPage() {
     setBusqueda("");
     setSedeFiltro("");
     setCategoriaFiltro("");
+    setEquipoFiltro("");
     setBecaFiltro("todos");
     setEstatusFiltro("activos");
     setPagoFiltro("todos");
@@ -254,14 +336,15 @@ export default function JugadoresPage() {
   const subtituloExport = useMemo(() => {
     const partes = [temporadaNombre];
     if (sedeFiltro) partes.push(sedeFiltro);
-    if (categoriaFiltro) partes.push(categoriaFiltro);
+    if (categoriaFiltro) partes.push(`Categoría ${categoriaFiltro}`);
+    if (equipoFiltro) partes.push(`Equipo ${equipoFiltro}`);
     if (becaFiltro !== "todos") partes.push(becaFiltro === "becados" ? "Solo becados" : "Sin beca");
     if (inscripcionFiltro === "inscritos") partes.push("Solo inscritos");
     if (estatusFiltro !== "todos") partes.push(estatusFiltro === "activos" ? "Activos" : "Bajas");
     if (pagoFiltro !== "todos") partes.push(ETIQUETA_PAGO[pagoFiltro]);
     if (busqueda.trim()) partes.push(`Búsqueda: ${busqueda.trim()}`);
     return partes.filter(Boolean).join(" · ");
-  }, [temporadaNombre, sedeFiltro, categoriaFiltro, becaFiltro, inscripcionFiltro, estatusFiltro, pagoFiltro, busqueda]);
+  }, [temporadaNombre, sedeFiltro, categoriaFiltro, equipoFiltro, becaFiltro, inscripcionFiltro, estatusFiltro, pagoFiltro, busqueda]);
 
   const exportar = async (formato: "pdf" | "excel") => {
     if (filtrados.length === 0) return;
@@ -293,9 +376,14 @@ export default function JugadoresPage() {
 
   return (
     <DashboardLayout>
-      <main className="p-4 md:p-8 overflow-y-auto flex-1">
-        <div className="max-w-7xl mx-auto">
-          <div className="bg-[#0f172a] backdrop-blur-sm rounded-xl shadow-2xl p-4 md:p-8 border border-white/20">
+      {/* La pantalla mide exactamente el alto de la ventana y NO desplaza completa: el
+          encabezado, los indicadores, los filtros y la barra de paginación quedan fijos
+          y lo único que corre es la tabla, dentro de su propio recuadro. El
+          overflow-y-auto es la válvula: en una ventana muy chaparra, donde lo fijo ya
+          no cabe, la página vuelve a desplazarse en vez de recortarse. */}
+      <main className="p-4 md:p-8 h-screen overflow-y-auto flex flex-col">
+        <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col min-h-0">
+          <div className="bg-[#0f172a] backdrop-blur-sm rounded-xl shadow-2xl p-4 md:p-8 border border-white/20 flex-1 flex flex-col min-h-0">
             {/* Encabezado */}
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
               <div>
@@ -340,6 +428,12 @@ export default function JugadoresPage() {
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/30 text-blue-200 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <FileText size={14} /> PDF
+                </button>
+                <button
+                  onClick={() => setFicha({ idJugador: null })}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-sm"
+                >
+                  <UserPlus size={14} /> Nuevo jugador
                 </button>
               </div>
             </div>
@@ -407,13 +501,25 @@ export default function JugadoresPage() {
                   className="w-full bg-white/5 border border-white/15 text-slate-200 text-xs py-2 pl-9 pr-3 rounded-lg leading-tight focus:outline-none focus:border-blue-500"
                 />
               </div>
-              <select value={sedeFiltro} onChange={(e) => { setSedeFiltro(e.target.value); setCategoriaFiltro(""); }} className={SELECT}>
+              <select
+                value={sedeFiltro}
+                onChange={(e) => { setSedeFiltro(e.target.value); setCategoriaFiltro(""); setEquipoFiltro(""); }}
+                className={SELECT}
+              >
                 <option value="">Todas las sedes</option>
                 {sedes.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
-              <select value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} className={SELECT}>
+              <select
+                value={categoriaFiltro}
+                onChange={(e) => { setCategoriaFiltro(e.target.value); setEquipoFiltro(""); }}
+                className={SELECT}
+              >
                 <option value="">Todas las categorías</option>
                 {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={equipoFiltro} onChange={(e) => setEquipoFiltro(e.target.value)} className={SELECT}>
+                <option value="">Todos los equipos</option>
+                {equipos.map((e) => <option key={e} value={e}>{e}</option>)}
               </select>
               <select value={becaFiltro} onChange={(e) => setBecaFiltro(e.target.value as FiltroBeca)} className={SELECT}>
                 <option value="todos">Beca: todos</option>
@@ -458,14 +564,19 @@ export default function JugadoresPage() {
                 <p className="text-xs opacity-60">Ningún jugador coincide con los filtros aplicados</p>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-white/10">
+              <>
+              <div className="overflow-auto rounded-2xl border border-white/10 flex-1 min-h-[16rem]">
                 <table className="w-full text-sm min-w-[900px]">
-                  <thead className="bg-white/[0.07]">
+                  {/* Pegado al borde del recuadro mientras la tabla corre. El fondo es
+                      sólido (el mismo white/[0.07] ya aplanado sobre el #0f172a de la
+                      tarjeta): translúcido, dejaría leerse los renglones debajo. */}
+                  <thead className="bg-[#202739] sticky top-0 z-10">
                     <tr>
                       <Th label="ID" />
                       <Th label="Jugador" k="Jugador" />
                       <Th label="Sede" k="SedeNombre" />
                       <Th label="Categoría" k="Categoria" />
+                      <Th label="Equipo" k="Equipo" />
                       <Th label="Edad" k="Edad" />
                       <Th label="Beca" />
                       <Th label="Inscripción" />
@@ -475,7 +586,7 @@ export default function JugadoresPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {filtrados.map((j) => {
+                    {visibles.map((j) => {
                       const estado = estadoPago(j);
                       const pct = becaPct(j.Beca);
                       return (
@@ -486,15 +597,31 @@ export default function JugadoresPage() {
                         >
                           <td className="px-3 py-2 text-slate-500 text-xs font-mono">{j.IdJugador}</td>
                           <td className="px-3 py-2">
-                            <p className="text-slate-100 font-semibold text-xs">{j.Jugador}</p>
-                            {j.FechaNacimiento && (
-                              <p className="text-[10px] text-slate-500">{j.FechaNacimiento}</p>
-                            )}
+                            <div className="flex items-center gap-2 min-w-0">
+                              <AvatarJugador
+                                idJugador={j.IdJugador}
+                                nombre={j.Jugador}
+                                tieneFoto={j.TieneFoto}
+                                fotoVersion={j.FotoVersion}
+                                tamano={28}
+                              />
+                              <div className="min-w-0">
+                                <p className="text-slate-100 font-semibold text-xs">{j.Jugador}</p>
+                                {j.FechaNacimiento && (
+                                  <p className="text-[10px] text-slate-500">{j.FechaNacimiento}</p>
+                                )}
+                              </div>
+                            </div>
                           </td>
                           <td className="px-3 py-2 text-slate-300 text-xs">{j.SedeNombre || "—"}</td>
                           <td className="px-3 py-2">
                             <span className="text-[10px] font-black px-2 py-1 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30 whitespace-nowrap">
-                              {j.Categoria || "—"}
+                              {partirCategoria(j.Categoria).anio || "—"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="text-[10px] font-black px-2 py-1 rounded-md bg-slate-500/15 text-slate-300 border border-white/15 whitespace-nowrap">
+                              {partirCategoria(j.Categoria).equipo || "—"}
                             </span>
                           </td>
                           <td className="px-3 py-2 text-slate-400 text-xs">{j.Edad ?? "—"}</td>
@@ -544,16 +671,28 @@ export default function JugadoresPage() {
                             )}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPagosTarget({ idJugador: j.IdJugador, jugador: j.Jugador });
-                              }}
-                              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors"
-                              title="Historial de pagos"
-                            >
-                              <Receipt size={14} />
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFicha({ idJugador: j.IdJugador });
+                                }}
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-blue-500/20 text-slate-400 hover:text-blue-300 transition-colors"
+                                title={`Editar la ficha de ${j.Jugador}`}
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPagosTarget({ idJugador: j.IdJugador, jugador: j.Jugador });
+                                }}
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors"
+                                title="Historial de pagos"
+                              >
+                                <Receipt size={14} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -561,6 +700,56 @@ export default function JugadoresPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Paginación. El renglón de la izquierda siempre dice cuánto hay en
+                  total, para que la página no se confunda con la lista completa. */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
+                <p className="text-[10px] text-slate-500">
+                  Mostrando{" "}
+                  <b className="text-slate-300 tabular-nums">
+                    {porPagina === 0
+                      ? `1–${filtrados.length.toLocaleString("es-MX")}`
+                      : `${((paginaActual - 1) * porPagina + 1).toLocaleString("es-MX")}–${Math.min(paginaActual * porPagina, filtrados.length).toLocaleString("es-MX")}`}
+                  </b>{" "}
+                  de <b className="text-slate-300 tabular-nums">{filtrados.length.toLocaleString("es-MX")}</b> jugador(es).
+                  Excel y PDF exportan toda la lista filtrada, no solo esta página.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={porPagina}
+                    onChange={(e) => setPorPagina(Number(e.target.value))}
+                    className={SELECT}
+                    title="Jugadores por página"
+                  >
+                    <option value={25}>25 por página</option>
+                    <option value={50}>50 por página</option>
+                    <option value={100}>100 por página</option>
+                    <option value={500}>500 por página</option>
+                    <option value={1000}>1000 por página</option>
+                    <option value={0}>Todos</option>
+                  </select>
+                  {porPagina !== 0 && totalPaginas > 1 && (
+                    <div className="flex items-center gap-1">
+                      <BotonPagina onClick={() => setPagina(1)} disabled={paginaActual === 1} title="Primera página">
+                        <ChevronsLeft size={14} />
+                      </BotonPagina>
+                      <BotonPagina onClick={() => setPagina(paginaActual - 1)} disabled={paginaActual === 1} title="Página anterior">
+                        <ChevronLeft size={14} />
+                      </BotonPagina>
+                      <span className="text-[11px] text-slate-300 font-bold px-2 tabular-nums whitespace-nowrap">
+                        Página {paginaActual.toLocaleString("es-MX")} de {totalPaginas.toLocaleString("es-MX")}
+                      </span>
+                      <BotonPagina onClick={() => setPagina(paginaActual + 1)} disabled={paginaActual === totalPaginas} title="Página siguiente">
+                        <ChevronRight size={14} />
+                      </BotonPagina>
+                      <BotonPagina onClick={() => setPagina(totalPaginas)} disabled={paginaActual === totalPaginas} title="Última página">
+                        <ChevronsRight size={14} />
+                      </BotonPagina>
+                    </div>
+                  )}
+                </div>
+              </div>
+              </>
             )}
           </div>
         </div>
@@ -573,6 +762,26 @@ export default function JugadoresPage() {
           temporadaNombre={temporadaNombre}
           onClose={() => setDetalle(null)}
           onVerPagos={() => setPagosTarget({ idJugador: detalle.IdJugador, jugador: detalle.Jugador })}
+          onEditar={() => {
+            /* La ficha se abre encima y el detalle se cierra: son la misma información,
+               una para consultar y otra para capturar, y dejarlas apiladas hace que al
+               guardar se vea debajo la versión vieja. */
+            setFicha({ idJugador: detalle.IdJugador });
+            setDetalle(null);
+          }}
+        />
+      )}
+
+      {/* Alta y edición de la ficha: los mismos campos que el sistema de escritorio */}
+      {ficha && (
+        <JugadorModal
+          idJugador={ficha.idJugador}
+          sedes={sedesCatalogo}
+          onCerrar={() => setFicha(null)}
+          onGuardado={async () => {
+            setFicha(null);
+            await cargar();
+          }}
         />
       )}
 
@@ -627,6 +836,25 @@ function Kpi({
   );
 }
 
+function BotonPagina({ onClick, disabled, title, children }: {
+  onClick: () => void;
+  disabled: boolean;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className="p-1.5 rounded-lg bg-white/5 border border-white/15 text-slate-300 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+    >
+      {children}
+    </button>
+  );
+}
+
 function Dato({ etiqueta, valor, icono }: { etiqueta: string; valor: string; icono?: React.ReactNode }) {
   return (
     <div className="min-w-0">
@@ -643,11 +871,13 @@ function DetalleJugador({
   temporadaNombre,
   onClose,
   onVerPagos,
+  onEditar,
 }: {
   jugador: JugadorListaRow;
   temporadaNombre: string;
   onClose: () => void;
   onVerPagos: () => void;
+  onEditar: () => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -679,8 +909,13 @@ function DetalleJugador({
               </p>
               <div className="flex flex-wrap items-center gap-2 mt-3">
                 <span className="text-[11px] font-black px-2.5 py-1 rounded-lg bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                  {jugador.Categoria || "Sin categoría"}
+                  {partirCategoria(jugador.Categoria).anio || "Sin categoría"}
                 </span>
+                {partirCategoria(jugador.Categoria).equipo && (
+                  <span className="text-[11px] font-black px-2.5 py-1 rounded-lg bg-slate-500/15 text-slate-300 border border-white/15">
+                    {partirCategoria(jugador.Categoria).equipo}
+                  </span>
+                )}
                 <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg border inline-flex items-center gap-1 ${
                   pct > 0
                     ? "bg-purple-500/15 text-purple-300 border-purple-500/30"
@@ -700,9 +935,18 @@ function DetalleJugador({
                 </span>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all flex-shrink-0">
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                onClick={onEditar}
+                title="Editar la ficha del jugador"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold transition-all"
+              >
+                <Pencil size={13} /> Editar
+              </button>
+              <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                <X size={20} />
+              </button>
+            </div>
           </div>
         </div>
 

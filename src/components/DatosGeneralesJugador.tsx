@@ -41,6 +41,7 @@ export interface JugadorFicha {
     ContactoEmergencia?: string | null;
     ViveCon?: string | null;
     Escuela?: string | null;
+    BecaCopas?: string | number | null;
     BecaLigas?: string | number | null;
     Coach?: string | null;
     Grupo?: string | null;
@@ -122,6 +123,7 @@ export default function DatosGeneralesJugador({ jugador }: { jugador: JugadorFic
             icono: <GraduationCap size={13} />,
             datos: [
                 { etiqueta: "Beca", valor: porcentaje(jugador.Beca) },
+                { etiqueta: "Beca de copas", valor: porcentaje(jugador.BecaCopas) },
                 { etiqueta: "Beca de ligas", valor: porcentaje(jugador.BecaLigas) },
                 { etiqueta: "Alta", valor: texto(jugador.FechaAlta) },
                 { etiqueta: "Estatus", valor: jugador.Status === 2 ? "BAJA" : "ACTIVO" },

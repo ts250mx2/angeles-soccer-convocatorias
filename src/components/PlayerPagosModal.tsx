@@ -1,15 +1,18 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import AvatarJugador from "@/components/AvatarJugador";
+import FotoJugador from "@/components/FotoJugador";
 import {
   X, Loader2, AlertCircle, Receipt, FileDown, FileSpreadsheet, CalendarCheck,
-  AlertTriangle, Check, Pencil, User,
+  AlertTriangle, Check, Pencil, User, Camera,
 } from "lucide-react";
 import {
   type PagoRow, exportPagosToPdf, exportPagosToExcel, money, fecha, mesLabel,
   esPagoAnticipado, MESES_ANTICIPO_SOSPECHOSO,
 } from "@/lib/inscripciones-export";
 import DatosGeneralesJugador, { texto, type JugadorFicha } from "@/components/DatosGeneralesJugador";
+import PedirFotoJugador from "@/components/PedirFotoJugador";
 
 /** La ficha completa del jugador; la pinta DatosGeneralesJugador. */
 type JugadorInfo = JugadorFicha;
@@ -57,6 +60,13 @@ export default function PlayerPagosModal({
   inscripcionSospechosa?: InscripcionSospechosa | null;
 }) {
   const [jugador, setJugador] = useState<JugadorInfo | null>(null);
+  /* La foto se lleva aparte del resto de la ficha porque se puede cambiar sin salir del
+     modal: `jugador` viene del servidor y esto refleja lo que ya se guardó desde aquí. */
+  const [foto, setFoto] = useState<{ tiene: boolean; version: string | null }>({ tiene: false, version: null });
+  const [editandoFoto, setEditandoFoto] = useState(false);
+  const [fotoNueva, setFotoNueva] = useState<string | null>(null);
+  const [guardandoFoto, setGuardandoFoto] = useState(false);
+  const [errorFoto, setErrorFoto] = useState<string | null>(null);
   const [pagos, setPagos] = useState<PagoRow[]>([]);
   const [total, setTotal] = useState(0);
   const [fechaInscripcion, setFechaInscripcion] = useState<string | null>(null);
@@ -84,6 +94,10 @@ export default function PlayerPagosModal({
       setSoloTemporada(true);
       setPestana("pagos");
     }
+    // El editor de la foto no se queda abierto de un jugador para el siguiente.
+    setEditandoFoto(false);
+    setFotoNueva(null);
+    setErrorFoto(null);
     // Al cambiar de jugador (o de aviso), el banner de sospecha vuelve a mostrarse.
     setMovidaSosp(false);
   }, [target, inscripcionSospechosa]);
@@ -104,6 +118,10 @@ export default function PlayerPagosModal({
         if (!alive) return;
         if (json.success) {
           setJugador(json.data.jugador);
+          setFoto({
+            tiene: Number(json.data.jugador?.TieneFoto) === 1,
+            version: json.data.jugador?.FotoVersion ?? null,
+          });
           setPagos(json.data.pagos);
           setTotal(Number(json.data.total ?? 0));
           setFechaInscripcion(json.data.fechaInscripcion ?? null);
@@ -245,6 +263,40 @@ export default function PlayerPagosModal({
   const enPagos = pestana === "pagos";
   const tieneAlerta = Boolean(texto(jugador?.Alerta));
 
+  /**
+   * Guarda la foto sin salir del modal.
+   *
+   * Escribe SOLO esa columna (ver el PATCH de /api/jugadores/foto): tomar la foto al
+   * vuelo no debe poder tocar nada más de la ficha. Al volver se refresca el sello, para
+   * que la imagen nueva se vea de inmediato en vez de quedarse la vieja en el caché.
+   */
+  const guardarFoto = async () => {
+    if (!target) return;
+    setGuardandoFoto(true);
+    setErrorFoto(null);
+    try {
+      const res = await fetch(`/api/jugadores/foto/${target.idJugador}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ foto: fotoNueva ?? "" }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setErrorFoto(json.message ?? "No se pudo guardar la foto");
+        return;
+      }
+      setFoto({ tiene: Boolean(json.tieneFoto), version: json.fotoVersion ?? null });
+      setEditandoFoto(false);
+      setFotoNueva(null);
+      // La lista de atrás pinta la misma foto: que se entere.
+      onDataChanged?.();
+    } catch {
+      setErrorFoto("Error de conexión al guardar la foto");
+    } finally {
+      setGuardandoFoto(false);
+    }
+  };
+
   const btn = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed";
 
   return (
@@ -259,6 +311,32 @@ export default function PlayerPagosModal({
         {/* Header */}
         <div className="p-5 border-b border-white/10 bg-white/5">
           <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3 min-w-0">
+              {/* La cara del niño, al frente. Tocarla abre la captura: quien tiene al
+                  alumno enfrente es quien puede tomarle la foto, y obligarlo a ir a la
+                  Hoja de Registro completa para eso es justo lo que hace que la mitad de
+                  las fichas sigan sin foto. */}
+              <button
+                type="button"
+                onClick={() => { setEditandoFoto((v) => !v); setErrorFoto(null); }}
+                title={foto.tiene ? "Cambiar la foto" : "Agregar la foto"}
+                className="relative flex-shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 group"
+              >
+                <AvatarJugador
+                  idJugador={target.idJugador}
+                  nombre={nombre}
+                  tieneFoto={foto.tiene}
+                  fotoVersion={foto.version}
+                  tamano={52}
+                  className="group-hover:opacity-80 transition-opacity"
+                />
+                {!foto.tiene && (
+                  <span className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-blue-600 border-2 border-[#0f172a] flex items-center justify-center">
+                    <Camera size={10} className="text-white" />
+                  </span>
+                )}
+              </button>
+
             <div className="min-w-0">
               <h3 className="text-lg font-black text-white flex items-center gap-2">
                 <Receipt size={18} className="text-blue-400 flex-shrink-0" />
@@ -272,10 +350,70 @@ export default function PlayerPagosModal({
                 </p>
               )}
             </div>
+            </div>
             <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all flex-shrink-0">
               <X size={20} />
             </button>
           </div>
+
+          {/* La captura de la foto, con el mismo componente de la Hoja de Registro:
+              cámara, arrastrar, pegar o archivo. Aparece solo cuando se pide, para no
+              robarle sitio al modal en el caso normal. */}
+          {editandoFoto && (
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="max-w-xs">
+                <FotoJugador
+                  valor={fotoNueva}
+                  onChange={setFotoNueva}
+                  alt={nombre}
+                />
+                {/* Y si el niño no está enfrente, la otra vía: la liga por WhatsApp
+                    para que el papá la tome desde su celular. La misma de la Hoja de
+                    Registro; así vive también en Plantilla y Asistencia. */}
+                <PedirFotoJugador
+                  idJugador={target.idJugador}
+                  nombre={nombre}
+                  telPadre={jugador?.TelPadre}
+                  telMadre={jugador?.TelMadre}
+                />
+              </div>
+
+              {errorFoto && (
+                <p className="mt-2 text-[11px] text-rose-300 flex items-start gap-1.5">
+                  <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                  {errorFoto}
+                </p>
+              )}
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={guardarFoto}
+                  disabled={guardandoFoto || fotoNueva === null}
+                  className={`${btn} bg-emerald-600/15 hover:bg-emerald-600/25 border-emerald-500/30 text-emerald-200`}
+                >
+                  {guardandoFoto ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                  Guardar la foto
+                </button>
+                {foto.tiene && (
+                  <button
+                    onClick={() => { setFotoNueva(null); guardarFoto(); }}
+                    disabled={guardandoFoto}
+                    title="Deja la ficha sin foto"
+                    className={`${btn} bg-rose-600/15 hover:bg-rose-600/25 border-rose-500/30 text-rose-200`}
+                  >
+                    Quitar la actual
+                  </button>
+                )}
+                <button
+                  onClick={() => { setEditandoFoto(false); setFotoNueva(null); setErrorFoto(null); }}
+                  disabled={guardandoFoto}
+                  className={`${btn} bg-white/5 hover:bg-white/10 border-white/15 text-slate-300`}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Pestañas */}
           <div className="mt-4 flex items-center gap-1 border-b border-white/10 -mb-px">
