@@ -1,6 +1,7 @@
 "use client";
 
 import jsPDF from "jspdf";
+import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
 import { becaPct } from "@/lib/adeudos-export";
@@ -15,8 +16,14 @@ export interface BecaRow {
     SedeNombre: string;
     /** Descuento en inscripción y mensualidades (0-100). */
     Beca: number | string | null;
-    /** Descuento en convocatorias de copas y ligas (0-100). */
+    /** Descuento en las convocatorias de COPAS (0-100). */
+    BecaCopas: number | string | null;
+    /** Descuento en las convocatorias de LIGAS (0-100). */
     BecaLigas: number | string | null;
+    /** Tiene foto en su ficha; la imagen la sirve /api/jugadores/foto. */
+    TieneFoto?: number;
+    /** Sello para romper el caché del navegador cuando la foto cambia. */
+    FotoVersion?: string | null;
     FechaNacimiento: string | null;
     Edad: number | null;
     FechaAlta: string | null;
@@ -27,31 +34,45 @@ export interface BecaRow {
 }
 
 /**
- * Tipo de beca: sobre QUÉ se aplica el descuento. Es la pregunta del reporte y no se
- * puede deducir del porcentaje, porque son dos columnas independientes de la ficha del
- * jugador y un becado puede traer una, la otra o las dos.
+ * Sobre QUÉ se aplica el descuento. Son TRES columnas independientes de la ficha del
+ * jugador (Beca, BecaCopas, BecaLigas) y un becado puede traer una, dos o las tres.
+ *
+ * Antes eran dos y el tipo era EXCLUYENTE: "mensualidades", "ligas" o "ambas". Con tres
+ * columnas ese enfoque se rompe —serían siete combinaciones, y un filtro de siete
+ * casillas no lo usa nadie—, así que el tipo pasa a ser lo que el jugador TIENE, no una
+ * casilla en la que cae. Un becado con mensualidades y copas aparece en los dos cortes,
+ * que es como se consulta de verdad: "enséñame a los becados de copas".
  */
-export type TipoBeca = "mensualidades" | "ligas" | "ambas";
+export type TipoBeca = "mensualidades" | "copas" | "ligas";
+
+export const TIPOS_BECA: TipoBeca[] = ["mensualidades", "copas", "ligas"];
 
 export const ETIQUETA_TIPO: Record<TipoBeca, string> = {
     mensualidades: "Inscripción y mensualidades",
-    ligas: "Copas y ligas",
-    ambas: "Ambas",
+    copas: "Copas",
+    ligas: "Ligas",
 };
 
 /** Etiqueta corta, para donde no cabe la larga (las insignias de la tabla). */
 export const ETIQUETA_TIPO_CORTA: Record<TipoBeca, string> = {
     mensualidades: "Mensualidades",
-    ligas: "Copas y ligas",
-    ambas: "Ambas",
+    copas: "Copas",
+    ligas: "Ligas",
 };
 
-export function tipoBeca(b: BecaRow): TipoBeca {
-    const mensualidades = becaPct(b.Beca as string) > 0;
-    const ligas = becaPct(b.BecaLigas as string) > 0;
-    if (mensualidades && ligas) return "ambas";
-    return ligas ? "ligas" : "mensualidades";
-}
+/** El porcentaje de la beca pedida. */
+export const pctDeTipo = (b: BecaRow, tipo: TipoBeca): number =>
+    becaPct((tipo === "mensualidades" ? b.Beca : tipo === "copas" ? b.BecaCopas : b.BecaLigas) as string);
+
+/** ¿Tiene beca de este tipo? */
+export const tieneBecaDe = (b: BecaRow, tipo: TipoBeca): boolean => pctDeTipo(b, tipo) > 0;
+
+/** Todas las becas que trae, en orden fijo. Vacío si no trae ninguna. */
+export const tiposDeBeca = (b: BecaRow): TipoBeca[] => TIPOS_BECA.filter((t) => tieneBecaDe(b, t));
+
+/** 'Mensualidades · Copas', para el PDF y el Excel, donde no caben insignias. */
+export const etiquetaTipos = (b: BecaRow): string =>
+    tiposDeBeca(b).map((t) => ETIQUETA_TIPO_CORTA[t]).join(" · ") || "—";
 
 export const telefonosBeca = (b: BecaRow): string =>
     [b.TelPadre, b.TelMadre].map((t) => String(t ?? "").trim()).filter(Boolean).join(" / ");
@@ -76,6 +97,7 @@ const COLS = [
     { header: "Edad", width: 7 },
     { header: "Tipo de beca", width: 24 },
     { header: "Beca", width: 9 },
+    { header: "Beca copas", width: 11 },
     { header: "Beca ligas", width: 11 },
     { header: "Teléfonos", width: 24 },
     { header: "Alta", width: 12 },
@@ -88,19 +110,26 @@ const cells = (b: BecaRow): (string | number)[] => [
     b.SedeNombre || "—",
     b.Categoria || "—",
     b.Edad ?? "—",
-    ETIQUETA_TIPO[tipoBeca(b)],
+    etiquetaTipos(b),
     porcentaje(b.Beca),
+    porcentaje(b.BecaCopas),
     porcentaje(b.BecaLigas),
     telefonosBeca(b) || "—",
     b.FechaAlta || "—",
     b.Status === 0 ? "ACTIVO" : "BAJA",
 ];
 
-/** Resumen del pie: el mismo texto en los dos formatos. */
+/**
+ * Resumen del pie: el mismo texto en los dos formatos.
+ *
+ * Los tres conteos NO suman el total de becados y no deben leerse así: quien tiene beca
+ * de mensualidades y de copas cuenta en los dos. Por eso el total va aparte y con su
+ * propio nombre.
+ */
 function resumen(rows: BecaRow[]): string {
-    const cuenta = (t: TipoBeca) => rows.filter((b) => tipoBeca(b) === t).length;
+    const cuenta = (t: TipoBeca) => rows.filter((b) => tieneBecaDe(b, t)).length;
     const totales = rows.filter((b) => becaPct(b.Beca as string) >= 100).length;
-    return `${cuenta("mensualidades")} mensualidades · ${cuenta("ligas")} copas y ligas · ${cuenta("ambas")} ambas · ${totales} con beca del 100%`;
+    return `${rows.length} becados · ${cuenta("mensualidades")} mensualidades · ${cuenta("copas")} copas · ${cuenta("ligas")} ligas · ${totales} con beca del 100%`;
 }
 
 export function exportBecasToPdf(rows: BecaRow[], titulo: string, subtitulo: string) {
@@ -140,10 +169,11 @@ export function exportBecasToPdf(rows: BecaRow[], titulo: string, subtitulo: str
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
             0: { halign: "right" }, 4: { halign: "center" },
-            6: { halign: "center" }, 7: { halign: "center" }, 10: { halign: "center" },
+            6: { halign: "center" }, 7: { halign: "center" }, 8: { halign: "center" },
+            11: { halign: "center" },
         },
         foot: [[
-            `TOTAL: ${rows.length} becado(s)`, "", "", "", "", resumen(rows), "", "", "", "", "",
+            `TOTAL: ${rows.length} becado(s)`, "", "", "", "", resumen(rows), "", "", "", "", "", "",
         ]],
         footStyles: { fillColor: FOOT_BG, textColor: FOOT_TEXT, fontStyle: "bold" },
         margin: { left: margin, right: margin },
@@ -159,7 +189,7 @@ export function exportBecasToPdf(rows: BecaRow[], titulo: string, subtitulo: str
         doc.text(`Página ${i} de ${pages}`, pageW - margin, pageH - 8, { align: "right" });
     }
 
-    doc.save(`${safeName(titulo)}_${safeName(subtitulo)}.pdf`);
+    presentarPdf(doc, `${safeName(titulo)}_${safeName(subtitulo)}.pdf`);
 }
 
 export async function exportBecasToExcel(rows: BecaRow[], titulo: string, subtitulo: string) {
@@ -199,7 +229,7 @@ export async function exportBecasToExcel(rows: BecaRow[], titulo: string, subtit
     });
 
     const totalRow = ws.addRow([
-        "TOTAL", `${rows.length} becado(s)`, "", "", "", resumen(rows), "", "", "", "", "",
+        "TOTAL", `${rows.length} becado(s)`, "", "", "", resumen(rows), "", "", "", "", "", "",
     ]);
     totalRow.font = { bold: true };
     totalRow.eachCell((cell) => {

@@ -12,31 +12,52 @@ import {
   ChevronUp, ChevronDown, Loader2, Trophy,
 } from "lucide-react";
 import { becaPct, becaLabel } from "@/lib/adeudos-export";
+import AvatarJugador from "@/components/AvatarJugador";
 import {
-  type BecaRow, type TipoBeca, ETIQUETA_TIPO, ETIQUETA_TIPO_CORTA, tipoBeca,
+  type BecaRow, type TipoBeca, ETIQUETA_TIPO, ETIQUETA_TIPO_CORTA, TIPOS_BECA,
+  tieneBecaDe, tiposDeBeca,
   telefonosBeca, exportBecasToPdf, exportBecasToExcel,
 } from "@/lib/becas-export";
 
 /**
  * Reporte de Becas: quién tiene beca, de qué tipo y de cuánto.
  *
- * La beca es un dato de la FICHA del jugador, no de la temporada (columnas Beca y
- * BecaLigas de tblJugadores), así que esta pantalla no lleva selector de temporada: el
- * corte que sí cambia la lectura es el estatus, activo o baja. Se trae todo de una vez
- * —son unos cientos de becados— y se filtra en el navegador.
+ * Son TRES becas independientes de la FICHA del jugador, y un becado puede traer una,
+ * dos o las tres: Beca (inscripción y mensualidades), BecaCopas y BecaLigas. Las dos de
+ * torneo eran una sola hasta migrations/022-beca-copas.sql, que las partió porque una
+ * copa y una liga se cobran distinto y el club las beca por separado.
+ *
+ * Ninguna depende de la temporada, así que esta pantalla no lleva selector: el corte que
+ * sí cambia la lectura es el estatus, activo o baja. Se trae todo de una vez —son unos
+ * cientos de becados— y se filtra en el navegador.
+ *
+ * OJO al leer los indicadores: los tres conteos por tipo NO suman "Becados", porque
+ * quien tiene dos becas cuenta en los dos.
  */
 
-type FiltroTipo = "todos" | TipoBeca;
+/* El corte por tipo. Aparte de las tres becas hay un cuarto que no es ninguna de
+   ellas: "solo torneos", que es tener beca de copas o de ligas pero NO de mensualidades.
+   Es la rebanada del donut, y sin este valor tocarla no podría filtrar nada. */
+type FiltroTipo = "todos" | TipoBeca | "solo-torneos";
 type FiltroEstatus = "activos" | "bajas" | "todos";
-type OrdenKey = "Jugador" | "SedeNombre" | "Categoria" | "Edad" | "Beca" | "BecaLigas";
 
-/** "Solo copas y ligas": becado sin descuento en mensualidades. Es su propio grupo. */
-const SOLO_LIGAS = "Solo copas y ligas";
+/** Los indicadores de arriba; cada uno es un atajo a su propia lista de becados. */
+type KpiBecas = "becados" | "completas" | "parciales" | "copas" | "ligas";
 
+/** Valor de `nivelFiltro` que significa "beca parcial", no un porcentaje concreto. */
+const NIVEL_PARCIAL = "parcial";
+type OrdenKey = "Jugador" | "SedeNombre" | "Categoria" | "Edad" | "Beca" | "BecaCopas" | "BecaLigas";
+
+/** "Solo torneos": becado en copas o ligas, sin descuento en mensualidades. */
+const SOLO_TORNEOS = "Solo torneos";
+
+/* Un color por beca, y los de copas y ligas son los MISMOS que separan a los torneos en
+   el resto de la aplicación: ámbar para copas y azul para ligas (ver @/lib/acento-torneo).
+   Que aquí fueran otros obligaría a releer la leyenda en cada pantalla. */
 const ESTILO_TIPO: Record<TipoBeca, string> = {
   mensualidades: "bg-purple-500/15 text-purple-300 border-purple-500/30",
-  ligas: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  ambas: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30",
+  copas: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  ligas: "bg-sky-500/15 text-sky-300 border-sky-500/30",
 };
 
 const SELECT =
@@ -52,12 +73,12 @@ const SELECT =
  */
 function rebanadasPorNivel(rows: BecaRow[]): Rebanada[] {
   const conteo = new Map<number, number>();
-  let soloLigas = 0;
+  let soloTorneos = 0;
 
   rows.forEach((b) => {
     const pct = becaPct(b.Beca as string);
     if (pct === 0) {
-      soloLigas += 1;
+      soloTorneos += 1;
       return;
     }
     conteo.set(pct, (conteo.get(pct) ?? 0) + 1);
@@ -78,7 +99,7 @@ function rebanadasPorNivel(rows: BecaRow[]): Rebanada[] {
       color: BECA_RAMPA[i],
     })),
     ...(otras > 0 ? [{ etiqueta: "Otras becas", cantidad: otras, color: OTRAS_BECAS_COLOR }] : []),
-    ...(soloLigas > 0 ? [{ etiqueta: SOLO_LIGAS, cantidad: soloLigas, color: SIN_BECA_COLOR }] : []),
+    ...(soloTorneos > 0 ? [{ etiqueta: SOLO_TORNEOS, cantidad: soloTorneos, color: SIN_BECA_COLOR }] : []),
   ];
 }
 
@@ -96,7 +117,13 @@ export default function BecasPage() {
   const [sedeFiltro, setSedeFiltro] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState<FiltroTipo>("todos");
-  /** Nivel de beca de mensualidades, en porcentaje. "" = todos. */
+  /**
+   * Nivel de beca de mensualidades. "" = todos, un número = ese porcentaje exacto, y
+   * NIVEL_PARCIAL = cualquiera entre 0 y 100 sin llegar a 100.
+   *
+   * El corte parcial no es un nivel más: es el que representa su indicador, y sin él
+   * tocar "Beca parcial" no tendría cómo expresarse en los filtros.
+   */
   const [nivelFiltro, setNivelFiltro] = useState("");
   const [estatusFiltro, setEstatusFiltro] = useState<FiltroEstatus>("activos");
   const [orden, setOrden] = useState<{ key: OrdenKey; dir: "asc" | "desc" } | null>(null);
@@ -154,8 +181,20 @@ export default function BecasPage() {
 
   const filtrados = useMemo(() => {
     let out = base.filter((b) => {
-      if (tipoFiltro !== "todos" && tipoBeca(b) !== tipoFiltro) return false;
-      if (nivelFiltro && becaPct(b.Beca as string) !== Number(nivelFiltro)) return false;
+      /* El filtro es inclusivo: quien tiene beca de mensualidades Y de copas sale en
+         los dos cortes. Con tres becas independientes, un tipo excluyente serían siete
+         combinaciones y ninguna respondería "enséñame a los becados de copas". */
+      if (tipoFiltro === "solo-torneos") {
+        if (becaPct(b.Beca as string) > 0) return false;
+      } else if (tipoFiltro !== "todos" && !tieneBecaDe(b, tipoFiltro)) {
+        return false;
+      }
+      if (nivelFiltro === NIVEL_PARCIAL) {
+        const pct = becaPct(b.Beca as string);
+        if (!(pct > 0 && pct < 100)) return false;
+      } else if (nivelFiltro && becaPct(b.Beca as string) !== Number(nivelFiltro)) {
+        return false;
+      }
       return true;
     });
 
@@ -164,6 +203,9 @@ export default function BecasPage() {
       out = [...out].sort((a, b) => {
         if (orden.key === "Edad") return ((a.Edad ?? 0) - (b.Edad ?? 0)) * dir;
         if (orden.key === "Beca") return (becaPct(a.Beca as string) - becaPct(b.Beca as string)) * dir;
+        if (orden.key === "BecaCopas") {
+          return (becaPct(a.BecaCopas as string) - becaPct(b.BecaCopas as string)) * dir;
+        }
         if (orden.key === "BecaLigas") {
           return (becaPct(a.BecaLigas as string) - becaPct(b.BecaLigas as string)) * dir;
         }
@@ -180,10 +222,46 @@ export default function BecasPage() {
       const pct = becaPct(b.Beca as string);
       return pct > 0 && pct < 100;
     }).length,
+    copas: base.filter((b) => becaPct(b.BecaCopas as string) > 0).length,
     ligas: base.filter((b) => becaPct(b.BecaLigas as string) > 0).length,
   }), [base]);
 
   const rebanadas = useMemo(() => rebanadasPorNivel(base), [base]);
+
+  /**
+   * Qué indicador queda resaltado, deducido de los filtros y no de un estado aparte.
+   *
+   * Deducirlo es lo que evita que la tarjeta y la tabla se contradigan: los mismos
+   * cortes se pueden poner desde los desplegables o desde la dona, y con un estado
+   * propio quedaría marcada una tarjeta que ya no corresponde a lo que se está viendo.
+   * Si los filtros forman una combinación que ninguna tarjeta representa, no se resalta
+   * ninguna.
+   */
+  const kpiActivo: KpiBecas | null = useMemo(() => {
+    if (nivelFiltro === "" && (tipoFiltro === "copas" || tipoFiltro === "ligas")) return tipoFiltro;
+    if (tipoFiltro !== "todos") return null;
+    if (nivelFiltro === "") return "becados";
+    if (nivelFiltro === NIVEL_PARCIAL) return "parciales";
+    if (Number(nivelFiltro) >= 100) return "completas";
+    return null;
+  }, [tipoFiltro, nivelFiltro]);
+
+  /* Un solo corte a la vez: la tarjeta promete un número y la tabla debe entregar ese
+     mismo número, así que elegir un indicador reemplaza al anterior en vez de sumarse.
+     Volver a tocar el que ya está activo —o tocar "Becados"— deshace el corte.
+
+     Los otros filtros (sede, categoría, estatus, búsqueda) NO se tocan: acotan la base
+     sobre la que los propios indicadores se cuentan, así que respetarlos es lo que hace
+     que la cifra de la tarjeta siga siendo la que la tabla entrega. */
+  const seleccionarKpi = (kpi: KpiBecas) => {
+    if (kpi === "becados" || kpiActivo === kpi) {
+      setTipoFiltro("todos");
+      setNivelFiltro("");
+      return;
+    }
+    setTipoFiltro(kpi === "copas" || kpi === "ligas" ? kpi : "todos");
+    setNivelFiltro(kpi === "completas" ? "100" : kpi === "parciales" ? NIVEL_PARCIAL : "");
+  };
 
   const hayFiltros = Boolean(
     busqueda || sedeFiltro || categoriaFiltro || tipoFiltro !== "todos" ||
@@ -204,9 +282,9 @@ export default function BecasPage() {
    * nivel único que aplicar, así que solo se puede quitar el corte que hubiera.
    */
   const seleccionarRebanada = (etiqueta: string) => {
-    if (etiqueta === SOLO_LIGAS) {
+    if (etiqueta === SOLO_TORNEOS) {
       setNivelFiltro("");
-      setTipoFiltro((prev) => (prev === "ligas" ? "todos" : "ligas"));
+      setTipoFiltro((prev) => (prev === "solo-torneos" ? "todos" : "solo-torneos"));
       return;
     }
     if (etiqueta === "Otras becas") {
@@ -222,8 +300,12 @@ export default function BecasPage() {
     const partes: string[] = [];
     if (sedeFiltro) partes.push(sedeFiltro);
     if (categoriaFiltro) partes.push(categoriaFiltro);
-    if (tipoFiltro !== "todos") partes.push(`Beca: ${ETIQUETA_TIPO[tipoFiltro]}`);
-    if (nivelFiltro) partes.push(becaLabel(Number(nivelFiltro)));
+    if (tipoFiltro !== "todos") {
+      partes.push(`Beca: ${tipoFiltro === "solo-torneos" ? SOLO_TORNEOS : ETIQUETA_TIPO[tipoFiltro]}`);
+    }
+    if (nivelFiltro) {
+      partes.push(nivelFiltro === NIVEL_PARCIAL ? "Beca parcial" : becaLabel(Number(nivelFiltro)));
+    }
     partes.push(estatusFiltro === "activos" ? "Activos" : estatusFiltro === "bajas" ? "Bajas" : "Activos y bajas");
     if (busqueda.trim()) partes.push(`Búsqueda: ${busqueda.trim()}`);
     return partes.join(" · ");
@@ -300,30 +382,53 @@ export default function BecasPage() {
             </div>
 
             {/* Indicadores */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            {/* Cinco indicadores. Los tres de tipo NO suman "Becados": quien tiene beca
+                de mensualidades y de copas cuenta en los dos, a proposito. */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
               <Kpi
                 etiqueta="Becados"
                 valor={kpis.becados}
                 clase="text-white"
-                nota="Con beca de mensualidades, de ligas o ambas"
+                nota="Con beca de mensualidades, de copas o de ligas"
+                activo={kpiActivo === "becados"}
+                anillo="border-blue-500/50 bg-blue-500/10"
+                onClick={() => seleccionarKpi("becados")}
               />
               <Kpi
                 etiqueta="Beca del 100%"
                 valor={kpis.completas}
                 clase="text-purple-300"
                 title="Beca total en inscripción y mensualidades. Es la única que exime de adeudo en el sistema."
+                activo={kpiActivo === "completas"}
+                anillo="border-purple-500/50 bg-purple-500/10"
+                onClick={() => seleccionarKpi("completas")}
               />
               <Kpi
                 etiqueta="Beca parcial"
                 valor={kpis.parciales}
                 clase="text-purple-200"
                 title="Descuento menor al 100% en inscripción y mensualidades."
+                activo={kpiActivo === "parciales"}
+                anillo="border-purple-400/50 bg-purple-400/10"
+                onClick={() => seleccionarKpi("parciales")}
               />
               <Kpi
-                etiqueta="Copas y ligas"
-                valor={kpis.ligas}
+                etiqueta="Beca de copas"
+                valor={kpis.copas}
                 clase="text-amber-300"
-                title="Descuento sobre el precio de las convocatorias de copas y ligas (BecaLigas)."
+                title="Descuento sobre el precio de las convocatorias de COPAS (tblJugadores.BecaCopas)."
+                activo={kpiActivo === "copas"}
+                anillo="border-amber-500/50 bg-amber-500/10"
+                onClick={() => seleccionarKpi("copas")}
+              />
+              <Kpi
+                etiqueta="Beca de ligas"
+                valor={kpis.ligas}
+                clase="text-sky-300"
+                title="Descuento sobre el precio de las convocatorias de LIGAS (tblJugadores.BecaLigas)."
+                activo={kpiActivo === "ligas"}
+                anillo="border-sky-500/50 bg-sky-500/10"
+                onClick={() => seleccionarKpi("ligas")}
               />
             </div>
 
@@ -391,12 +496,14 @@ export default function BecasPage() {
               </select>
               <select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value as FiltroTipo)} className={SELECT}>
                 <option value="todos">Tipo: todos</option>
-                {(Object.keys(ETIQUETA_TIPO) as TipoBeca[]).map((t) => (
+                {TIPOS_BECA.map((t) => (
                   <option key={t} value={t}>{ETIQUETA_TIPO[t]}</option>
                 ))}
+                <option value="solo-torneos">{SOLO_TORNEOS} (sin mensualidades)</option>
               </select>
               <select value={nivelFiltro} onChange={(e) => setNivelFiltro(e.target.value)} className={SELECT}>
                 <option value="">Nivel: todos</option>
+                <option value={NIVEL_PARCIAL}>Beca parcial</option>
                 {niveles.map((n) => <option key={n} value={n}>{becaLabel(n)}</option>)}
               </select>
               <select value={estatusFiltro} onChange={(e) => setEstatusFiltro(e.target.value as FiltroEstatus)} className={SELECT}>
@@ -434,7 +541,7 @@ export default function BecasPage() {
             ) : (
               <>
                 <div className="overflow-x-auto rounded-2xl border border-white/10">
-                  <table className="w-full text-sm min-w-[900px]">
+                  <table className="w-full text-sm min-w-[1000px]">
                     <thead className="bg-white/[0.07]">
                       <tr>
                         <Th label="ID" />
@@ -444,6 +551,7 @@ export default function BecasPage() {
                         <Th label="Edad" k="Edad" />
                         <Th label="Tipo de beca" />
                         <Th label="Beca" k="Beca" />
+                        <Th label="Beca copas" k="BecaCopas" />
                         <Th label="Beca ligas" k="BecaLigas" />
                         <Th label="Teléfonos" />
                         <Th label="Estatus" />
@@ -451,17 +559,29 @@ export default function BecasPage() {
                     </thead>
                     <tbody className="divide-y divide-white/5">
                       {filtrados.map((b) => {
-                        const tipo = tipoBeca(b);
+                        const tipos = tiposDeBeca(b);
                         const pct = becaPct(b.Beca as string);
+                        const pctCopas = becaPct(b.BecaCopas as string);
                         const pctLigas = becaPct(b.BecaLigas as string);
                         return (
                           <tr key={b.IdJugador} className="hover:bg-white/[0.04] transition-colors">
                             <td className="px-3 py-2 text-slate-500 text-xs font-mono">{b.IdJugador}</td>
                             <td className="px-3 py-2">
-                              <p className="text-slate-100 font-semibold text-xs">{b.Jugador}</p>
-                              {b.FechaNacimiento && (
-                                <p className="text-[10px] text-slate-500">{b.FechaNacimiento}</p>
-                              )}
+                              <div className="flex items-center gap-2 min-w-0">
+                                <AvatarJugador
+                                  idJugador={b.IdJugador}
+                                  nombre={b.Jugador}
+                                  tieneFoto={b.TieneFoto}
+                                  fotoVersion={b.FotoVersion}
+                                  tamano={28}
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-slate-100 font-semibold text-xs">{b.Jugador}</p>
+                                  {b.FechaNacimiento && (
+                                    <p className="text-[10px] text-slate-500">{b.FechaNacimiento}</p>
+                                  )}
+                                </div>
+                              </div>
                             </td>
                             <td className="px-3 py-2 text-slate-300 text-xs">{b.SedeNombre || "—"}</td>
                             <td className="px-3 py-2">
@@ -470,19 +590,30 @@ export default function BecasPage() {
                               </span>
                             </td>
                             <td className="px-3 py-2 text-slate-400 text-xs">{b.Edad ?? "—"}</td>
+                            {/* Una insignia por beca: con tres independientes, un solo
+                                rotulo combinado obligaria a inventar nombre a siete
+                                casos. Asi se lee directo lo que trae cada quien. */}
                             <td className="px-3 py-2">
-                              <span
-                                title={ETIQUETA_TIPO[tipo]}
-                                className={`text-[10px] font-black px-2 py-1 rounded-md border whitespace-nowrap inline-flex items-center gap-1 ${ESTILO_TIPO[tipo]}`}
-                              >
-                                {tipo === "ligas" ? <Trophy size={11} /> : <GraduationCap size={11} />}
-                                {ETIQUETA_TIPO_CORTA[tipo]}
-                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {tipos.map((t) => (
+                                  <span
+                                    key={t}
+                                    title={ETIQUETA_TIPO[t]}
+                                    className={`text-[10px] font-black px-2 py-1 rounded-md border whitespace-nowrap inline-flex items-center gap-1 ${ESTILO_TIPO[t]}`}
+                                  >
+                                    {t === "mensualidades" ? <GraduationCap size={11} /> : <Trophy size={11} />}
+                                    {ETIQUETA_TIPO_CORTA[t]}
+                                  </span>
+                                ))}
+                              </div>
                             </td>
                             <td className="px-3 py-2 text-xs font-black tabular-nums text-purple-300">
                               {pct > 0 ? `${pct}%` : <span className="text-slate-600 font-normal">—</span>}
                             </td>
                             <td className="px-3 py-2 text-xs font-black tabular-nums text-amber-300">
+                              {pctCopas > 0 ? `${pctCopas}%` : <span className="text-slate-600 font-normal">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-xs font-black tabular-nums text-sky-300">
                               {pctLigas > 0 ? `${pctLigas}%` : <span className="text-slate-600 font-normal">—</span>}
                             </td>
                             <td className="px-3 py-2 text-slate-400 text-[11px]">{telefonosBeca(b) || "—"}</td>
@@ -510,12 +641,19 @@ export default function BecasPage() {
   );
 }
 
+/**
+ * Un indicador. Es un botón, no un recuadro: cada uno filtra la tabla de abajo a los
+ * becados que cuenta, y volver a tocarlo deshace el corte.
+ */
 function Kpi({
   etiqueta,
   valor,
   clase,
   nota,
   title,
+  activo,
+  anillo,
+  onClick,
 }: {
   etiqueta: string;
   valor: number;
@@ -524,12 +662,24 @@ function Kpi({
   nota?: string;
   /** Explicación al pasar el mouse: qué cuenta exactamente. */
   title?: string;
+  activo: boolean;
+  /** Clases del borde y fondo cuando es la tarjeta seleccionada. */
+  anillo: string;
+  onClick: () => void;
 }) {
   return (
-    <div title={title} className="rounded-xl px-4 py-3 border bg-white/5 border-white/10">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activo}
+      title={title}
+      className={`text-left rounded-xl px-4 py-3 border transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
+        activo ? anillo : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+      }`}
+    >
       <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{etiqueta}</p>
       <p className={`text-2xl font-black ${clase}`}>{valor.toLocaleString("es-MX")}</p>
       {nota && <p className="text-[9px] font-bold text-slate-500">{nota}</p>}
-    </div>
+    </button>
   );
 }
