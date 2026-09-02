@@ -39,16 +39,19 @@ import { guardarEquipoRecordado, leerEquipoRecordado } from "@/lib/equipo-record
  * arrastre: acomodar son quince movimientos seguidos, y una petición por movimiento
  * sería una tormenta de escrituras que además se cruzan entre sí.
  *
- * La cancha es de los INSCRITOS en la temporada elegida —son los que juegan— y los
- * demás viven en su propia pestaña, a la vista pero fuera del acomodo. La inscripción
- * usa la MISMA regla que Inscripciones y la Lista de Jugadores, así que los números
- * coinciden con los de aquellas pantallas.
+ * La cancha es de los INSCRITOS en la temporada elegida —son los que juegan— y los demás
+ * viven en su propia pestaña. Desde ahí se les puede meter al campo de todas formas:
+ * pasa que el niño entrena y juega mientras el pago se regulariza, y una hoja que no lo
+ * pueda representar obliga a armar la alineación en papel. Lo que no puede pasar es que
+ * se cuele sin que nadie lo note, así que va marcado en el campo, se confirma al meterlo
+ * y se cuenta aparte. La inscripción usa la MISMA regla que Inscripciones y la Lista de
+ * Jugadores, así que los números coinciden con los de aquellas pantallas.
  *
  * OJO con una asimetría que es fácil romper: las posiciones son del EQUIPO y no de la
  * temporada (tblEquiposPlantilla no la guarda). Cambiar de temporada mueve nombres entre
- * pestañas, nunca el acomodo. Y como el guardado REEMPLAZA el acomodo completo, al
- * guardar se mandan también las posiciones de los no inscritos, que no se pintan: si se
- * omitieran, cambiar de temporada y guardar les borraría el lugar sin que nadie lo pida.
+ * pestañas, nunca el acomodo. Y como el guardado REEMPLAZA el acomodo completo, se mandan
+ * SIEMPRE todas las posiciones: si se omitieran las de los no inscritos, cambiar de
+ * temporada y guardar les borraría el lugar sin que nadie lo pida.
  */
 
 interface EquipoOpcion {
@@ -70,7 +73,7 @@ interface Temporada {
   EsActiva: boolean;
 }
 
-/** Las dos pestañas del listado. La cancha es siempre la de los inscritos. */
+/** Las dos pestañas del listado, partidas por inscripción en la temporada elegida. */
 type Pestania = "inscritos" | "no-inscritos";
 
 const SELECT =
@@ -298,8 +301,13 @@ export default function PlantillasPage() {
     setSucio(true);
   };
 
-  /* El equipo, partido por inscripción en la temporada elegida. La cancha trabaja SOLO
-     con los inscritos: son los que juegan esta temporada, y son los que se acomodan. */
+  /* El equipo, partido por inscripción en la temporada elegida.
+  
+     La cancha es de los INSCRITOS por omisión —son los que juegan esta temporada— pero
+     admite a un no inscrito puesto a mano: pasa de verdad, el niño entrena y juega
+     mientras el pago se regulariza, y una hoja que no lo pueda representar obliga a
+     armar la alineación en papel. Lo que NO puede pasar es que se cuele sin que nadie lo
+     note, así que va marcado en el campo, se avisa al meterlo y se cuenta aparte. */
   const inscritos = useMemo(
     () => plantilla?.jugadores.filter((j) => j.inscrito) ?? [],
     [plantilla],
@@ -313,31 +321,67 @@ export default function PlantillasPage() {
   const temporadaNombre =
     temporadas.find((t) => t.IdTemporada === temporadaId)?.Temporada ?? "";
 
-  const enCancha = inscritos.filter((j) => j.x !== null);
+  /* En la cancha está QUIEN TIENE LUGAR, esté inscrito o no. La banca sigue siendo solo
+     de inscritos: al no inscrito se le manda desde su propia pestaña, a propósito, para
+     que meterlo sea un acto deliberado y no un clic más de la fila. */
+  const enCancha = useMemo(
+    () => plantilla?.jugadores.filter((j) => j.x !== null) ?? [],
+    [plantilla],
+  );
   const enBanca = inscritos.filter((j) => j.x === null);
 
-  /* No inscritos que TODAVÍA ocupan un lugar en la cancha: se acomodaron cuando sí
-     estaban inscritos, o en otra temporada. No se pintan en el campo —la cancha es de
-     los inscritos— pero su lugar se conserva al guardar, así que hay que poder verlos y
-     liberarlos. Callarlos dejaría lugares ocupados por gente invisible. */
-  const fantasmas = noInscritos.filter((j) => j.x !== null);
+  /** Los que están en el campo sin estar inscritos. Es lo que hay que poder ver de lejos. */
+  const enCanchaSinInscripcion = enCancha.filter((j) => !j.inscrito);
+
+  /** Le busca un lugar libre en la cancha, entre los puestos del acomodo por omisión. */
+  const lugarLibre = (): { x: number; y: number } => {
+    const puestos = acomodoPorOmision(Math.max(inscritos.length, enCancha.length + 1));
+    const ocupados = enCancha.map((j) => ({ x: j.x!, y: j.y! }));
+    return (
+      puestos.find((p) => !ocupados.some((o) => Math.abs(o.x - p.x) < 6 && Math.abs(o.y - p.y) < 6)) ??
+      { x: 50, y: 50 }
+    );
+  };
 
   /** Manda a la cancha a alguien de la banca, en el primer lugar libre del acomodo. */
   const mandarACancha = (idJugador: number) => {
     if (!plantilla) return;
-    const puestos = acomodoPorOmision(inscritos.length);
-    const ocupados = enCancha.map((j) => ({ x: j.x!, y: j.y! }));
-    const libre =
-      puestos.find((p) => !ocupados.some((o) => Math.abs(o.x - p.x) < 6 && Math.abs(o.y - p.y) < 6)) ??
-      { x: 50, y: 50 };
+    const libre = lugarLibre();
     cambiaJugador(idJugador, { x: acota(libre.x), y: acota(libre.y) });
   };
 
-  /** Reparte a los INSCRITOS por la cancha, de atrás hacia adelante. El punto de partida. */
+  /**
+   * Mete a la cancha a alguien que NO está inscrito.
+   *
+   * Se confirma siempre, y no se puede deshacer por accidente: el resto de la aplicación
+   * —Convocatorias, Adeudos, los conteos de Inscripciones— sigue tratándolo como no
+   * inscrito, así que quien lo pone tiene que saber que la hoja va a decir una cosa y el
+   * padrón otra. Es un aviso, no un veto: la decisión es del club.
+   */
+  const meterSinInscripcion = (j: JugadorPlantilla) => {
+    if (!plantilla) return;
+    const aviso =
+      `${j.jugador} NO tiene inscripción pagada en ${temporadaNombre || "esta temporada"}.\n\n` +
+      "Se puede poner en la cancha igual, y va a quedar marcado como tal en la hoja y en el PDF.\n\n" +
+      "¿Meterlo de todas formas?";
+    if (!confirm(aviso)) return;
+    const libre = lugarLibre();
+    cambiaJugador(j.idJugador, { x: acota(libre.x), y: acota(libre.y) });
+    setAviso(`${j.jugador} entró a la cancha sin inscripción. Queda marcado en la hoja.`);
+  };
+
+  /**
+   * Reparte por la cancha, de atrás hacia adelante. El punto de partida.
+   *
+   * Toma a los inscritos MÁS los no inscritos que ya estén puestos: si dejara fuera a
+   * estos últimos, el acomodo automático les pasaría otro jugador encima y quedarían dos
+   * nombres montados en el mismo punto.
+   */
   const acomodarTodos = () => {
     if (!plantilla) return;
-    const puestos = acomodoPorOmision(inscritos.length);
-    const lugarDe = new Map(inscritos.map((j, i) => [j.idJugador, puestos[i]]));
+    const aAcomodar = plantilla.jugadores.filter((j) => j.inscrito || j.x !== null);
+    const puestos = acomodoPorOmision(aAcomodar.length);
+    const lugarDe = new Map(aAcomodar.map((j, i) => [j.idJugador, puestos[i]]));
     setPlantilla({
       ...plantilla,
       jugadores: plantilla.jugadores.map((j) => {
@@ -348,12 +392,12 @@ export default function PlantillasPage() {
     setSucio(true);
   };
 
-  /** Saca de la cancha a los inscritos. A los no inscritos no los toca: no se ven aquí. */
+  /** Saca de la cancha a TODOS los que estén puestos, inscritos o no: son los que se ven. */
   const vaciarCancha = () => {
     if (!plantilla) return;
     setPlantilla({
       ...plantilla,
-      jugadores: plantilla.jugadores.map((j) => (j.inscrito ? { ...j, x: null, y: null } : j)),
+      jugadores: plantilla.jugadores.map((j) => ({ ...j, x: null, y: null })),
     });
     setSucio(true);
   };
@@ -500,7 +544,16 @@ export default function PlantillasPage() {
                       <ArrowRightLeft size={14} /> Traer jugador
                     </button>
                     <button
-                      onClick={() => exportarPlantillaPdf({ ...plantilla, jugadores: inscritos }, temporadaNombre)}
+                      onClick={() =>
+                        /* La hoja lleva a los inscritos y a quien se haya puesto en la
+                           cancha sin estarlo: si el PDF omitiera a estos últimos, la hoja
+                           impresa contradiría a la pantalla justo donde ya no se puede
+                           preguntar. Van marcados, no escondidos. */
+                        exportarPlantillaPdf(
+                          { ...plantilla, jugadores: [...inscritos, ...enCanchaSinInscripcion] },
+                          temporadaNombre,
+                        )
+                      }
                       className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/30 text-blue-200 text-xs font-bold transition-all"
                     >
                       <FileText size={14} /> PDF
@@ -578,7 +631,8 @@ export default function PlantillasPage() {
                   {pestania === "no-inscritos" && (
                     <p className="mb-3 text-[10px] text-slate-500 leading-snug">
                       No tienen inscripción pagada en {temporadaNombre || "la temporada"}. Están en el
-                      equipo y siguen entrenando, pero no se acomodan en la cancha.
+                      equipo y siguen entrenando. Se pueden meter a la cancha con «A la cancha»,
+                      y quedan marcados como no inscritos ahí y en el PDF.
                     </p>
                   )}
 
@@ -593,6 +647,11 @@ export default function PlantillasPage() {
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Semestre</th>
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Copas</th>
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Ligas</th>
+                          {pestania === "no-inscritos" && (
+                            <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-24">
+                              Cancha
+                            </th>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
@@ -667,12 +726,44 @@ export default function PlantillasPage() {
                                   {lig.texto}
                                 </span>
                               </td>
+                              {/* Meter a un no inscrito es un acto deliberado: por eso
+                                  tiene su propio botón en lugar de colarse en el clic de
+                                  la fila, que abre el historial de pagos. */}
+                              {pestania === "no-inscritos" && (
+                                <td className="px-2 py-1.5 text-center">
+                                  {j.x === null ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        meterSinInscripcion(j);
+                                      }}
+                                      title={`Poner a ${j.jugador} en la cancha aunque no esté inscrito`}
+                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-600/20 hover:bg-amber-600/35 border border-amber-500/40 text-amber-200 text-[10px] font-black transition-colors"
+                                    >
+                                      <Goal size={11} /> A la cancha
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        cambiaJugador(j.idJugador, { x: null, y: null });
+                                      }}
+                                      title={`Sacar a ${j.jugador} de la cancha`}
+                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/10 hover:bg-rose-600/30 border border-white/15 hover:border-rose-500/40 text-slate-300 text-[10px] font-bold transition-colors"
+                                    >
+                                      <RotateCcw size={11} /> Sacar
+                                    </button>
+                                  )}
+                                </td>
+                              )}
                             </tr>
                           );
                         })}
                         {listado.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="px-3 py-8 text-center text-slate-500 text-xs">
+                            <td colSpan={pestania === "no-inscritos" ? 8 : 7} className="px-3 py-8 text-center text-slate-500 text-xs">
                               {plantilla.jugadores.length === 0
                                 ? "Este equipo no tiene jugadores activos."
                                 : pestania === "inscritos"
@@ -709,12 +800,14 @@ export default function PlantillasPage() {
                         </button>
                       </div>
                     </div>
-                    {fantasmas.length > 0 && (
-                      <p className="mb-2 text-[10px] text-amber-300/90 leading-snug">
-                        {fantasmas.length === 1 ? "Hay 1 jugador" : `Hay ${fantasmas.length} jugadores`} sin
-                        inscripción que {fantasmas.length === 1 ? "conserva" : "conservan"} su lugar en la
-                        cancha de antes. No se {fantasmas.length === 1 ? "pinta" : "pintan"}, y al guardar
-                        se {fantasmas.length === 1 ? "respeta" : "respetan"}: {fantasmas.map((j) => nombreCorto(j.jugador)).join(", ")}.
+                    {enCanchaSinInscripcion.length > 0 && (
+                      <p className="mb-2 text-[10px] font-bold text-amber-300 leading-snug flex items-start gap-1.5">
+                        <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+                        <span>
+                          {enCanchaSinInscripcion.length === 1 ? "Hay 1 jugador" : `Hay ${enCanchaSinInscripcion.length} jugadores`} en
+                          la cancha SIN inscripción en esta temporada:{" "}
+                          {enCanchaSinInscripcion.map((j) => nombreCorto(j.jugador)).join(", ")}.
+                        </span>
                       </p>
                     )}
                     {enBanca.length === 0 ? (
@@ -813,7 +906,7 @@ export default function PlantillasPage() {
 
                   <CanchaPlantilla
                     onAbrir={(j) => setPagosTarget({ idJugador: j.idJugador, jugador: j.jugador })}
-                    jugadores={inscritos}
+                    jugadores={plantilla.jugadores}
                     dt={plantilla.dt}
                     auxiliar={plantilla.auxiliar}
                     bloqueada={guardando}

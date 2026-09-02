@@ -133,6 +133,21 @@ export async function exportarPlantillaPdf(p: Plantilla, temporada = ''): Promis
             izq + (j.x / 100) * anchoCancha,
             arriba + 14 + (j.y / 100) * altoCancha,
             `${j.dorsal ? `${j.dorsal} · ` : ''}${nombreCortoPdf(j.jugador)}`,
+            j.inscrito,
+        );
+    }
+
+    /* La leyenda del asterisco solo aparece cuando hay a quién explicarle: una hoja con
+       todos inscritos no tiene por qué cargar una nota que no aplica. */
+    const sinInscripcion = p.jugadores.filter((j) => j.x !== null && !j.inscrito).length;
+    if (sinInscripcion > 0) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(146, 64, 14);
+        doc.text(
+            `* ${sinInscripcion} ${sinInscripcion === 1 ? 'jugador sin inscripcion' : 'jugadores sin inscripcion'} en ${temporada || 'la temporada'}`,
+            izq,
+            altoHoja - MARGEN + 1,
         );
     }
 
@@ -168,20 +183,33 @@ function dibujaCancha(doc: jsPDF, x: number, y: number, ancho: number, alto: num
     }
 }
 
-/** Un nombre en su recuadro blanco, centrado en el punto. */
-function dibujaNombre(doc: jsPDF, cx: number, cy: number, texto: string): void {
+/**
+ * Un nombre en su recuadro, centrado en el punto.
+ *
+ * El de quien NO está inscrito sale en ámbar y con un asterisco. La hoja impresa es la
+ * que acaba en el pizarrón y en la mano del profe, así que es justo donde el aviso tiene
+ * que sobrevivir: en la pantalla siempre se puede preguntar, en el papel no.
+ */
+function dibujaNombre(doc: jsPDF, cx: number, cy: number, texto: string, inscrito: boolean): void {
+    const etiqueta = inscrito ? texto : `* ${texto}`;
     doc.setFontSize(6);
     doc.setFont('helvetica', 'bold');
-    const ancho = doc.getTextWidth(texto) + 3;
+    const ancho = doc.getTextWidth(etiqueta) + 3;
     const alto = 4.5;
 
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(15, 23, 42);
-    doc.setLineWidth(0.3);
+    /* Cada color en su variable y no en un ternario dentro del spread: el ternario da
+       una union de tuplas que TypeScript no deja esparcir. */
+    const fondo: [number, number, number] = inscrito ? [255, 255, 255] : [254, 243, 199];
+    const borde: [number, number, number] = inscrito ? [15, 23, 42] : [217, 119, 6];
+    const tinta: [number, number, number] = inscrito ? [15, 23, 42] : [146, 64, 14];
+
+    doc.setFillColor(...fondo);
+    doc.setDrawColor(...borde);
+    doc.setLineWidth(inscrito ? 0.3 : 0.5);
     doc.roundedRect(cx - ancho / 2, cy - alto / 2, ancho, alto, 0.6, 0.6, 'FD');
 
-    doc.setTextColor(15, 23, 42);
-    doc.text(texto, cx, cy + 1.3, { align: 'center' });
+    doc.setTextColor(...tinta);
+    doc.text(etiqueta, cx, cy + 1.3, { align: 'center' });
 }
 
 /** Igual que en la pantalla: en la cancha el nombre completo no cabe. */

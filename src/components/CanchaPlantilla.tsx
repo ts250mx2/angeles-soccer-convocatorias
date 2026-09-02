@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import { acota, type JugadorPlantilla } from "@/lib/plantilla-equipo";
 import AvatarJugador from "@/components/AvatarJugador";
 
@@ -160,13 +160,27 @@ export default function CanchaPlantilla({
               className={`absolute -translate-x-1/2 -translate-y-1/2 group ${
                 bloqueada ? "cursor-default" : activo ? "cursor-grabbing z-20" : "cursor-grab z-10"
               }`}
-              title={`${j.jugador} — clic para ver sus pagos, arrastra para moverlo`}
+              title={`${j.jugador}${j.inscrito ? "" : " — SIN INSCRIPCIÓN"} — clic para ver sus pagos, arrastra para moverlo`}
             >
+              {/* El borde ámbar marca al que está en el campo SIN inscripción. Se puso a
+                  mano y a propósito, pero la hoja tiene que decirlo: quien la lea después
+                  —o la imprima— no tiene por qué acordarse de quién era. */}
               <div
                 className={`relative flex items-center rounded-md border-2 bg-white px-2 py-1 shadow-md transition-shadow ${
-                  activo ? "border-blue-500 shadow-xl" : "border-slate-800"
+                  activo
+                    ? "border-blue-500 shadow-xl"
+                    : j.inscrito
+                      ? "border-slate-800"
+                      : "border-amber-500 bg-amber-50"
                 }`}
               >
+                {!j.inscrito && (
+                  <AlertCircle
+                    size={12}
+                    className="text-amber-600 mr-1 flex-shrink-0"
+                    aria-label="Sin inscripción"
+                  />
+                )}
                 <AvatarJugador
                   idJugador={j.idJugador}
                   nombre={j.jugador}
