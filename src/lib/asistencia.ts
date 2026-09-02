@@ -118,8 +118,12 @@ export const etiquetaMes = (anio: number, mes: number): string =>
 export interface ResumenAsistencia {
     asistencias: number;
     faltas: number;
+    /** Asistencias más faltas: las celdas que alguien sí capturó. Es el denominador. */
+    registradas: number;
     /** Asistencias entre lo registrado, 0 a 100. `null` si no hay nada capturado. */
     porcentaje: number | null;
+    /** Faltas entre lo registrado, 0 a 100. `null` si no hay nada capturado. */
+    porcentajeFaltas: number | null;
 }
 
 /**
@@ -139,8 +143,24 @@ export function resumenDe(marcas: Iterable<Marca>): ResumenAsistencia {
     return {
         asistencias,
         faltas,
+        registradas,
         porcentaje: registradas === 0 ? null : (asistencias / registradas) * 100,
+        porcentajeFaltas: registradas === 0 ? null : (faltas / registradas) * 100,
     };
+}
+
+/**
+ * Los dos porcentajes ya redondeados, y que SUMAN 100 exactos.
+ *
+ * El de faltas se deriva del de asistencia en vez de redondearse por su cuenta: con
+ * 50.5% y 49.5% cada uno redondearía hacia arriba y la pantalla mostraría 51% y 50%, que
+ * es lo primero que alguien señala. Se pierde medio punto en el de faltas y se gana que
+ * los dos números se puedan leer juntos sin tropezar.
+ */
+export function porcentajesEnteros(r: ResumenAsistencia): { asistencia: number; falta: number } | null {
+    if (r.porcentaje === null) return null;
+    const asistencia = Math.round(r.porcentaje);
+    return { asistencia, falta: 100 - asistencia };
 }
 
 /** Verde si vino, rojo si faltó. Los mismos tonos que el resto de la aplicación. */

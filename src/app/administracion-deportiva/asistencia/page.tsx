@@ -6,10 +6,11 @@ import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   AlertCircle, CalendarCheck, ChevronLeft, ChevronRight, FileText, Loader2, Save, Printer,
+  Search, X,
 } from "lucide-react";
 import { partirCategoria } from "@/lib/categoria-equipo";
 import {
-  COLOR_MARCA, MESES, TEXTO_MARCA, etiquetaMes, resumenDe, siguienteMarca,
+  COLOR_MARCA, MESES, TEXTO_MARCA, etiquetaMes, porcentajesEnteros, resumenDe, siguienteMarca,
   type DiaClase, type Marca,
 } from "@/lib/asistencia";
 import AvatarJugador from "@/components/AvatarJugador";
@@ -116,6 +117,7 @@ export default function AsistenciaPage() {
   const [hoja, setHoja] = useState<Hoja | null>(null);
   /** Lo marcado, en memoria. Se manda completo al guardar. */
   const [marcas, setMarcas] = useState<Map<string, Marca>>(new Map());
+  const [busqueda, setBusqueda] = useState("");
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [sucio, setSucio] = useState(false);
@@ -298,13 +300,17 @@ export default function AsistenciaPage() {
 
   /* Pasar lista de un día entero: pone A a todos los que ese día no tengan nada. No pisa
      lo ya marcado —si alguien ya trae F, quien la puso sabía por qué— y volver a tocarlo
-     limpia el día completo. */
+     limpia el día completo.
+
+     Actúa sobre los alumnos VISIBLES, no sobre todos: con una búsqueda puesta, marcar
+     también a los que están escondidos sería tocar renglones que quien aprieta no está
+     viendo. Sin búsqueda, visibles y todos son lo mismo y se comporta como siempre. */
   const marcarDia = (fecha: string) => {
-    if (!hoja) return;
-    const yaLleno = hoja.alumnos.every((a) => marcas.has(llave(a.idJugador, fecha)));
+    if (!hoja || alumnosVisibles.length === 0) return;
+    const yaLleno = alumnosVisibles.every((a) => marcas.has(llave(a.idJugador, fecha)));
     setMarcas((prev) => {
       const siguiente = new Map(prev);
-      hoja.alumnos.forEach((a) => {
+      alumnosVisibles.forEach((a) => {
         const k = llave(a.idJugador, fecha);
         if (yaLleno) siguiente.delete(k);
         else if (!siguiente.has(k)) siguiente.set(k, "A");
@@ -369,6 +375,50 @@ export default function AsistenciaPage() {
 
   /** El resumen del pie: se cuenta solo lo registrado, nunca las celdas vacías. */
   const resumen = useMemo(() => resumenDe(marcas.values()), [marcas]);
+  const pct = useMemo(() => porcentajesEnteros(resumen), [resumen]);
+
+  /**
+   * Los entrenamientos del mes, y cuántos tienen lista.
+   *
+   * Son dos números y hacen falta los dos: el primero es cuántas veces entrena el equipo
+   * este mes, y el segundo cuántos de esos días alguien pasó lista. Los porcentajes de
+   * arriba solo hablan de los capturados, así que sin la segunda cifra un 100% de
+   * asistencia sobre un solo día capturado de nueve se leería como un mes perfecto.
+   */
+  const entrenamientos = useMemo(() => {
+    if (!hoja) return { total: 0, capturados: 0 };
+    const conLista = hoja.dias.filter((d) =>
+      hoja.alumnos.some((a) => marcas.has(llave(a.idJugador, d.fecha))),
+    ).length;
+    return { total: hoja.dias.length, capturados: conLista };
+  }, [hoja, marcas]);
+
+  /**
+   * Celdas que nadie marcó: los huecos de la hoja.
+   *
+   * Es el complemento exacto de lo capturado sobre la reja completa (días × alumnos), y
+   * es la cifra que dice cuánto falta por pasar. Los porcentajes de arriba la excluyen a
+   * propósito, así que sin este número no habría forma de saber si un 90% se sacó de la
+   * hoja entera o de tres celdas sueltas.
+   */
+  const sinCapturar = useMemo(() => {
+    if (!hoja) return 0;
+    return hoja.dias.length * hoja.alumnos.length - resumen.registradas;
+  }, [hoja, resumen.registradas]);
+
+  /**
+   * Los alumnos que se están viendo. La búsqueda solo esconde renglones: NO cambia las
+   * cifras de arriba, que hablan del mes del equipo entero. Un buscador que moviera los
+   * totales convertiría "85% de asistencia" en el 85% de lo que uno tecleó.
+   */
+  const alumnosVisibles = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!hoja) return [];
+    if (!q) return hoja.alumnos;
+    return hoja.alumnos.filter(
+      (a) => a.jugador.toLowerCase().includes(q) || String(a.idJugador) === q,
+    );
+  }, [hoja, busqueda]);
 
   /** Lo capturado por alumno, para la columna del final. */
   const porAlumno = useMemo(() => {
@@ -597,11 +647,68 @@ export default function AsistenciaPage() {
                   <div className="text-right">
                     <p className="text-sm font-black text-emerald-300">{etiquetaMes(hoja.anio, hoja.mes)}</p>
                     <p className="text-[11px] text-slate-400">
-                      {resumen.porcentaje === null
+                      {resumen.registradas === 0
                         ? "Sin nada capturado"
-                        : `${resumen.porcentaje.toFixed(0)}% de asistencia · ${resumen.asistencias} vinieron, ${resumen.faltas} faltaron`}
+                        : `${resumen.registradas} de ${hoja.dias.length * hoja.alumnos.length} celdas capturadas`}
                     </p>
                   </div>
+                </div>
+
+                {/* ── Lo que da el mes ──
+                    Los porcentajes se miden SOLO sobre lo capturado, nunca sobre las
+                    celdas vacías: meterlas como faltas castigaría al equipo por los días
+                    que el profe no pasó lista, y meterlas como asistencias los regalaría.
+                    Por eso la tarjeta de entrenamientos dice también cuántos tienen
+                    lista: es la que deja leer los otros cuatro números. */}
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+                  <CifraAsistencia
+                    etiqueta="Entrenamientos"
+                    valor={String(entrenamientos.total)}
+                    clase="text-white"
+                    nota={
+                      entrenamientos.total === 0
+                        ? undefined
+                        : `${entrenamientos.capturados} con lista`
+                    }
+                    title="Días que este equipo entrena en el mes, según su horario. Es el número de columnas de la hoja."
+                  />
+                  <CifraAsistencia
+                    etiqueta="Asistencias"
+                    valor={String(resumen.asistencias)}
+                    clase="text-emerald-300"
+                    title="Celdas marcadas como que el alumno vino."
+                  />
+                  <CifraAsistencia
+                    etiqueta="Faltas"
+                    valor={String(resumen.faltas)}
+                    clase="text-rose-300"
+                    title="Celdas marcadas como que el alumno no vino."
+                  />
+                  <CifraAsistencia
+                    etiqueta="% Asistencia"
+                    valor={pct ? `${pct.asistencia}%` : "—"}
+                    clase="text-emerald-300"
+                    nota={resumen.registradas > 0 ? `de ${resumen.registradas} capturadas` : undefined}
+                    title="Asistencias entre lo capturado. Las celdas sin marcar no cuentan ni arriba ni abajo de la división."
+                  />
+                  <CifraAsistencia
+                    etiqueta="Sin capturar"
+                    valor={String(sinCapturar)}
+                    clase="text-slate-300"
+                    nota={
+                      hoja.alumnos.length > 0
+                        ? `de ${hoja.dias.length * hoja.alumnos.length} celdas`
+                        : undefined
+                    }
+                    title="Celdas que nadie marcó: ni asistencia ni falta. Es lo que falta por pasar, y no entra en ninguno de los dos porcentajes."
+                  />
+                  <CifraAsistencia
+                    etiqueta="% Faltas"
+                    valor={pct ? `${pct.falta}%` : "—"}
+                    clase="text-rose-300"
+                    nota={resumen.registradas > 0 ? `de ${resumen.registradas} capturadas` : undefined}
+                    title="Faltas entre lo capturado. Se deriva del porcentaje de asistencia para que los dos sumen 100 exactos."
+                  />
                 </div>
 
                 {hoja.dias.length === 0 ? (
@@ -618,6 +725,49 @@ export default function AsistenciaPage() {
                   </div>
                 ) : (
                   <>
+                    {/* Buscador. Solo esconde renglones: las cifras de arriba siguen
+                        siendo las del equipo entero. Con quince alumnos no haría falta,
+                        pero los grupos de clinics pasan de setenta y ahí encontrar a uno
+                        para corregirle una marca es lo que cuesta. */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="relative flex-1 max-w-sm">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={busqueda}
+                          onChange={(e) => setBusqueda(e.target.value)}
+                          placeholder="Buscar alumno por nombre o número..."
+                          className="w-full bg-white/5 border border-white/15 rounded-lg pl-9 pr-8 py-2 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-blue-500/60 transition-colors"
+                        />
+                        {busqueda && (
+                          <button
+                            type="button"
+                            onClick={() => setBusqueda("")}
+                            title="Limpiar la búsqueda"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-slate-500 hover:text-white hover:bg-white/10 transition-colors"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                      {busqueda && (
+                        <p className="text-[10px] font-bold text-slate-400 whitespace-nowrap">
+                          {alumnosVisibles.length} de {hoja.alumnos.length}
+                          {alumnosVisibles.length > 0 && (
+                            <span className="text-slate-500"> · pasar lista solo marca a los visibles</span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+
+                    {alumnosVisibles.length === 0 ? (
+                      <div className="text-center py-12 rounded-2xl border border-white/10">
+                        <p className="text-slate-300 font-bold text-sm">Ningún alumno con ese nombre</p>
+                        <p className="text-slate-500 text-xs mt-1">
+                          Son {hoja.alumnos.length} en el equipo. Limpia la búsqueda para verlos todos.
+                        </p>
+                      </div>
+                    ) : (
                     <div className="overflow-x-auto rounded-2xl border border-white/10">
                       <table className="w-full">
                         <thead>
@@ -647,7 +797,7 @@ export default function AsistenciaPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {hoja.alumnos.map((a, i) => {
+                          {alumnosVisibles.map((a, i) => {
                             const cuenta = porAlumno.get(a.idJugador) ?? { a: 0, f: 0 };
                             return (
                               <tr key={a.idJugador} className="border-b border-white/5 last:border-b-0 hover:bg-white/[0.03]">
@@ -713,6 +863,7 @@ export default function AsistenciaPage() {
                         </tbody>
                       </table>
                     </div>
+                    )}
 
                     <p className="text-[10px] text-slate-500 mt-3">
                       Toca una celda para ciclar entre <b className="text-emerald-400">✓ vino</b>,{" "}
@@ -741,5 +892,30 @@ export default function AsistenciaPage() {
         }}
       />
     </DashboardLayout>
+  );
+}
+
+/** Una cifra del mes. Es solo lectura: aquí no hay nada que filtrar, la hoja ya es de un
+ *  equipo y un mes concretos. */
+function CifraAsistencia({
+  etiqueta,
+  valor,
+  clase,
+  nota,
+  title,
+}: {
+  etiqueta: string;
+  valor: string;
+  clase: string;
+  /** Renglón chico bajo la cifra: contra qué se mide. */
+  nota?: string;
+  title?: string;
+}) {
+  return (
+    <div title={title} className="rounded-xl px-4 py-3 border bg-white/5 border-white/10">
+      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{etiqueta}</p>
+      <p className={`text-2xl font-black tabular-nums ${clase}`}>{valor}</p>
+      {nota && <p className="text-[9px] font-bold text-slate-500">{nota}</p>}
+    </div>
   );
 }
