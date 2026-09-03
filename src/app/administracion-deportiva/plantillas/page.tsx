@@ -136,6 +136,9 @@ export default function PlantillasPage() {
      Va en un ref y no en estado: solo decide si el efecto de abajo puede escribir, y
      como estado provocaría un render de más sin cambiar nada de lo que se pinta. */
   const yaSeIntentoRestaurar = useRef(false);
+  /* Si se llega desde la canchita del catálogo, esta referencia hace que el primer
+     pedido incluya ese equipo aunque todavía no tenga inscritos en la temporada. */
+  const equipoDirecto = useRef<number | null>(null);
 
   useEffect(() => {
     if (!user || !puedeVer) return;
@@ -155,14 +158,26 @@ export default function PlantillasPage() {
              vigente, que es la que se consulta el 99% de las veces. La temporada
              guardada solo se acepta si sigue en el catálogo; si no, se cae a la activa y
              la validación de más abajo suelta el equipo por su cuenta. */
-          const recordado = leerEquipoRecordado();
-          const existe = recordado
-            && (jsonTemporadas.data as Temporada[]).some((t) => t.IdTemporada === recordado.temporadaId);
-          setTemporadaId(existe ? recordado!.temporadaId : jsonTemporadas.temporadaActiva);
-          if (existe) {
-            setIdSede(recordado!.idSede);
-            setAnio(recordado!.anio);
-            setIdEquipo(recordado!.idEquipo);
+          const params = new URLSearchParams(window.location.search);
+          const idDirecto = Number(params.get("equipoId"));
+          const sedeDirecta = Number(params.get("sedeId"));
+          const categoriaDirecta = params.get("categoria")?.trim() ?? "";
+          if (idDirecto > 0 && sedeDirecta > 0 && categoriaDirecta) {
+            equipoDirecto.current = idDirecto;
+            setTemporadaId(jsonTemporadas.temporadaActiva);
+            setIdSede(sedeDirecta);
+            setAnio(categoriaDirecta);
+            setIdEquipo(idDirecto);
+          } else {
+            const recordado = leerEquipoRecordado();
+            const existe = recordado
+              && (jsonTemporadas.data as Temporada[]).some((t) => t.IdTemporada === recordado.temporadaId);
+            setTemporadaId(existe ? recordado!.temporadaId : jsonTemporadas.temporadaActiva);
+            if (existe) {
+              setIdSede(recordado!.idSede);
+              setAnio(recordado!.anio);
+              setIdEquipo(recordado!.idEquipo);
+            }
           }
         }
         // A partir de aquí ya se puede recordar lo que el usuario elija.
@@ -197,13 +212,18 @@ export default function PlantillasPage() {
     let vigente = true;
     (async () => {
       try {
+        const directo = equipoDirecto.current;
+        const extra = directo ? `&conInscritos=0&equipoId=${directo}` : "";
         const res = await fetch(
-          `/api/administracion-deportiva/equipos?temporadaId=${temporadaId}`,
+          `/api/administracion-deportiva/equipos?temporadaId=${temporadaId}${extra}`,
           { cache: "no-store" },
         );
         const json = await res.json();
         if (!vigente) return;
-        if (json.success) setEquipos({ temporadaId, lista: json.data });
+        if (json.success) {
+          setEquipos({ temporadaId, lista: json.data });
+          equipoDirecto.current = null;
+        }
         else setError(json.message ?? "Error al cargar los equipos");
       } catch {
         if (vigente) setError("Error de conexión");
