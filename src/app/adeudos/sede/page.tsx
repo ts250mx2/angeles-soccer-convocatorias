@@ -15,6 +15,7 @@ import {
   type RebanadaKpi,
 } from '@/components/KpiPanel';
 import GraficaPastel from '@/components/GraficaPastel';
+import AdeudosConvocatorias from "@/components/AdeudosConvocatorias";
 
 interface DebeMes {
   mes: number;
@@ -591,7 +592,7 @@ function ResumenPorSede({ sedes, esAnterior, suf, abrirSede, verSinInscripcion =
  * adeudo", con la dona del grupo normal, porteros, becados, futsal, el resumen por
  * sede y —según la temporada— sin inscripción o posibles bajas.
  */
-function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, onToggleDescartar, pie, colapso, porSede, abrirSede, verSinInscripcion = false, onToggleSinInscripcion }: {
+function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, onToggleDescartar, pie, extra, colapso, porSede, abrirSede, verSinInscripcion = false, onToggleSinInscripcion }: {
   variante: 'anterior' | 'actual';
   caption: string;
   d: DatosAdeudo;
@@ -600,6 +601,14 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
   descartarPB?: boolean;
   onToggleDescartar?: () => void;
   pie?: React.ReactNode;
+  /**
+   * Bloque propio al pie del cuerpo de la tarjeta, dentro de ella.
+   *
+   * Lo usa la temporada en curso para los adeudos de convocatorias: son de ESTA
+   * temporada, así que pertenecen a este panel, pero no se suman con los de mensualidad
+   * y por eso van en sus propias tarjetas y no entre las cifras de arriba.
+   */
+  extra?: React.ReactNode;
   /** Si se provee, la tarjeta se puede plegar; cerrada se reduce a una barra. */
   colapso?: { abierta: boolean; onToggle: () => void };
   /** Resumen por sede; solo en la tarjeta global (dentro del modal ya es una sede). */
@@ -907,6 +916,8 @@ function TarjetaAdeudos({ variante, caption, d, abrir, disabled, descartarPB, on
         )}
       </div>
 
+      {extra}
+
       <div className="flex-1" />
       {pie}
     </div>
@@ -1095,6 +1106,10 @@ export default function AdeudosSedePage() {
             porSede={esGlobal ? resumenSedes(datosActual) : undefined}
             abrirSede={esGlobal ? (s, cfg) => abrirActualSede(sedePorId(s.id))(cfg) : undefined}
             verSinInscripcion={verSinInscripcion}
+            /* Los adeudos de convocatorias, solo en la tarjeta global: dentro del modal
+               por sedes se entró a ver el adeudo de mensualidades de una sede, y meter
+               ahí el de torneos mezclaría dos preguntas. */
+            extra={esGlobal ? <AdeudosConvocatorias temporadaId={temporadaId} /> : undefined}
             /* El check solo se ofrece en la tarjeta global; dentro del modal por sede
                la vista hereda lo que se eligió afuera. */
             onToggleSinInscripcion={esGlobal ? () => setVerSinInscripcion((v) => !v) : undefined}
@@ -1194,6 +1209,7 @@ export default function AdeudosSedePage() {
                 verBajas={() => setDetalleKpi('bajas')}
                 colapso={{ abierta: plantillaAbierta, onToggle: () => setPlantillaAbierta((v) => !v) }}
               />
+
             </div>
           )}
 

@@ -373,6 +373,7 @@ export const CLAVE_BECAS = '/jugadores/becas';
 export const CLAVE_LEALTAD = '/jugadores/lealtad';
 export const CLAVE_CATEGORIAS = '/jugadores/categorias';
 export const CLAVE_PLANTILLAS = '/administracion-deportiva/plantillas';
+export const CLAVE_ADEUDOS_SEDE = '/adeudos/sede';
 export const CLAVE_ASISTENCIA = '/administracion-deportiva/asistencia';
 export const CLAVE_COPAS_LIGAS = '/copas-ligas';
 export const CLAVE_COPAS = '/convocatorias/copas';
