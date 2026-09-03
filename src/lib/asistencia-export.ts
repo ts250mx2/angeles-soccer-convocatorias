@@ -86,6 +86,20 @@ export function exportarAsistenciaPdf(
     doc.text(etiquetaMes(hoja.anio, hoja.mes), anchoHoja / 2, 44, { align: "center" });
 
     // ── La tabla ──
+    /* El % de cada alumno: asistencias entre lo que se le capturó, la MISMA regla que la
+       pantalla y que el total del mes. Solo tiene sentido en la hoja CON marcas; la hoja
+       en blanco es para llenarla a mano y ahí la columna sobraría. */
+    const porcentajeDe = (idJugador: number): string => {
+        let a = 0;
+        let f = 0;
+        for (const d of hoja.dias) {
+            const m = marcas.get(`${idJugador}|${d.fecha}`);
+            if (m === "A") a += 1;
+            else if (m === "F") f += 1;
+        }
+        return a + f === 0 ? "" : `${Math.round((a / (a + f)) * 100)}%`;
+    };
+
     const renglones = [
         ...hoja.alumnos.map((a, i) => [
             String(i + 1),
@@ -94,12 +108,14 @@ export function exportarAsistenciaPdf(
             ...hoja.dias.map((d) =>
                 conMarcas ? (TEXTO_MARCA[marcas.get(`${a.idJugador}|${d.fecha}`) as Marca] ?? "") : "",
             ),
+            ...(conMarcas ? [porcentajeDe(a.idJugador)] : []),
         ]),
         ...Array.from({ length: RENGLONES_LIBRES }, (_, i) => [
             String(hoja.alumnos.length + i + 1),
             "",
             "",
             ...hoja.dias.map(() => ""),
+            ...(conMarcas ? [""] : []),
         ]),
     ];
 
@@ -107,13 +123,22 @@ export function exportarAsistenciaPdf(
        puede achicarse sin volverse ilegible, así que el que cede es el ancho por día,
        con un piso: por debajo de 7 mm no cabe una palomita a mano. */
     const anchoTabla = anchoHoja - MARGEN * 2;
-    const anchoDia = Math.max(7, Math.min(11, (anchoTabla - 8 - 62 - 34) / Math.max(1, hoja.dias.length)));
+    const ANCHO_BECA = 24;
+    const ANCHO_PCT = conMarcas ? 12 : 0;
+    const anchoDia = Math.max(
+        7,
+        Math.min(11, (anchoTabla - 8 - 62 - ANCHO_BECA - ANCHO_PCT) / Math.max(1, hoja.dias.length)),
+    );
 
     autoTable(doc, {
         startY: 48,
         margin: { left: MARGEN, right: MARGEN },
         tableWidth: anchoTabla,
-        head: [["", "NOMBRE DEL ALUMNO", "OBSERVACION (BECA)", ...hoja.dias.map((d) => d.etiqueta)]],
+        head: [[
+            "", "NOMBRE DEL ALUMNO", "BECA",
+            ...hoja.dias.map((d) => d.etiqueta),
+            ...(conMarcas ? ["%"] : []),
+        ]],
         body: renglones,
         theme: "grid",
         styles: {
@@ -133,9 +158,20 @@ export function exportarAsistenciaPdf(
         columnStyles: {
             0: { cellWidth: 8, halign: "center", fontSize: 7, textColor: RAYA },
             1: { cellWidth: 62 },
-            2: { cellWidth: 34, fontSize: 6.5, textColor: RAYA },
+            2: { cellWidth: ANCHO_BECA, fontSize: 6, textColor: RAYA },
         },
         didParseCell: (datos) => {
+            /* El % es la última columna cuando la hoja lleva marcas: se trata aparte
+               para que no le apliquen el ancho ni el color de los días. */
+            const columnaPct = conMarcas ? 3 + hoja.dias.length : -1;
+            if (datos.column.index === columnaPct) {
+                datos.cell.styles.cellWidth = ANCHO_PCT;
+                datos.cell.styles.halign = "center";
+                datos.cell.styles.fontStyle = "bold";
+                datos.cell.styles.fontSize = 7.5;
+                return;
+            }
+
             // Las columnas de días van centradas y anchas iguales.
             if (datos.column.index >= 3) {
                 datos.cell.styles.cellWidth = anchoDia;

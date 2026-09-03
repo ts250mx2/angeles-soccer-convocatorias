@@ -12,7 +12,9 @@ import {
 import TransferirJugador from "@/components/TransferirJugador";
 import AvatarJugador from "@/components/AvatarJugador";
 import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModal";
-import { partirCategoria } from "@/lib/categoria-equipo";
+import {
+  aniosDeSede, letraDe, letrasDe, sedesDeEquipos, seleccionHuerfana,
+} from "@/lib/selector-equipo";
 import {
   COLOR_BECA, acomodoPorOmision, acota, etiquetaBeca,
   type JugadorPlantilla, type Plantilla,
@@ -57,6 +59,7 @@ import { guardarEquipoRecordado, leerEquipoRecordado } from "@/lib/equipo-record
 interface EquipoOpcion {
   IdEquipo: number;
   Equipo: string;
+  IdSede: number | null;
   Sede: string | null;
   Coach: string | null;
   Jugadores: number;
@@ -101,6 +104,9 @@ export default function PlantillasPage() {
   const [usuarios, setUsuarios] = useState<UsuarioOpcion[]>([]);
   const [temporadas, setTemporadas] = useState<Temporada[]>([]);
   const [temporadaId, setTemporadaId] = useState<number | null>(null);
+  /* Los tres pasos, en el orden en que se eligen: sede, año y letra. Ver
+     @/lib/selector-equipo para por qué la sede va primero. */
+  const [idSede, setIdSede] = useState<number | null>(null);
   const [anio, setAnio] = useState("");
   const [idEquipo, setIdEquipo] = useState<number | null>(null);
   const [pestania, setPestania] = useState<Pestania>("inscritos");
@@ -154,6 +160,7 @@ export default function PlantillasPage() {
             && (jsonTemporadas.data as Temporada[]).some((t) => t.IdTemporada === recordado.temporadaId);
           setTemporadaId(existe ? recordado!.temporadaId : jsonTemporadas.temporadaActiva);
           if (existe) {
+            setIdSede(recordado!.idSede);
             setAnio(recordado!.anio);
             setIdEquipo(recordado!.idEquipo);
           }
@@ -176,9 +183,9 @@ export default function PlantillasPage() {
   useEffect(() => {
     if (!yaSeIntentoRestaurar.current) return;
     guardarEquipoRecordado(
-      temporadaId && idEquipo ? { temporadaId, anio, idEquipo } : null,
+      temporadaId && idSede && idEquipo ? { temporadaId, idSede, anio, idEquipo } : null,
     );
-  }, [temporadaId, anio, idEquipo]);
+  }, [temporadaId, idSede, anio, idEquipo]);
 
   /* Los equipos de los selectores, que SÍ dependen de la temporada: solo se ofrecen los
      que tienen gente inscrita en ella. Por eso se vuelven a pedir al cambiarla, en vez
@@ -209,35 +216,29 @@ export default function PlantillasPage() {
   /** La lista que se está viendo ya es la de la temporada elegida, no la de la anterior. */
   const listaAlDia = equipos.temporadaId === temporadaId;
 
-  /* Los años, sacados del nombre del equipo con la misma regla que usa el resto de la
-     aplicación para partir una categoría. */
-  const anios = useMemo(
-    () =>
-      [...new Set(equipos.lista.map((e) => partirCategoria(e.Equipo).anio).filter(Boolean))].sort(
-        (a, b) => b.localeCompare(a),
-      ),
-    [equipos],
-  );
-
-  /** Los equipos del año elegido: es la lista del segundo selector, la de las letras. */
-  const letras = useMemo(
-    () => (anio ? equipos.lista.filter((e) => partirCategoria(e.Equipo).anio === anio) : []),
-    [equipos, anio],
-  );
+  // Las tres listas de los desplegables, en cascada. La regla vive en @/lib/selector-equipo.
+  const sedes = useMemo(() => sedesDeEquipos(equipos.lista), [equipos]);
+  const anios = useMemo(() => aniosDeSede(equipos.lista, idSede), [equipos, idSede]);
+  const letras = useMemo(() => letrasDe(equipos.lista, idSede, anio), [equipos, idSede, anio]);
 
   /* Al cambiar de temporada la lista se encoge, y lo que estaba elegido puede haber
      dejado de existir en ella. Se suelta la selección huérfana en vez de dejarla puesta:
-     un selector que enseña un equipo que ya no está entre sus opciones se ve en blanco y
-     no hay forma de saber qué se está mirando. */
+     un selector que enseña algo que ya no está entre sus opciones se ve en blanco y no
+     hay forma de saber qué se está mirando. Soltar un paso arrastra a los de abajo. */
   useEffect(() => {
     if (!listaAlDia) return;
-    if (anio && !anios.includes(anio)) {
+    const huerfano = seleccionHuerfana(equipos.lista, idSede, anio, idEquipo);
+    if (huerfano === "sede") {
+      setIdSede(null);
       setAnio("");
       setIdEquipo(null);
-      return;
+    } else if (huerfano === "anio") {
+      setAnio("");
+      setIdEquipo(null);
+    } else if (huerfano === "equipo") {
+      setIdEquipo(null);
     }
-    if (idEquipo && !equipos.lista.some((e) => e.IdEquipo === idEquipo)) setIdEquipo(null);
-  }, [listaAlDia, equipos, anios, anio, idEquipo]);
+  }, [listaAlDia, equipos, idSede, anio, idEquipo]);
 
   const cargar = useCallback(async (id: number, idTemporada: number) => {
     setCargando(true);
@@ -497,6 +498,27 @@ export default function PlantillasPage() {
               {/* El equipo se elige aquí, y a continuación lo que se hace con él. */}
               <div className="flex flex-wrap items-end gap-2 mt-4">
                 <div>
+                  <label htmlFor="pl-sede" className={ETIQUETA_SELECT}>Sede:</label>
+                  <select
+                    id="pl-sede"
+                    value={idSede ?? ""}
+                    onChange={(e) => {
+                      // Cambiar de sede invalida el año y la letra: son suyos.
+                      setIdSede(Number(e.target.value) || null);
+                      setAnio("");
+                      setIdEquipo(null);
+                    }}
+                    className={SELECT}
+                    title="La misma categoría existe en varias sedes; ésta es la que manda"
+                  >
+                    <option value="">Sede...</option>
+                    {sedes.map((s) => (
+                      <option key={s.idSede} value={s.idSede}>{s.sede}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
                   <label htmlFor="pl-categoria" className={ETIQUETA_SELECT}>Categoría:</label>
                   <select
                     id="pl-categoria"
@@ -521,10 +543,10 @@ export default function PlantillasPage() {
                     title="Letra del equipo. Solo salen los que tienen jugadores inscritos en la temporada elegida"
                   >
                     <option value="">{anio ? "Letra..." : "Elige la categoría"}</option>
+                    {/* Ya no hace falta decir la sede en cada opción: la eligió arriba. */}
                     {letras.map((e) => (
                       <option key={e.IdEquipo} value={e.IdEquipo}>
-                        {partirCategoria(e.Equipo).equipo || e.Equipo}
-                        {e.Sede ? ` · ${e.Sede}` : ""} ({e.Jugadores})
+                        {letraDe(e)} ({e.Jugadores})
                       </option>
                     ))}
                   </select>
@@ -642,7 +664,6 @@ export default function PlantillasPage() {
                         <tr className="bg-slate-800">
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-8">E</th>
                           <th className="px-2 py-2 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Nombre</th>
-                          <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Semestre</th>
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Copas</th>
@@ -686,27 +707,6 @@ export default function PlantillasPage() {
                                     )}
                                   </div>
                                 </div>
-                              </td>
-                              {/* Inscripción y adeudo, con la MISMA regla que Adeudos por
-                                  Sede y la Lista de Jugadores. Quien no está inscrito no
-                                  trae meses: lo que le falta es la inscripción. */}
-                              <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                                {!j.inscrito ? (
-                                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                                    SIN INSCRIPCIÓN
-                                  </span>
-                                ) : j.mesesDebe > 0 ? (
-                                  <span
-                                    title={`Debe ${j.mesesDebe} ${j.mesesDebe === 1 ? "mes" : "meses"} de la temporada`}
-                                    className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30"
-                                  >
-                                    DEBE {j.mesesDebe}
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                                    AL CORRIENTE
-                                  </span>
-                                )}
                               </td>
                               <td className="px-2 py-1.5 text-center text-[10px] text-slate-400 tabular-nums whitespace-nowrap">
                                 {j.fechaNacimiento ?? "—"}
@@ -763,7 +763,7 @@ export default function PlantillasPage() {
                         })}
                         {listado.length === 0 && (
                           <tr>
-                            <td colSpan={pestania === "no-inscritos" ? 8 : 7} className="px-3 py-8 text-center text-slate-500 text-xs">
+                            <td colSpan={pestania === "no-inscritos" ? 7 : 6} className="px-3 py-8 text-center text-slate-500 text-xs">
                               {plantilla.jugadores.length === 0
                                 ? "Este equipo no tiene jugadores activos."
                                 : pestania === "inscritos"

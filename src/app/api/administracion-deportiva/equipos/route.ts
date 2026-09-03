@@ -32,6 +32,7 @@ export const dynamic = 'force-dynamic';
 interface FilaEquipo {
     IdEquipo: number;
     Equipo: string;
+    IdSede: number | null;
     Sede: string | null;
     Coach: string | null;
     Genero: number | null;
@@ -64,6 +65,7 @@ export async function GET(request: Request) {
         const [equipos] = (await pool.query(
             `SELECT E.IdEquipo,
                     E.Equipo,
+                    E.IdSede,
                     S.Sede,
                     U.Usuario AS Coach,
                     E.Genero,
@@ -88,7 +90,7 @@ export async function GET(request: Request) {
               WHERE E.Status = 0
                 AND COALESCE(E.EsCompetencia, 0) = 0
                 AND COALESCE(TRIM(E.Equipo), '') <> ''
-              ORDER BY E.Equipo ASC, S.Sede ASC`,
+              ORDER BY S.Sede ASC, E.Equipo ASC`,
             // Un parametro por subconsulta, en el orden en que aparecen: INS, MEN.
             [temporadaId, temporadaId],
         )) as [FilaEquipo[], unknown];

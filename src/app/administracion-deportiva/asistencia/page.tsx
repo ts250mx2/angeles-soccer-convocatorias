@@ -8,7 +8,9 @@ import {
   AlertCircle, CalendarCheck, ChevronLeft, ChevronRight, FileText, Loader2, Save, Printer,
   Search, X,
 } from "lucide-react";
-import { partirCategoria } from "@/lib/categoria-equipo";
+import {
+  aniosDeSede, letraDe, letrasDe, sedesDeEquipos, seleccionHuerfana,
+} from "@/lib/selector-equipo";
 import {
   COLOR_MARCA, MESES, TEXTO_MARCA, etiquetaMes, porcentajesEnteros, resumenDe, siguienteMarca,
   type DiaClase, type Marca,
@@ -38,6 +40,7 @@ import { guardarEquipoRecordado, leerEquipoRecordado } from "@/lib/equipo-record
 interface EquipoOpcion {
   IdEquipo: number;
   Equipo: string;
+  IdSede: number | null;
   Sede: string | null;
   Jugadores: number;
 }
@@ -107,6 +110,9 @@ export default function AsistenciaPage() {
   );
   const [temporadas, setTemporadas] = useState<Temporada[]>([]);
   const [temporadaId, setTemporadaId] = useState<number | null>(null);
+  /* Los tres pasos, en el orden en que se eligen: sede, año y letra. Los mismos que la
+     Plantilla, con la misma regla (@/lib/selector-equipo) y la misma memoria. */
+  const [idSede, setIdSede] = useState<number | null>(null);
   const [anio, setAnio] = useState("");
   const [idEquipo, setIdEquipo] = useState<number | null>(null);
 
@@ -153,6 +159,7 @@ export default function AsistenciaPage() {
             && (json.data as Temporada[]).some((t) => t.IdTemporada === recordado.temporadaId);
           setTemporadaId(existe ? recordado!.temporadaId : json.temporadaActiva);
           if (existe) {
+            setIdSede(recordado!.idSede);
             setAnio(recordado!.anio);
             setIdEquipo(recordado!.idEquipo);
           }
@@ -175,9 +182,9 @@ export default function AsistenciaPage() {
   useEffect(() => {
     if (!yaSeIntentoRestaurar.current) return;
     guardarEquipoRecordado(
-      temporadaId && idEquipo ? { temporadaId, anio, idEquipo } : null,
+      temporadaId && idSede && idEquipo ? { temporadaId, idSede, anio, idEquipo } : null,
     );
-  }, [temporadaId, anio, idEquipo]);
+  }, [temporadaId, idSede, anio, idEquipo]);
 
   /* Los equipos, que sí dependen de la temporada. Mismo endpoint y mismo trato que la
      Plantilla: la lista recuerda de qué temporada salió, para no decidir nada con la
@@ -204,29 +211,26 @@ export default function AsistenciaPage() {
 
   const listaAlDia = equipos.temporadaId === temporadaId;
 
-  const anios = useMemo(
-    () =>
-      [...new Set(equipos.lista.map((e) => partirCategoria(e.Equipo).anio).filter(Boolean))].sort(
-        (a, b) => b.localeCompare(a),
-      ),
-    [equipos],
-  );
+  // Las tres listas de los desplegables, en cascada. La regla vive en @/lib/selector-equipo.
+  const sedes = useMemo(() => sedesDeEquipos(equipos.lista), [equipos]);
+  const anios = useMemo(() => aniosDeSede(equipos.lista, idSede), [equipos, idSede]);
+  const letras = useMemo(() => letrasDe(equipos.lista, idSede, anio), [equipos, idSede, anio]);
 
-  const letras = useMemo(
-    () => (anio ? equipos.lista.filter((e) => partirCategoria(e.Equipo).anio === anio) : []),
-    [equipos, anio],
-  );
-
-  // La selección que ya no existe en la temporada nueva se suelta.
+  // La selección que ya no existe en la temporada nueva se suelta, y arrastra a la de abajo.
   useEffect(() => {
     if (!listaAlDia) return;
-    if (anio && !anios.includes(anio)) {
+    const huerfano = seleccionHuerfana(equipos.lista, idSede, anio, idEquipo);
+    if (huerfano === "sede") {
+      setIdSede(null);
       setAnio("");
       setIdEquipo(null);
-      return;
+    } else if (huerfano === "anio") {
+      setAnio("");
+      setIdEquipo(null);
+    } else if (huerfano === "equipo") {
+      setIdEquipo(null);
     }
-    if (idEquipo && !equipos.lista.some((e) => e.IdEquipo === idEquipo)) setIdEquipo(null);
-  }, [listaAlDia, equipos, anios, anio, idEquipo]);
+  }, [listaAlDia, equipos, idSede, anio, idEquipo]);
 
   /**
    * Trae la hoja del equipo en ese mes.
@@ -420,9 +424,17 @@ export default function AsistenciaPage() {
     );
   }, [hoja, busqueda]);
 
-  /** Lo capturado por alumno, para la columna del final. */
+  /**
+   * Lo capturado por alumno: sus asistencias, sus faltas y su porcentaje.
+   *
+   * El porcentaje de cada renglón se saca con la MISMA regla que el del mes —asistencias
+   * entre lo capturado, sin contar las celdas vacías— para que la columna y la tarjeta de
+   * arriba no puedan decir cosas distintas del mismo equipo. `null` cuando ese alumno no
+   * tiene nada marcado: un 0% ahí diría que faltó a todo, y lo que pasa es que nadie le
+   * ha pasado lista.
+   */
   const porAlumno = useMemo(() => {
-    const out = new Map<number, { a: number; f: number }>();
+    const out = new Map<number, { a: number; f: number; pct: number | null }>();
     if (!hoja) return out;
     hoja.alumnos.forEach((al) => {
       let a = 0;
@@ -432,7 +444,12 @@ export default function AsistenciaPage() {
         if (m === "A") a += 1;
         else if (m === "F") f += 1;
       });
-      out.set(al.idJugador, { a, f });
+      const registradas = a + f;
+      out.set(al.idJugador, {
+        a,
+        f,
+        pct: registradas === 0 ? null : Math.round((a / registradas) * 100),
+      });
     });
     return out;
   }, [hoja, marcas]);
@@ -533,14 +550,38 @@ export default function AsistenciaPage() {
               {/* Los selectores, rotulados y en su propio renglón. */}
               <div className="flex flex-wrap items-end gap-2 mt-4">
                 <div>
+                  <label htmlFor="as-sede" className={ETIQUETA_SELECT}>Sede:</label>
+                  <select
+                    id="as-sede"
+                    value={idSede ?? ""}
+                    onChange={(e) =>
+                      siNoSePierdeNada(() => {
+                        // Cambiar de sede invalida el año y la letra: son suyos.
+                        setIdSede(Number(e.target.value) || null);
+                        setAnio("");
+                        setIdEquipo(null);
+                      })
+                    }
+                    className={SELECT}
+                    title="La misma categoría existe en varias sedes; ésta es la que manda"
+                  >
+                    <option value="">{sedes.length > 0 ? "Sede..." : "Sin inscritos"}</option>
+                    {sedes.map((sd) => (
+                      <option key={sd.idSede} value={sd.idSede}>{sd.sede}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
                   <label htmlFor="as-categoria" className={ETIQUETA_SELECT}>Categoría:</label>
                   <select
                     id="as-categoria"
                     value={anio}
                     onChange={(e) => siNoSePierdeNada(() => { setAnio(e.target.value); setIdEquipo(null); })}
                     className={SELECT}
+                    disabled={!idSede}
                   >
-                    <option value="">{anios.length > 0 ? "Categoría..." : "Sin inscritos"}</option>
+                    <option value="">{idSede ? "Categoría..." : "Elige la sede"}</option>
                     {anios.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
                 </div>
@@ -555,10 +596,10 @@ export default function AsistenciaPage() {
                     disabled={!anio}
                   >
                     <option value="">{anio ? "Letra..." : "Elige la categoría"}</option>
+                    {/* Ya no hace falta decir la sede en cada opción: la eligió arriba. */}
                     {letras.map((e) => (
                       <option key={e.IdEquipo} value={e.IdEquipo}>
-                        {partirCategoria(e.Equipo).equipo || e.Equipo}
-                        {e.Sede ? ` · ${e.Sede}` : ""} ({e.Jugadores})
+                        {letraDe(e)} ({e.Jugadores})
                       </option>
                     ))}
                   </select>
@@ -776,8 +817,11 @@ export default function AsistenciaPage() {
                             <th className="px-2 py-2 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">
                               Nombre del alumno
                             </th>
-                            <th className="px-2 py-2 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                              Observación (beca)
+                            {/* La beca se dice, pero no manda: es una nota al margen de la
+                                hoja, no la razón por la que alguien la abre. Estrecha y
+                                chica, con el texto completo en el title. */}
+                            <th className="px-2 py-2 text-left text-[9px] font-black text-slate-500 uppercase tracking-widest w-24">
+                              Beca
                             </th>
                             {hoja.dias.map((d) => (
                               <th key={d.fecha} className="px-1 py-1 w-11">
@@ -794,11 +838,17 @@ export default function AsistenciaPage() {
                             <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-16">
                               Total
                             </th>
+                            <th
+                              className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-14"
+                              title="Asistencias de ese alumno entre lo que se le capturó. Las celdas sin marcar no cuentan."
+                            >
+                              %
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {alumnosVisibles.map((a, i) => {
-                            const cuenta = porAlumno.get(a.idJugador) ?? { a: 0, f: 0 };
+                            const cuenta = porAlumno.get(a.idJugador) ?? { a: 0, f: 0, pct: null };
                             return (
                               <tr key={a.idJugador} className="border-b border-white/5 last:border-b-0 hover:bg-white/[0.03]">
                                 <td className="px-2 py-1.5 text-center text-[10px] font-mono text-slate-500 tabular-nums">
@@ -834,7 +884,12 @@ export default function AsistenciaPage() {
                                     </div>
                                   </button>
                                 </td>
-                                <td className="px-2 py-1.5 text-[10px] text-amber-300/80">{a.observacion}</td>
+                                <td
+                                  className="px-2 py-1.5 text-[9px] leading-tight text-amber-300/70 max-w-[6rem] truncate"
+                                  title={a.observacion || undefined}
+                                >
+                                  {a.observacion}
+                                </td>
                                 {hoja.dias.map((d) => {
                                   const m = marcas.get(llave(a.idJugador, d.fecha)) ?? null;
                                   return (
@@ -856,6 +911,28 @@ export default function AsistenciaPage() {
                                   <span className="text-emerald-400 font-black">{cuenta.a}</span>
                                   <span className="text-slate-600"> / </span>
                                   <span className="text-rose-400 font-black">{cuenta.f}</span>
+                                </td>
+                                {/* Verde de 80% para arriba, ámbar de 60 a 79, rojo abajo.
+                                    Son los cortes con los que el club ya habla de la
+                                    asistencia de un niño, y un número suelto no distingue
+                                    al que va bien del que hay que llamar. */}
+                                <td className="px-2 py-1.5 text-center text-[11px] font-black tabular-nums whitespace-nowrap">
+                                  {cuenta.pct === null ? (
+                                    <span className="text-slate-600 font-normal">—</span>
+                                  ) : (
+                                    <span
+                                      title={`${cuenta.a} de ${cuenta.a + cuenta.f} capturadas`}
+                                      className={
+                                        cuenta.pct >= 80
+                                          ? "text-emerald-400"
+                                          : cuenta.pct >= 60
+                                            ? "text-amber-400"
+                                            : "text-rose-400"
+                                      }
+                                    >
+                                      {cuenta.pct}%
+                                    </span>
+                                  )}
                                 </td>
                               </tr>
                             );

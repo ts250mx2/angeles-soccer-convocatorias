@@ -11,10 +11,11 @@
  *
  * ── Qué se guarda y por qué las tres cosas juntas ──
  *
- * El equipo por sí solo no basta: `IdEquipo` no dice de qué temporada salió la lista ni
- * qué categoría hay que abrir para llegar a él. Guardar los tres datos como una unidad
- * es lo que permite restaurar la pantalla completa; guardar solo el id dejaría los
- * desplegables en blanco con un equipo seleccionado que no aparece en ninguno.
+ * El equipo por sí solo no basta: `IdEquipo` no dice de qué temporada salió la lista, ni
+ * en qué sede está, ni qué categoría hay que abrir para llegar a él. Guardar los cuatro
+ * datos como una unidad es lo que permite restaurar la pantalla completa; guardar solo el
+ * id dejaría los desplegables en blanco con un equipo seleccionado que no aparece en
+ * ninguno.
  *
  * ── localStorage y no sessionStorage ──
  *
@@ -28,7 +29,9 @@ const CLAVE = 'equipoRecordado';
 
 export interface EquipoRecordado {
     temporadaId: number;
-    /** El año de la categoría ('2023'), que es lo que llena el primer desplegable. */
+    /** La sede, que es el PRIMER desplegable: sin ella los otros dos no se pueden llenar. */
+    idSede: number;
+    /** El año de la categoría ('2023'), el segundo desplegable. */
     anio: string;
     idEquipo: number;
 }
@@ -41,10 +44,20 @@ export function leerEquipoRecordado(): EquipoRecordado | null {
         const crudo = window.localStorage.getItem(CLAVE);
         if (!crudo) return null;
         const v = JSON.parse(crudo) as Partial<EquipoRecordado>;
-        // Se exige la terna completa: media selección restaurada confunde más que ninguna.
+        /* Se exige la selección COMPLETA: media selección restaurada confunde más que
+           ninguna. Lo guardado antes de que existiera el paso de sede no trae `idSede`,
+           así que se descarta y la pantalla arranca limpia una vez; a partir de ahí se
+           recuerda de nuevo. Es preferible a adivinar la sede del equipo y dejar el
+           primer desplegable diciendo algo que el usuario no eligió. */
         if (!Number.isInteger(v.temporadaId) || !Number.isInteger(v.idEquipo)) return null;
+        if (!Number.isInteger(v.idSede)) return null;
         if (typeof v.anio !== 'string') return null;
-        return { temporadaId: Number(v.temporadaId), anio: v.anio, idEquipo: Number(v.idEquipo) };
+        return {
+            temporadaId: Number(v.temporadaId),
+            idSede: Number(v.idSede),
+            anio: v.anio,
+            idEquipo: Number(v.idEquipo),
+        };
     } catch {
         // Un JSON corrupto o el almacenamiento bloqueado no deben tumbar la pantalla.
         return null;
