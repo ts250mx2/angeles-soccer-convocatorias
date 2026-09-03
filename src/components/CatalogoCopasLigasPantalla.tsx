@@ -20,6 +20,7 @@ import {
 import {
     type CopaLigaRow, type ProductoCopaLiga, TIPO_COPA, TIPO_LIGA, VIGENTE, BAJA,
     etiquetaTipo, esCopa, money,
+  urlEscudo,
 } from "@/lib/copas-ligas";
 
 /**
@@ -41,7 +42,7 @@ const ETIQUETA = "block text-[10px] font-black uppercase tracking-widest text-sl
 
 /** URL de la foto guardada. El sello rompe el caché cuando la imagen cambia. */
 const urlFoto = (c: CopaLigaRow): string | null =>
-    c.TieneFoto === 1 ? `/api/copas-ligas/foto/${c.IdLiga}?v=${c.FotoVersion ?? "0"}` : null;
+    urlEscudo(c);
 
 export default function CatalogoCopasLigasPantalla({ tipo }: { tipo?: TipoTorneo }) {
     /* Ámbar las copas, azul las ligas: las dos mitades son la misma pantalla. */

@@ -24,7 +24,7 @@ import ConvocatoriaPlayersTable from '@/components/ConvocatoriaPlayersTable';
 import { ELIMINATORIAS, etiquetaJornadas } from '@/lib/convocatoria-opciones';
 import TarjetaCopaLiga from '@/components/TarjetaCopaLiga';
 import { resumirPorCopaLiga, totalesGenerales } from '@/lib/convocatorias-resumen';
-import { TIPO_COPA } from '@/lib/copas-ligas';
+import { TIPO_COPA, urlEscudo } from '@/lib/copas-ligas';
 
 /**
  * Porcentaje de beca del jugador, normalizado a 0-100. La columna guarda texto
@@ -71,7 +71,7 @@ interface ConvocatoriaSummary {
 
 /** URL del escudo de la liga, o null si esa copa o liga no tiene foto cargada. */
 const fotoLiga = (item: Pick<ConvocatoriaSummary, 'IdLiga' | 'TieneFoto' | 'FotoVersion'>): string | null =>
-  item.TieneFoto === 1 ? `/api/copas-ligas/foto/${item.IdLiga}?v=${item.FotoVersion ?? '0'}` : null;
+  urlEscudo(item);
 
 const moneda = (n: number): string =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);

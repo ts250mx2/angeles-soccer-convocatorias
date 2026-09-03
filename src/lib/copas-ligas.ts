@@ -126,6 +126,21 @@ export interface ProductoCopaLiga {
     Status: number;
 }
 
+/**
+ * URL del escudo de una copa o liga, o null si no tiene.
+ *
+ * El sello `?v=` es la FechaAct de la liga: la respuesta se cachea como inmutable, así
+ * que sin el sello un escudo cambiado no se vería hasta que el navegador soltara el
+ * viejo por su cuenta. Vive aquí porque lo pintan el catálogo, Convocatorias y los
+ * adeudos de convocatorias, y tres copias de la misma cadena acaban divergiendo.
+ */
+export const urlEscudo = (
+    liga: { IdLiga: number; TieneFoto?: number | null; FotoVersion?: string | null },
+): string | null =>
+    Number(liga.TieneFoto) === 1
+        ? `/api/copas-ligas/foto/${liga.IdLiga}?v=${liga.FotoVersion ?? '0'}`
+        : null;
+
 /** Fila del catálogo. La foto NO viaja aquí: se pide aparte por /api/copas-ligas/foto. */
 export interface CopaLigaRow {
     IdLiga: number;
