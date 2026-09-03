@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { sincronizarPagados, sincronizarPrecios } from '@/lib/convocatorias-crear';
+import { sincronizarPrecios } from '@/lib/convocatorias-crear';
 import { sqlFueraDeConvocatorias } from '@/lib/convocatorias-excluidas';
 
 export const dynamic = 'force-dynamic';
@@ -13,17 +13,13 @@ export const dynamic = 'force-dynamic';
  * creados había que ir a borrarlos. Ahora solo se informa, y darlas de alta es una
  * decisión de quien captura, desde la pantalla de alta con los renglones precargados.
  *
- * Lo que SÍ sigue haciendo sola, porque no crea nada y sin ello el resumen mentiría:
+ * Un pago nunca convoca por sí solo. Si el niño pagó pero todavía no está convocado,
+ * esta ruta lo devuelve como conflicto para que una persona elija su categoría. Lo
+ * único que se sincroniza automáticamente son los precios de quienes YA están dentro.
  *
- *   sincronizarPagados   Quien pagó su liga o copa queda marcado como convocado en la
- *                        convocatoria que YA existe. Los pagos entran después del alta.
- *   sincronizarPrecios   El precio del sistema manda: un cambio de tarifa o de beca se
- *                        refleja en los ya convocados.
- *
- * La llave del negocio es (Temporada, Liga, Categoría): el producto pagado dice la liga
- * y el jugador dice la categoría. El color no entra —es un desempate del alta manual, no
- * parte de la identidad del torneo—, así que una categoría ya convocada en cualquier
- * color no se reporta como faltante.
+ * La llave del pago es (Temporada, Liga, Jugador). Para dar salida al aviso se ofrecen
+ * las convocatorias abiertas de esa liga: primero su categoría natural, si existe, y
+ * después las cercanas para poder acomodarlo como invitado.
  */
 
 /** Tipos de producto que representan una liga o una copa. */
@@ -73,6 +69,9 @@ const sugerirDestino = (origen: string, destinos: DestinoRow[]): DestinoRow | nu
     if (destinos.length === 0) return null;
     const anioOrigen = anioCategoria(origen);
     return [...destinos].sort((a, b) => {
+        const exactaA = a.Categoria === origen ? 0 : 1;
+        const exactaB = b.Categoria === origen ? 0 : 1;
+        if (exactaA !== exactaB) return exactaA - exactaB;
         const anioA = anioCategoria(a.Categoria);
         const anioB = anioCategoria(b.Categoria);
         if (anioOrigen !== null && anioA !== null && anioB !== null) {
@@ -107,55 +106,45 @@ export async function POST() {
             [temporada.IdTemporada],
         )) as unknown as [Array<{ IdLiga: number }>, unknown];
 
-        let convocadosPorPago = 0;
         let preciosActualizados = 0;
         for (const l of ligas) {
-            convocadosPorPago += await sincronizarPagados(pool, temporada.IdTemporada, l.IdLiga);
             preciosActualizados += await sincronizarPrecios(pool, temporada.IdTemporada, l.IdLiga);
         }
 
-        /* Ligas y copas pagadas de la temporada que todavía no tienen convocatoria. Se
-           informan con cuánta gente pagó, que es lo que decide si vale la pena darlas de
-           alta o si fue un cobro suelto mal capturado. */
+        /* Todo niño que pagó una copa o liga y todavía no está convocado. Puede existir
+           su categoría y estar simplemente pendiente de convocar, o puede no existir y
+           requerir que se le acomode como invitado en otra. */
         const [conflictos] = (await pool.query(
-            `SELECT DISTINCT PR.IdLiga, L.Liga, L.IdTipoLiga, J.Categoria,
+            `SELECT PAG.IdLiga, L.Liga, L.IdTipoLiga, J.Categoria,
                     J.IdJugador, J.Jugador
-             FROM tblPagos P
-             INNER JOIN tblProductos PR ON PR.IdProducto = P.IdProducto
-             INNER JOIN tblJugadores J ON J.IdJugador = P.IdJugador
-             INNER JOIN tblLigas L ON L.IdLiga = PR.IdLiga
-             WHERE P.Status = 0
-               AND P.IdTemporada = ?
-               AND PR.IdTipoProducto IN (${TIPO_PRODUCTO_LIGA}, ${TIPO_PRODUCTO_COPA})
-               AND PR.IdLiga IS NOT NULL
+             FROM (
+                 SELECT DISTINCT PR.IdLiga, P.IdJugador
+                   FROM tblPagos P
+                   INNER JOIN tblProductos PR ON PR.IdProducto = P.IdProducto
+                  WHERE P.Status = 0
+                    AND P.IdTemporada = ?
+                    AND PR.IdTipoProducto IN (${TIPO_PRODUCTO_LIGA}, ${TIPO_PRODUCTO_COPA})
+                    AND PR.IdLiga IS NOT NULL
+             ) PAG
+             INNER JOIN tblJugadores J ON J.IdJugador = PAG.IdJugador
+             INNER JOIN tblLigas L ON L.IdLiga = PAG.IdLiga
+             LEFT JOIN (
+                 SELECT DISTINCT D.IdLiga, D.IdJugador
+                   FROM tblDetalleConvocatorias D
+                   INNER JOIN tblConvocatorias C2
+                     ON C2.IdTemporada = D.IdTemporada
+                    AND C2.IdLiga = D.IdLiga
+                    AND C2.Categoria = D.Categoria
+                    AND COALESCE(C2.Color, '') = COALESCE(D.Color, '')
+                    AND C2.Status = 0
+                  WHERE D.IdTemporada = ? AND D.EsConvocado = 1
+             ) CONV ON CONV.IdLiga = PAG.IdLiga AND CONV.IdJugador = PAG.IdJugador
+             WHERE CONV.IdJugador IS NULL
                AND COALESCE(TRIM(J.Categoria), '') <> ''
                AND NOT ${sqlFueraDeConvocatorias('J.Categoria')}
                AND NOT ${sqlFueraDeConvocatorias('L.Liga')}
-               AND NOT EXISTS (
-                   SELECT 1 FROM tblConvocatorias C
-                   WHERE C.IdTemporada = P.IdTemporada
-                     AND C.IdLiga = PR.IdLiga
-                     AND C.Categoria = J.Categoria
-                     AND C.Status = 0
-               )
-               -- Si ya se acomodo como invitado en otra categoria, el conflicto quedo
-               -- resuelto aunque su categoria natural siga sin convocatoria.
-               AND NOT EXISTS (
-                   SELECT 1
-                     FROM tblDetalleConvocatorias D
-                     INNER JOIN tblConvocatorias C2
-                       ON C2.IdTemporada = D.IdTemporada
-                      AND C2.IdLiga = D.IdLiga
-                      AND C2.Categoria = D.Categoria
-                      AND COALESCE(C2.Color, '') = COALESCE(D.Color, '')
-                      AND C2.Status = 0
-                    WHERE D.IdTemporada = P.IdTemporada
-                      AND D.IdLiga = PR.IdLiga
-                      AND D.IdJugador = P.IdJugador
-                      AND D.EsConvocado = 1
-               )
              ORDER BY L.Liga, J.Categoria, J.Jugador`,
-            [temporada.IdTemporada],
+            [temporada.IdTemporada, temporada.IdTemporada],
         )) as unknown as [ConflictoRow[], unknown];
 
         const idsLiga = [...new Set(conflictos.map((f) => Number(f.IdLiga)))];
@@ -191,7 +180,6 @@ export async function POST() {
         return NextResponse.json({
             success: true,
             seasonId: Number(temporada.IdTemporada),
-            convocadosPorPago,
             preciosActualizados,
             faltantes: faltantes.map((f) => ({
                 idLiga: Number(f.IdLiga),

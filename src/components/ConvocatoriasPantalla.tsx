@@ -276,7 +276,7 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
   /* Portada por torneo: null = se ven las copas y ligas; con IdLiga, el detalle de
      ese torneo, que es la misma vista de tarjetas y tabla de siempre. */
   const [ligaAbierta, setLigaAbierta] = useState<number | null>(null);
-  /* Pagos de copas y ligas sin convocatoria: se avisan, no se crean solas. */
+  /* Pagos de copas y ligas pendientes de una decisión de convocatoria. */
   const [faltantes, setFaltantes] = useState<Array<{ idLiga: number; liga: string; idTipoLiga?: number; categoria: string; jugadores: number }>>([]);
   const [conflictosSinConvocatoria, setConflictosSinConvocatoria] = useState<ConflictoSinConvocatoria[]>([]);
   const [duplicados, setDuplicados] = useState<DuplicadosDeTorneo[]>([]);
@@ -407,7 +407,7 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
     }
   };
 
-  const asignarInvitado = async (conflicto: ConflictoSinConvocatoria) => {
+  const convocarPendiente = async (conflicto: ConflictoSinConvocatoria) => {
     if (!temporadaAlertas) return;
     const seleccion = destinosElegidos[claveConflicto(conflicto)];
     if (!seleccion) return;
@@ -427,11 +427,11 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
         }),
       });
       const data = await response.json();
-      if (!data.success) throw new Error(data.message || 'No se pudo asignar al jugador');
+      if (!data.success) throw new Error(data.message || 'No se pudo convocar al jugador');
       if (faltantesAbiertos.length === 1) setModalFaltantesLiga(null);
       await fetchConvocatorias();
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'No se pudo asignar al jugador');
+      alert(error instanceof Error ? error.message : 'No se pudo convocar al jugador');
     } finally {
       setResolviendoAlerta(null);
     }
@@ -1290,22 +1290,19 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
                 />
               </div>
 
-              {/* ── Pagos de copas y ligas sin convocatoria ──
-                  Antes estas se creaban solas al entrar. Ahora se avisan y se dan de
-                  alta a mano: así nadie se encuentra en la base renglones que no
-                  capturó, y quien decide es quien está viendo la pantalla. */}
+              {/* Un pago no toma decisiones deportivas: si el niño todavía no está
+                  convocado, la persona que arma el equipo confirma su categoría. */}
               {ligaAbierta === null && puedeEditar && faltantesPorLiga.length > 0 && (
                 <div className="mb-4 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
                   <div className="flex items-start gap-2 mb-3">
                     <Info size={15} className="text-amber-300 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="text-sm font-black text-amber-200">
-                        Hay pagos de copas y ligas sin convocatoria
+                        Hay niños que pagaron y aún no están convocados
                       </p>
                       <p className="text-[11px] text-amber-200/70 mt-0.5">
-                        {faltantesPorLiga.reduce((n, g) => n + g.categorias.length, 0)} categoría(s) con gente
-                        que ya pagó y todavía no tiene convocatoria en este ciclo. Elige a qué categoría
-                        irá cada niño como invitado.
+                        {faltantesPorLiga.reduce((n, g) => n + g.jugadores, 0)} niño(s) con pago registrado.
+                        Revisa la categoría sugerida y confirma dónde se convocará cada uno.
                       </p>
                     </div>
                   </div>
@@ -1377,8 +1374,8 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
                                 onAbrir={() => setLigaAbierta(r.idLiga)}
                                 duplicados={cantidadDuplicados[r.idLiga] ?? 0}
                                 onRevisarDuplicados={() => setModalDuplicadosLiga(r.idLiga)}
-                                sinConvocatoria={conflictosPorLiga[r.idLiga]?.length ?? 0}
-                                onRevisarSinConvocatoria={() => abrirFaltantes(r.idLiga)}
+                                pagadosSinConvocar={conflictosPorLiga[r.idLiga]?.length ?? 0}
+                                onRevisarPagadosSinConvocar={() => abrirFaltantes(r.idLiga)}
                               />
                             ))}
                           </div>
@@ -2015,7 +2012,7 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
         </div>
       )}
 
-      {/* Pagó una copa/liga, pero su categoría natural no tiene convocatoria. */}
+      {/* Pagó una copa/liga, pero todavía no está convocado. */}
       {modalFaltantesLiga !== null && (
         <div className="fixed inset-0 z-[70] bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-[#0f172a] border border-amber-500/35 shadow-2xl">
@@ -2023,10 +2020,10 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
               <div>
                 <div className="flex items-center gap-2 text-amber-300">
                   <Info size={18} />
-                  <h3 className="text-lg font-black">Pagos sin convocatoria</h3>
+                  <h3 className="text-lg font-black">Pagaron y falta convocarlos</h3>
                 </div>
                 <p className="mt-1 text-xs text-slate-400">
-                  {faltantesAbiertos[0]?.liga ?? 'Torneo'} · Confirma la categoría a la que irá cada niño como invitado.
+                  {faltantesAbiertos[0]?.liga ?? 'Torneo'} · Revisa la sugerencia y confirma la convocatoria de cada niño.
                 </p>
               </div>
               <button
@@ -2060,6 +2057,11 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
               {faltantesAbiertos.map((conflicto) => {
                 const cargando = resolviendoAlerta === `faltante-${conflicto.idJugador}`;
                 const seleccion = destinosElegidos[claveConflicto(conflicto)] ?? '';
+                const destinoSeleccionado = seleccion
+                  ? (JSON.parse(seleccion) as [string, string])
+                  : null;
+                const seraInvitado = destinoSeleccionado !== null
+                  && destinoSeleccionado[0] !== conflicto.categoriaOrigen;
                 return (
                   <div key={conflicto.idJugador} className="rounded-xl border border-white/10 bg-white/5 p-4">
                     <div className="flex flex-col sm:flex-row sm:items-end gap-3">
@@ -2098,10 +2100,10 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
                         <button
                           type="button"
                           disabled={!seleccion || cargando || resolviendoAlerta !== null}
-                          onClick={() => asignarInvitado(conflicto)}
+                          onClick={() => convocarPendiente(conflicto)}
                           className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-black text-slate-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          {cargando ? 'Asignando…' : 'Asignar invitado'}
+                          {cargando ? 'Convocando…' : seraInvitado ? 'Convocar como invitado' : 'Convocar'}
                         </button>
                       )}
                     </div>

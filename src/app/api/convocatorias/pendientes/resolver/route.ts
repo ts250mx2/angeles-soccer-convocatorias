@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { precioDelSistema } from '@/lib/convocatorias-precios';
 
-/** Acomoda como invitado a un jugador cuyo pago quedo sin convocatoria propia. */
+/** Convoca expresamente a un jugador que pagó una copa o liga y seguía pendiente. */
 export async function POST(request: Request) {
     const connection = await pool.getConnection();
     try {
@@ -109,12 +109,17 @@ export async function POST(request: Request) {
         );
 
         await connection.commit();
-        return NextResponse.json({ success: true, message: 'Jugador asignado como invitado' });
+        const esInvitado = String(pagos[0].Categoria ?? '') !== categoria;
+        return NextResponse.json({
+            success: true,
+            esInvitado,
+            message: esInvitado ? 'Jugador convocado como invitado' : 'Jugador convocado',
+        });
     } catch (error) {
         await connection.rollback();
-        console.error('Error resolviendo pago sin convocatoria:', error);
+        console.error('Error resolviendo pago sin convocar:', error);
         return NextResponse.json(
-            { success: false, message: 'Error al asignar al jugador como invitado' },
+            { success: false, message: 'Error al convocar al jugador' },
             { status: 500 },
         );
     } finally {

@@ -6,12 +6,8 @@ import { becasPorBotonDisponibles, joinBecaAplicada, sqlFactorBeca } from '@/lib
 /**
  * Alta de una convocatoria, en un solo lugar.
  *
- * La usan la creación manual (/api/convocatorias/create) y la automática por ligas y
- * copas pagadas (/api/convocatorias/autogenerar). Que compartan esta función es lo que
- * garantiza que una convocatoria creada sola quede idéntica a una creada a mano: misma
- * fila y, sobre todo, el mismo sembrado de jugadores en el detalle. Si el alta
- * cambiara solo en una de las dos, la automática produciría convocatorias vacías o con
- * columnas distintas.
+ * La usan las altas individual y por lote. Que compartan esta función garantiza que
+ * ambas produzcan la misma fila y el mismo sembrado de jugadores en el detalle.
  */
 
 /** Ejecutor de consultas: el pool o una conexión dentro de una transacción. */
@@ -73,8 +69,6 @@ export async function crearConvocatoria(db: Ejecutor, c: NuevaConvocatoria): Pro
             c.seasonId, c.leagueId, c.categoria, c.color,
         ],
     );
-
-    await sincronizarPagados(db, c.seasonId, c.leagueId);
 }
 
 /**
@@ -120,58 +114,6 @@ export async function sincronizarPrecios(
            ${respetaManuales ? 'AND MAN.IdJugador IS NULL' : ''}
            AND D.Precio <> ${precio}`,
         [leagueId, seasonId, leagueId],
-    );
-    return (res as { affectedRows?: number }).affectedRows ?? 0;
-}
-
-/**
- * Quien ya pagó la liga o la copa queda convocado.
- *
- * El pago es la decisión: si el niño pagó, está dentro, y tener que marcarlo además a
- * mano solo abre la puerta a que el cobro y la convocatoria digan cosas distintas. Se
- * le pone también el precio del producto, que es lo que la pantalla compara contra lo
- * pagado para sacar el saldo. Sin beca, salvo que ya se la hayan aplicado con el botón:
- * pagar no es pedir la beca.
- *
- * No toca a los que están marcados como eliminados: a esos se les sacó a propósito, y
- * un pago viejo no debe regresarlos solos.
- *
- * Corre sobre toda la liga de la temporada, no solo sobre la categoría recién creada,
- * porque los pagos siguen entrando después del alta.
- */
-export async function sincronizarPagados(
-    db: Ejecutor,
-    seasonId: number | string,
-    leagueId: number | string,
-): Promise<number> {
-    /* Con precio fijado a mano solo se marca la convocatoria y el importe se deja tal
-       cual: un precio manual de 0 (invitado, beca total) es una decisión, y el
-       NULLIF de abajo lo leería como "sin precio" y le pondría el del producto. */
-    const respetaManuales = await preciosManualesDisponibles(db);
-    const conBecas = await becasPorBotonDisponibles(db);
-    const [res] = await db.query(
-        `UPDATE tblDetalleConvocatorias D
-         INNER JOIN (
-             SELECT P.IdJugador, MAX(PR.Precio) AS Precio
-             FROM tblPagos P
-             INNER JOIN tblProductos PR ON PR.IdProducto = P.IdProducto
-             WHERE P.Status = 0 AND P.IdTemporada = ? AND PR.IdLiga = ?
-               AND PR.IdTipoProducto IN (3, 4)
-             GROUP BY P.IdJugador
-         ) PAG ON PAG.IdJugador = D.IdJugador
-         INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
-         INNER JOIN tblLigas L ON L.IdLiga = D.IdLiga
-         ${respetaManuales ? joinPrecioManual('D') : ''}
-         ${conBecas ? joinBecaAplicada('D') : ''}
-         SET D.EsConvocado = 1,
-             D.Precio = ${respetaManuales ? 'IF(MAN.IdJugador IS NOT NULL, D.Precio, ' : ''}COALESCE(
-                 NULLIF(D.Precio, 0),
-                 ROUND(PAG.Precio * ${sqlFactorBeca('J', 'L', conBecas)}, 2),
-                 0
-             )${respetaManuales ? ')' : ''}
-         WHERE D.IdTemporada = ? AND D.IdLiga = ?
-           AND D.EsConvocado = 0 AND D.EsEliminado = 0`,
-        [seasonId, leagueId, seasonId, leagueId],
     );
     return (res as { affectedRows?: number }).affectedRows ?? 0;
 }

@@ -48,16 +48,16 @@ function Cifra({ etiqueta, valor, clase }: { etiqueta: string; valor: number; cl
 
 export default function TarjetaCopaLiga({
     resumen, onAbrir, duplicados = 0, onRevisarDuplicados,
-    sinConvocatoria = 0, onRevisarSinConvocatoria,
+    pagadosSinConvocar = 0, onRevisarPagadosSinConvocar,
 }: {
     resumen: ResumenCopaLiga;
     onAbrir: () => void;
     /** Cuántos niños de este torneo están convocados a más de un equipo. */
     duplicados?: number;
     onRevisarDuplicados?: () => void;
-    /** Niños que pagaron este torneo pero cuya categoría no tiene convocatoria. */
-    sinConvocatoria?: number;
-    onRevisarSinConvocatoria?: () => void;
+    /** Niños que pagaron este torneo pero todavía no están convocados. */
+    pagadosSinConvocar?: number;
+    onRevisarPagadosSinConvocar?: () => void;
 }) {
     const r = resumen;
     const escudo = r.tieneFoto ? `/api/copas-ligas/foto/${r.idLiga}?v=${r.fotoVersion ?? "0"}` : null;
@@ -67,7 +67,7 @@ export default function TarjetaCopaLiga({
 
     return (
         <div className={`bg-white/5 border rounded-2xl overflow-hidden transition-all ${
-            duplicados > 0 || sinConvocatoria > 0 ? "border-amber-500/40" : "border-white/10 hover:border-blue-500/40"
+            duplicados > 0 || pagadosSinConvocar > 0 ? "border-amber-500/40" : "border-white/10 hover:border-blue-500/40"
         }`}>
         <button
             type="button"
@@ -211,20 +211,20 @@ export default function TarjetaCopaLiga({
                 </button>
             </div>
         )}
-        {sinConvocatoria > 0 && (
+        {pagadosSinConvocar > 0 && (
             <div className="flex items-center justify-between gap-2 border-t border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
                 <div className="flex items-start gap-2 min-w-0">
                     <AlertTriangle size={14} className="text-amber-400 flex-shrink-0 mt-px" />
                     <p className="text-[11px] font-bold text-amber-200 leading-tight">
-                        {sinConvocatoria === 1 ? "1 niño pagó sin convocatoria" : `${sinConvocatoria} niños pagaron sin convocatoria`}
+                        {pagadosSinConvocar === 1 ? "1 niño pagó y falta convocarlo" : `${pagadosSinConvocar} niños pagaron y falta convocarlos`}
                         <span className="block font-semibold text-amber-200/70">
-                            Asígnalos como invitados a una categoría disponible.
+                            Revisa su categoría y confirma la convocatoria.
                         </span>
                     </p>
                 </div>
                 <button
                     type="button"
-                    onClick={onRevisarSinConvocatoria}
+                    onClick={onRevisarPagadosSinConvocar}
                     className="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-100 text-[10px] font-black uppercase tracking-wider transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
                 >
                     Revisar

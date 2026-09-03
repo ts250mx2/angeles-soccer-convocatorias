@@ -250,7 +250,7 @@ function TorneoContenido() {
     costoArbitro,
   }), [idProfesor, fechaInicio, fechaFin, cantidadJornadas, eliminatoria, costoLiga, costoProfesor, costoArbitro]);
 
-  /* Las categorías que llegan por la URL vienen del aviso de pagos sin convocatoria. */
+  /* Las categorías que llegan por la URL vienen del aviso de pagos pendientes. */
   const precargadas = params.get("categorias");
   useEffect(() => {
     if (!precargadas) return;

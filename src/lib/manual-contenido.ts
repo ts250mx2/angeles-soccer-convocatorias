@@ -202,8 +202,8 @@ export const SECCIONES: SeccionManual[] = [
             {
                 tipo: 'nota',
                 estilo: 'ojo',
-                titulo: 'Pagos sin convocatoria: se avisan, no se crean solos',
-                texto: 'Cuando alguien paga una copa o liga de una categoría que todavía no tiene convocatoria, la pantalla lo **avisa** arriba, agrupado por torneo, y el botón lleva a la pantalla de alta con esas categorías **ya precargadas**. Antes esas convocatorias se creaban solas al entrar; ahora las da de alta quien captura, después de mirarlas. Lo que sí se sigue haciendo solo, porque no crea nada: a quien ya pagó se le marca como convocado en la convocatoria que ya existe, y los precios se refrescan.',
+                titulo: 'Pagar no convoca automáticamente',
+                texto: 'Cuando alguien paga una copa o liga y todavía no está convocado, la pantalla muestra un **aviso por torneo** con su nombre. Desde ahí se confirma su convocatoria: primero se sugiere su categoría natural; si no existe, se propone la categoría abierta más cercana y entra como **invitado**. El pago nunca decide por sí solo en qué equipo jugará.',
             },
             {
                 tipo: 'parrafo',
@@ -258,7 +258,7 @@ export const SECCIONES: SeccionManual[] = [
                 tipo: 'nota',
                 estilo: 'ojo',
                 titulo: 'Qué no aparece aquí',
-                texto: '**Clinics** e **INTERASE** no se convocan desde este módulo: no salen en el listado, no se ofrecen al crear y el aviso de pagos sin convocatoria los salta. Sus cobros siguen intactos y se consultan en **Pagos de Copas y Ligas**.',
+                texto: '**Clinics** e **INTERASE** no se convocan desde este módulo: no salen en el listado, no se ofrecen al crear y el aviso de pagos pendientes de convocar los salta. Sus cobros siguen intactos y se consultan en **Pagos de Copas y Ligas**.',
             },
             { tipo: 'subtitulo', texto: 'Precios, pagos y saldo' },
             {
