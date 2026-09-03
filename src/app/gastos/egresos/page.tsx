@@ -12,17 +12,8 @@ import {
   exportEgresosDetalleToPdf, exportEgresosDetalleToExcel,
   type SedeEgresos, type FormaPagoEgresos, type EgresoRow,
 } from "@/lib/gastos-export";
+import { PERIODOS, PERIODO_POR_OMISION, type Periodo } from "@/lib/gastos-periodo";
 
-type Periodo = "today" | "yesterday" | "week" | "month" | "year" | "custom";
-
-const PERIODOS: { key: Periodo; label: string }[] = [
-  { key: "today", label: "Hoy" },
-  { key: "yesterday", label: "Ayer" },
-  { key: "week", label: "Esta Semana" },
-  { key: "month", label: "Este Mes" },
-  { key: "year", label: "Este Año" },
-  { key: "custom", label: "Fechas..." },
-];
 
 /** Botón de exportación; mismo estilo que el resto de la plataforma. */
 const EXP_BTN = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed";
@@ -38,7 +29,7 @@ export default function EgresosPage() {
   const router = useRouter();
   const { user, isInitialized } = useUser();
 
-  const [periodo, setPeriodo] = useState<Periodo>("month");
+  const [periodo, setPeriodo] = useState<Periodo>(PERIODO_POR_OMISION);
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [pendienteDesde, setPendienteDesde] = useState("");

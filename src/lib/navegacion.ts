@@ -196,9 +196,18 @@ export const NAV_ITEMS: NavItem[] = [
         adminOnly: true,
         children: [
             {
-                label: 'Egresos por Sede',
+                /* El rotulo dice "Gastos" y la ruta sigue diciendo "egresos": la ruta es
+                   la clave del permiso en tblPerfilPaginas, y renombrarla obligaria a
+                   volver a concederselo a cada perfil. */
+                label: 'Gastos por Sede',
                 href: '/gastos/egresos',
                 icono: 'MapPin',
+                adminOnly: true,
+            },
+            {
+                label: 'Lista de Gastos',
+                href: '/gastos/lista',
+                icono: 'LayoutList',
                 adminOnly: true,
             },
             {
@@ -374,6 +383,8 @@ export const CLAVE_LEALTAD = '/jugadores/lealtad';
 export const CLAVE_CATEGORIAS = '/jugadores/categorias';
 export const CLAVE_PLANTILLAS = '/administracion-deportiva/plantillas';
 export const CLAVE_ADEUDOS_SEDE = '/adeudos/sede';
+export const CLAVE_GASTOS_SEDE = '/gastos/egresos';
+export const CLAVE_GASTOS_LISTA = '/gastos/lista';
 export const CLAVE_ASISTENCIA = '/administracion-deportiva/asistencia';
 export const CLAVE_COPAS_LIGAS = '/copas-ligas';
 export const CLAVE_COPAS = '/convocatorias/copas';

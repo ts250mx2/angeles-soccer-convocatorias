@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { requierePagina } from '@/lib/permisos';
+import { requiereAlgunaPagina } from '@/lib/permisos';
+import { CLAVE_GASTOS_LISTA, CLAVE_GASTOS_SEDE } from '@/lib/navegacion';
 import { filtroFechas, EGRESO_VIGENTE } from '../route';
 
 export const dynamic = 'force-dynamic';
@@ -8,9 +9,16 @@ export const dynamic = 'force-dynamic';
 // Tope de seguridad: un rango amplio sin sede puede abarcar miles de renglones.
 const MAX_FILAS = 3000;
 
-/** Renglones de egreso de una sede (o de todas) dentro del período. */
+/**
+ * Renglones de egreso de una sede (o de todas) dentro del período.
+ *
+ * Lo usan las DOS pantallas de gastos que enseñan renglones: el detalle de una sede en
+ * Gastos por Sede, y la Lista de Gastos, que es esta misma consulta sin acotar la sede.
+ * Por eso acepta cualquiera de los dos permisos: es el mismo dato, y duplicar la consulta
+ * para cambiarle la reja habría dejado dos sitios que mantener al día.
+ */
 export async function GET(request: Request) {
-    const guardia = await requierePagina('/gastos/egresos');
+    const guardia = await requiereAlgunaPagina([CLAVE_GASTOS_SEDE, CLAVE_GASTOS_LISTA]);
     if (!guardia.ok) {
         return NextResponse.json({ success: false, message: guardia.message }, { status: guardia.status });
     }
