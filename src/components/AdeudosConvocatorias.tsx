@@ -48,6 +48,15 @@ interface FilaResumen {
     desde: string | null;
 }
 
+/** El torneo del que se abre el detalle, o todos los de un tipo con `idLiga` en 0. */
+interface TorneoElegido {
+    tipo: "copa" | "liga";
+    idLiga: number;
+    liga: string;
+    tieneFoto: number;
+    fotoVersion: string | null;
+}
+
 interface FilaDetalle {
     idJugador: number;
     jugador: string;
@@ -84,7 +93,11 @@ export default function AdeudosConvocatorias({ temporadaId }: { temporadaId: num
     const [filas, setFilas] = useState<FilaResumen[]>([]);
     const [cargando, setCargando] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [detalle, setDetalle] = useState<{ tipo: "copa" | "liga"; idLiga: number; liga: string } | null>(null);
+    /* El torneo cuyo detalle se abre. Lleva el escudo consigo —y no solo el id— porque
+       el resumen ya lo tiene en la mano: pedirlo otra vez al abrir sería un viaje de más
+       para un dato que está a un `prop` de distancia. Con `idLiga` en 0 son todos los de
+       ese tipo, y entonces no hay un escudo que enseñar. */
+    const [detalle, setDetalle] = useState<TorneoElegido | null>(null);
 
     useEffect(() => {
         if (!temporadaId) return;
@@ -160,13 +173,13 @@ export default function AdeudosConvocatorias({ temporadaId }: { temporadaId: num
                             tipo="copa"
                             titulo="Adeudo de copas"
                             datos={totales.copa}
-                            onVerNinos={(idLiga, liga) => setDetalle({ tipo: "copa", idLiga, liga })}
+                            onVerNinos={(t) => setDetalle({ tipo: "copa", ...t })}
                         />
                         <TarjetaTorneo
                             tipo="liga"
                             titulo="Adeudo de ligas"
                             datos={totales.liga}
-                            onVerNinos={(idLiga, liga) => setDetalle({ tipo: "liga", idLiga, liga })}
+                            onVerNinos={(t) => setDetalle({ tipo: "liga", ...t })}
                         />
                     </div>
                 )}
@@ -175,9 +188,7 @@ export default function AdeudosConvocatorias({ temporadaId }: { temporadaId: num
             {detalle && (
                 <DetalleConvocatorias
                     temporadaId={temporadaId}
-                    tipo={detalle.tipo}
-                    idLiga={detalle.idLiga}
-                    liga={detalle.liga}
+                    torneo={detalle}
                     onCerrar={() => setDetalle(null)}
                 />
             )}
@@ -203,8 +214,8 @@ function TarjetaTorneo({
     tipo: "copa" | "liga";
     titulo: string;
     datos: DatosTipo;
-    /** `idLiga` 0 = todos los torneos de este tipo. */
-    onVerNinos: (idLiga: number, liga: string) => void;
+    /** El torneo elegido; con `idLiga` en 0, todos los de este tipo. */
+    onVerNinos: (torneo: Omit<TorneoElegido, "tipo">) => void;
 }) {
     const acento = ACENTO_TORNEO[tipo];
     const cifra = tipo === "copa" ? "text-amber-300" : "text-sky-300";
@@ -227,7 +238,7 @@ function TarjetaTorneo({
                 {hay && (
                     <button
                         type="button"
-                        onClick={() => onVerNinos(0, "")}
+                        onClick={() => onVerNinos({ idLiga: 0, liga: "", tieneFoto: 0, fotoVersion: null })}
                         className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[10px] font-black transition-colors whitespace-nowrap flex-shrink-0"
                     >
                         Ver todos
@@ -259,7 +270,14 @@ function TarjetaTorneo({
                                 <li key={t.idLiga}>
                                     <button
                                         type="button"
-                                        onClick={() => onVerNinos(t.idLiga, t.liga)}
+                                        onClick={() =>
+                                            onVerNinos({
+                                                idLiga: t.idLiga,
+                                                liga: t.liga,
+                                                tieneFoto: t.tieneFoto,
+                                                fotoVersion: t.fotoVersion,
+                                            })
+                                        }
                                         title={`Ver quién debe la ${t.liga}`}
                                         className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-white/10 transition-colors text-left"
                                     >
@@ -312,18 +330,14 @@ function TarjetaTorneo({
 /** Los niños que deben, con la fecha del torneo al que se les convocó. */
 function DetalleConvocatorias({
     temporadaId,
-    tipo,
-    idLiga,
-    liga,
+    torneo,
     onCerrar,
 }: {
     temporadaId: number;
-    tipo: "copa" | "liga";
-    /** 0 = todos los torneos de ese tipo. */
-    idLiga: number;
-    liga: string;
+    torneo: TorneoElegido;
     onCerrar: () => void;
 }) {
+    const { tipo, idLiga, liga } = torneo;
     const [filas, setFilas] = useState<FilaDetalle[]>([]);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -434,25 +448,52 @@ function DetalleConvocatorias({
 
     const total = visibles.reduce((t, f) => t + Math.max(f.debe, 0), 0);
     const cifra = tipo === "copa" ? "text-amber-300" : "text-sky-300";
+    const escudo = urlEscudo({
+        IdLiga: idLiga,
+        TieneFoto: torneo.tieneFoto,
+        FotoVersion: torneo.fotoVersion,
+    });
 
     return (
         <div className="fixed inset-0 z-[130] flex items-start justify-center bg-black/70 backdrop-blur-md p-4 overflow-y-auto">
             <div className="w-full max-w-5xl my-8 bg-[#0f172a] border border-white/15 rounded-3xl shadow-2xl">
                 <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-white/10">
-                    <div className="min-w-0">
-                        <h2 className="text-lg font-black text-white">
-                            Adeudo de {tipo === "copa" ? "copas" : "ligas"}
-                        </h2>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                            {liga || (tipo === "copa" ? "Todas las copas" : "Todas las ligas")} ·{" "}
-                            {visibles.length} {visibles.length === 1 ? "adeudo" : "adeudos"}
-                            {busqueda.trim() && filas.length !== visibles.length
-                                ? ` de ${filas.length}`
-                                : ""}{" "}
-                            en {grupos.length}{" "}
-                            {grupos.length === 1 ? "categoría" : "categorías"} ·{" "}
-                            <span className={`font-black ${cifra}`}>{moneda(total)}</span>
-                        </p>
+                    <div className="flex items-center gap-3 min-w-0">
+                        {/* El escudo del torneo, y solo cuando se abrió UNO: con "ver
+                            todos" no hay escudo que represente al conjunto, y poner el de
+                            cualquiera de ellos diría algo falso. Ahí queda el icono del
+                            tipo, con su color. */}
+                        {escudo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                                src={escudo}
+                                alt=""
+                                className="w-11 h-11 rounded-xl object-contain bg-slate-950/50 border border-white/10 flex-shrink-0"
+                            />
+                        ) : (
+                            <span className="w-11 h-11 rounded-xl bg-slate-800 border border-white/10 flex-shrink-0 flex items-center justify-center">
+                                <Trophy
+                                    size={20}
+                                    className={tipo === "copa" ? "text-amber-500/70" : "text-sky-500/70"}
+                                />
+                            </span>
+                        )}
+
+                        <div className="min-w-0">
+                            <h2 className="text-lg font-black text-white">
+                                Adeudo de {tipo === "copa" ? "copas" : "ligas"}
+                            </h2>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                                {liga || (tipo === "copa" ? "Todas las copas" : "Todas las ligas")} ·{" "}
+                                {visibles.length} {visibles.length === 1 ? "adeudo" : "adeudos"}
+                                {busqueda.trim() && filas.length !== visibles.length
+                                    ? ` de ${filas.length}`
+                                    : ""}{" "}
+                                en {grupos.length}{" "}
+                                {grupos.length === 1 ? "categoría" : "categorías"} ·{" "}
+                                <span className={`font-black ${cifra}`}>{moneda(total)}</span>
+                            </p>
+                        </div>
                     </div>
                     <button
                         onClick={onCerrar}

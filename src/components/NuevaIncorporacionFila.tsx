@@ -1,10 +1,16 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, AlertCircle, Check, X, UserRoundPlus, ArrowRight } from "lucide-react";
 import BuscadorIncremental, { type OpcionBuscador } from "@/components/BuscadorIncremental";
 import { Firma } from "@/components/IncorporacionModal";
 import type { JugadorBuscado, OpcionProfesor } from "@/lib/incorporaciones";
+import {
+  aniosDeSede, letraDe, letrasDe, sedesDeEquipos, type EquipoSeleccionable,
+} from "@/lib/selector-equipo";
+
+/** Lo que trae el endpoint de equipos, que es el mínimo más cuánta gente tiene. */
+type EquipoOpcion = EquipoSeleccionable & { Jugadores: number };
 
 /**
  * Captura de una incorporación nueva, como un renglón más de la tabla.
@@ -16,6 +22,17 @@ import type { JugadorBuscado, OpcionProfesor } from "@/lib/incorporaciones";
  *
  * La procedencia no se captura: es la categoría que el jugador tiene hoy. El servidor
  * la vuelve a leer de la base al guardar, así que lo que se ve aquí es informativo.
+ *
+ * El GRUPO al que se incorpora se elige en tres pasos —sede, categoría y letra—, los
+ * mismos que la Plantilla y la Asistencia y con la misma regla (@/lib/selector-equipo).
+ * Antes era un buscador sobre las 335 categorías distintas que hay en la base, escritas
+ * a mano a lo largo de los años: ahí no se distinguía el '2016A' de GANTE del de
+ * Saltillo, y se podía teclear una que no existiera en ningún equipo.
+ *
+ * Se piden los equipos INCLUYENDO los vacíos (`conInscritos=0`), al revés que la
+ * Plantilla: 146 de los 347 vigentes no tienen a nadie, y son justo a los que se
+ * incorpora a alguien. Filtrarlos escondería media lista en la pantalla que sirve para
+ * llenar un grupo.
  */
 
 const CAMPO =
@@ -29,12 +46,11 @@ const hoy = () => {
 };
 
 export default function NuevaIncorporacionFila({
-  temporadaId, temporada, profesores, categorias, autorizante, onCancelar, onGuardado,
+  temporadaId, temporada, profesores, autorizante, onCancelar, onGuardado,
 }: {
   temporadaId: number;
   temporada: string | null;
   profesores: OpcionProfesor[];
-  categorias: string[];
   autorizante: string;
   onCancelar: () => void;
   /** La fila se queda abierta: se capturan varias seguidas. */
@@ -44,13 +60,50 @@ export default function NuevaIncorporacionFila({
   const [profesor, setProfesor] = useState<OpcionBuscador | null>(null);
   const [jugador, setJugador] = useState<OpcionBuscador | null>(null);
   const [procedencia, setProcedencia] = useState("");
-  const [grupo, setGrupo] = useState<OpcionBuscador | null>(null);
+  /* Los tres pasos del grupo destino. Lo que se guarda es el NOMBRE del equipo
+     ('2016A SLT'), que es lo que la base entiende por grupo. */
+  const [idSede, setIdSede] = useState<number | null>(null);
+  const [anio, setAnio] = useState("");
+  const [idEquipo, setIdEquipo] = useState<number | null>(null);
   const [justificacion, setJustificacion] = useState("");
+
+  const [equipos, setEquipos] = useState<EquipoOpcion[]>([]);
 
   const [jugadores, setJugadores] = useState<JugadorBuscado[]>([]);
   const [buscando, setBuscando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /* Los equipos de la temporada, con los vacíos incluidos. Se piden una vez por
+     temporada: son unos cientos y solo el nombre, la sede y el conteo. */
+  useEffect(() => {
+    if (!temporadaId) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/administracion-deportiva/equipos?temporadaId=${temporadaId}&conInscritos=0`,
+          { cache: "no-store" },
+        );
+        const json = await res.json();
+        if (vivo && json.success) setEquipos(json.data);
+      } catch {
+        /* Sin lista no se puede elegir grupo y el guardado lo dice; el resto del
+           formulario sigue capturándose. */
+      }
+    })();
+    return () => { vivo = false; };
+  }, [temporadaId]);
+
+  const sedes = useMemo(() => sedesDeEquipos(equipos), [equipos]);
+  const anios = useMemo(() => aniosDeSede(equipos, idSede), [equipos, idSede]);
+  const letras = useMemo(() => letrasDe(equipos, idSede, anio), [equipos, idSede, anio]);
+
+  /** El equipo elegido, que es lo que se manda como grupo. */
+  const equipo = useMemo(
+    () => letras.find((e) => e.IdEquipo === idEquipo) ?? null,
+    [letras, idEquipo],
+  );
 
   const buscarJugadores = useCallback(async (texto: string) => {
     setBuscando(true);
@@ -76,7 +129,7 @@ export default function NuevaIncorporacionFila({
     setError(null);
     if (!profesor) return setError("Elige el profesor");
     if (!jugador) return setError("Elige el jugador");
-    if (!grupo) return setError("Elige el grupo a incorporar");
+    if (!equipo) return setError("Elige la sede, la categoría y la letra del grupo");
 
     setGuardando(true);
     try {
@@ -88,7 +141,7 @@ export default function NuevaIncorporacionFila({
           fecha,
           idProfesor: Number(profesor.valor),
           idJugador: Number(jugador.valor),
-          grupoIncorporar: grupo.valor,
+          grupoIncorporar: equipo.Equipo,
           justificacion: justificacion.trim(),
         }),
       });
@@ -101,7 +154,7 @@ export default function NuevaIncorporacionFila({
          los formatos se capturan en tanda, y esos dos se repiten renglón tras renglón. */
       setJugador(null);
       setProcedencia("");
-      setGrupo(null);
+      setIdEquipo(null);
       setJustificacion("");
       onGuardado();
     } catch {
@@ -162,14 +215,53 @@ export default function NuevaIncorporacionFila({
           </div>
         </div>
 
-        <BuscadorIncremental
-          etiqueta="Grupo a incorporar"
-          placeholder="Buscar o escribir categoría..."
-          opciones={categorias.map((c) => ({ valor: c, etiqueta: c }))}
-          valor={grupo?.valor ?? null}
-          onChange={setGrupo}
-          permiteNuevo
-        />
+        {/* El grupo destino, en los mismos tres pasos que la Plantilla y la Asistencia.
+            Cambiar de sede invalida la categoría y la letra, y cambiar de categoría
+            invalida la letra: son suyas. */}
+        <div className="xl:col-span-2">
+          <label className={ETIQUETA}>Grupo a incorporar</label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <select
+              value={idSede ?? ""}
+              onChange={(e) => {
+                setIdSede(Number(e.target.value) || null);
+                setAnio("");
+                setIdEquipo(null);
+              }}
+              className={CAMPO}
+              title="La misma categoría existe en varias sedes; ésta es la que manda"
+            >
+              <option value="">{sedes.length > 0 ? "Sede..." : "Cargando..."}</option>
+              {sedes.map((sd) => (
+                <option key={sd.idSede} value={sd.idSede}>{sd.sede}</option>
+              ))}
+            </select>
+
+            <select
+              value={anio}
+              onChange={(e) => { setAnio(e.target.value); setIdEquipo(null); }}
+              className={CAMPO}
+              disabled={!idSede}
+            >
+              <option value="">{idSede ? "Categoría..." : "Elige la sede"}</option>
+              {anios.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+
+            <select
+              value={idEquipo ?? ""}
+              onChange={(e) => setIdEquipo(Number(e.target.value) || null)}
+              className={CAMPO}
+              disabled={!anio}
+            >
+              <option value="">{anio ? "Letra..." : "Elige la categoría"}</option>
+              {letras.map((eq) => (
+                <option key={eq.IdEquipo} value={eq.IdEquipo}>
+                  {letraDe(eq)} ({eq.Jugadores})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         <div className="xl:col-span-2">
           <label className={ETIQUETA}>Justificación de incorporación</label>
@@ -196,12 +288,12 @@ export default function NuevaIncorporacionFila({
             <p className="flex items-start gap-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
               <AlertCircle size={14} className="flex-shrink-0 mt-0.5" /> {error}
             </p>
-          ) : procedencia && grupo ? (
+          ) : procedencia && equipo ? (
             <p className="flex items-center gap-2 text-xs text-slate-300">
               <span className="px-2 py-1 rounded bg-white/5 border border-white/10 font-bold">{procedencia}</span>
               <ArrowRight size={14} className="text-blue-400" />
               <span className="px-2 py-1 rounded bg-blue-600/20 border border-blue-500/40 font-bold text-blue-200">
-                {grupo.etiqueta}
+                {equipo.Equipo}
               </span>
             </p>
           ) : (

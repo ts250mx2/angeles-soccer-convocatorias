@@ -148,12 +148,6 @@ export const NAV_ITEMS: NavItem[] = [
                 acento: 'liga',
             },
             {
-                label: 'Incorporaciones',
-                href: '/incorporaciones',
-                icono: 'UserRoundPlus',
-                adminOnly: true,
-            },
-            {
                 /* Igual que arriba: fuera del menú, dueño de la ruta y de su API. */
                 label: 'Catálogo de Copas y Ligas (todos)',
                 href: '/copas-ligas',
@@ -276,6 +270,21 @@ export const NAV_ITEMS: NavItem[] = [
         icono: 'Shirt',
         children: [
             {
+                label: 'Equipos',
+                href: '/administracion-deportiva/equipos',
+                icono: 'Shirt',
+            },
+            {
+                /* Vive aqui y no en Copas y Ligas: incorporar es mover a un nino de un
+                   grupo de entrenamiento a otro, que es de lo que trata este menu. La
+                   ruta NO cambia —es la clave del permiso en tblPerfilPaginas— asi que
+                   mudarla de grupo no le quita el modulo a nadie. */
+                label: 'Incorporaciones',
+                href: '/incorporaciones',
+                icono: 'UserRoundPlus',
+                adminOnly: true,
+            },
+            {
                 label: 'Plantilla de Equipos',
                 href: '/administracion-deportiva/plantillas',
                 icono: 'Goal',
@@ -382,6 +391,7 @@ export const CLAVE_BECAS = '/jugadores/becas';
 export const CLAVE_LEALTAD = '/jugadores/lealtad';
 export const CLAVE_CATEGORIAS = '/jugadores/categorias';
 export const CLAVE_PLANTILLAS = '/administracion-deportiva/plantillas';
+export const CLAVE_EQUIPOS = '/administracion-deportiva/equipos';
 export const CLAVE_ADEUDOS_SEDE = '/adeudos/sede';
 export const CLAVE_GASTOS_SEDE = '/gastos/egresos';
 export const CLAVE_GASTOS_LISTA = '/gastos/lista';

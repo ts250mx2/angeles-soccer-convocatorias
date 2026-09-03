@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { CLAVE_PLANTILLAS } from '@/lib/navegacion';
-import { requierePagina } from '@/lib/permisos';
+import { CLAVE_ASISTENCIA, CLAVE_INCORPORACIONES, CLAVE_PLANTILLAS } from '@/lib/navegacion';
+import { requiereAlgunaPagina } from '@/lib/permisos';
 import { inscritoEnTemporada } from '@/lib/jugador-filtros';
 import { JUGADORES_DE_TEMPORADA_SQL, MENSUALIDADES_EN_TEMPORADA_SQL } from '@/lib/temporada';
 
@@ -40,12 +40,29 @@ interface FilaEquipo {
 }
 
 export async function GET(request: Request) {
-    const guardia = await requierePagina(CLAVE_PLANTILLAS);
+    const guardia = await requiereAlgunaPagina([CLAVE_PLANTILLAS, CLAVE_ASISTENCIA, CLAVE_INCORPORACIONES]);
     if (!guardia.ok) {
         return NextResponse.json({ success: false, message: guardia.message }, { status: guardia.status });
     }
 
-    const temporadaId = Number(new URL(request.url).searchParams.get('temporadaId'));
+    const params = new URL(request.url).searchParams;
+    const temporadaId = Number(params.get('temporadaId'));
+    const equipoSolicitado = Number(params.get('equipoId'));
+    const idEquipoDirecto = Number.isInteger(equipoSolicitado) && equipoSolicitado > 0
+        ? equipoSolicitado
+        : null;
+
+    /* Con `conInscritos=0` se devuelven TAMBIÉN los equipos que no tienen a nadie.
+    
+       Lo pide Incorporaciones, y la diferencia no es menor: hoy 146 de los 347 equipos
+       vigentes están vacíos, y son justo a los que se incorpora a alguien. Filtrarlos ahí
+       escondería la mitad del catálogo precisamente en la pantalla que sirve para llenar
+       un grupo.
+    
+       Para la Plantilla y la Asistencia el filtro sí manda —un equipo sin nadie no tiene
+       nada que acomodar ni a quién pasar lista— y por eso sigue siendo lo que se hace por
+       omisión. */
+    const conInscritos = params.get('conInscritos') !== '0';
     if (!Number.isInteger(temporadaId) || temporadaId <= 0) {
         return NextResponse.json({ success: false, message: 'Selecciona una temporada.' }, { status: 400 });
     }
@@ -69,11 +86,11 @@ export async function GET(request: Request) {
                     S.Sede,
                     U.Usuario AS Coach,
                     E.Genero,
-                    P.n AS Jugadores
+                    COALESCE(P.n, 0) AS Jugadores
                FROM tblEquipos E
                LEFT JOIN tblSedes S ON S.IdSede = E.IdSede
                LEFT JOIN tblUsuarios U ON U.IdUsuario = E.IdEntrenador
-               INNER JOIN (
+               ${conInscritos ? 'INNER' : 'LEFT'} JOIN (
                    SELECT J.IdEquipo, COUNT(*) AS n
                      FROM tblJugadores J
                      LEFT JOIN tblSedes SD ON SD.IdSede = J.IdSede
@@ -88,11 +105,11 @@ export async function GET(request: Request) {
                     GROUP BY J.IdEquipo
                ) P ON P.IdEquipo = E.IdEquipo
               WHERE E.Status = 0
-                AND COALESCE(E.EsCompetencia, 0) = 0
+                AND (COALESCE(E.EsCompetencia, 0) = 0${idEquipoDirecto ? ' OR E.IdEquipo = ?' : ''})
                 AND COALESCE(TRIM(E.Equipo), '') <> ''
               ORDER BY S.Sede ASC, E.Equipo ASC`,
             // Un parametro por subconsulta, en el orden en que aparecen: INS, MEN.
-            [temporadaId, temporadaId],
+            idEquipoDirecto ? [temporadaId, temporadaId, idEquipoDirecto] : [temporadaId, temporadaId],
         )) as [FilaEquipo[], unknown];
 
         return NextResponse.json({ success: true, data: equipos });

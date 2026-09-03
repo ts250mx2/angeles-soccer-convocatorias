@@ -706,7 +706,6 @@ export default function IncorporacionesPage() {
                               temporadaId={temporadaId}
                               temporada={temporadaActual?.Temporada ?? null}
                               profesores={profesores}
-                              categorias={categorias}
                               autorizante={autorizante}
                               onCancelar={() => setCreando(false)}
                               onGuardado={() => {
