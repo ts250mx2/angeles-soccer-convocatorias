@@ -94,9 +94,10 @@ export async function GET(request: Request) {
            inscritos distintos que el resto del sistema, que es justo lo que nadie
            puede explicar después.
 
-           Se marcan, NO se filtran en el SQL: la pantalla los reparte en dos pestañas
-           y necesita las dos listas. Y hay una razón de fondo para traerlos a todos —
-           ver el comentario del POST sobre las posiciones que se conservan. */
+           Se marcan, NO se filtran en el SQL: la pantalla enseña al equipo completo en
+           una sola lista y le pone un aviso a quien no está inscrito. Y hay una razón de
+           fondo para traerlos a todos — ver el comentario del POST sobre las posiciones
+           que se conservan. */
         const [filas] = (await pool.query(
             `SELECT J.IdJugador, J.Jugador,
                     DATE_FORMAT(J.FechaNacimiento, '%d/%m/%Y') AS FechaNacimiento,
@@ -222,12 +223,10 @@ const guardarSchema = z.object({
  * justo lo que el navegador acaba de mandar.
  *
  * Y de ahí sale una regla que la pantalla tiene que respetar: como esto REEMPLAZA el
- * acomodo completo, el navegador manda TODAS las posiciones, incluidas las de los
- * jugadores que no está mostrando por no estar inscritos en la temporada elegida. Si
- * mandara solo a los de la pestaña visible, cambiar de temporada y guardar borraría en
- * silencio el lugar de quien no aparece en esa —un acomodo perdido sin que nadie lo
- * haya pedido—. Las posiciones son del EQUIPO, no de la temporada: la temporada solo
- * decide a quién se ve.
+ * acomodo completo, el navegador manda TODAS las posiciones que tiene en la mano, sin
+ * recortar por inscripción ni por nada. Si mandara solo una parte, guardar borraría en
+ * silencio el lugar de los demás —un acomodo perdido sin que nadie lo haya pedido—. Las
+ * posiciones son del EQUIPO, no de la temporada.
  */
 export async function POST(request: Request) {
     const guardia = await requierePagina(CLAVE_PLANTILLAS);

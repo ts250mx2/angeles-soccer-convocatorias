@@ -12,8 +12,8 @@ import {
  * Cambia el precio de un jugador dentro de una convocatoria.
  *
  * Además de guardarlo, decide si es un AJUSTE que hay que proteger: si el importe difiere
- * del que pondría el sistema (producto de la liga con la beca de torneo que le toque), se marca y a partir
- * de ahí ningún automatismo lo vuelve a mover. Si es exactamente el del sistema, se borra
+ * del que pondría el sistema (producto de la liga, con la beca solo si ya se le aplicó
+ * con el botón), se marca y a partir de ahí ningún automatismo lo vuelve a mover. Si es exactamente el del sistema, se borra
  * la marca y el jugador regresa al precio automático: esa es la forma de deshacer un
  * ajuste sin una pantalla aparte.
  */
@@ -38,11 +38,11 @@ export async function POST(request: Request) {
             [importe, playerId, seasonId, leagueId, categoria, colorParam]
         );
 
-        const sistema = await precioDelSistema(pool, leagueId, playerId);
+        const clave = { idJugador: playerId, seasonId, leagueId, categoria, color: colorParam };
+        const sistema = await precioDelSistema(pool, clave);
         const manual = esAjusteManual(importe, sistema);
 
         if (await preciosManualesDisponibles(pool)) {
-            const clave = { idJugador: playerId, seasonId, leagueId, categoria, color: colorParam };
             await (manual ? fijaPrecioManual(pool, clave) : liberaPrecioManual(pool, clave));
         }
 

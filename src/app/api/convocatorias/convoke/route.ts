@@ -17,11 +17,14 @@ export async function POST(request: Request) {
         const estados = await estadoEnTemporada(Number(seasonId), [Number(playerId)]);
         const advertencia = advertenciaConvocatoria(estados.get(Number(playerId)));
 
-        /* Precio de la liga con la beca del jugador ya aplicada. La beca que cuenta aquí
-           es la del torneo —BecaCopas en una copa, BecaLigas en una liga—, no la de
-           mensualidades: son descuentos distintos. Se guarda ya
-           rebajado porque es contra este número que la pantalla saca el saldo; dejarlo
-           completo cobraría de más a un becado.
+        /* Precio de lista de la liga, SIN beca. La beca del jugador ya no se aplica
+           sola al convocar: se aplica después con el botón de la pantalla, convocatoria
+           por convocatoria (ver @/lib/convocatorias-becas). Convocar y becar son dos
+           decisiones distintas, y juntarlas dejaba sin manera de cobrarle completo a un
+           becado en un torneo donde no se le respeta la beca.
+
+           Si a este renglón ya se le aplicó la beca, `precioDelSistema` la trae; por eso
+           el cálculo vive allá y no aquí.
 
            Salvo que el jugador traiga precio fijado a mano: entonces solo se le marca la
            convocatoria y el importe se respeta. Convocar a alguien al que se le puso un
@@ -38,7 +41,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, advertencia });
         }
 
-        const price = await precioDelSistema(pool, leagueId, playerId);
+        const price = await precioDelSistema(pool, clave);
         if (price === null) {
             return NextResponse.json(
                 { success: false, message: 'No se encontró precio para esta liga' },

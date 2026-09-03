@@ -20,11 +20,29 @@ import { presentarPdf } from '@/lib/pdf-preview';
 import autoTable from 'jspdf-autotable';
 import DashboardLayout from '@/components/DashboardLayout';
 import PlayerPagosModal, { type PagosTarget } from '@/components/PlayerPagosModal';
-import ConvocatoriaPlayersTable from '@/components/ConvocatoriaPlayersTable';
+import ConvocatoriaPlayersTable, { type JugadorConvocatoria } from '@/components/ConvocatoriaPlayersTable';
 import { ELIMINATORIAS, etiquetaJornadas } from '@/lib/convocatoria-opciones';
 import TarjetaCopaLiga from '@/components/TarjetaCopaLiga';
 import { resumirPorCopaLiga, totalesGenerales } from '@/lib/convocatorias-resumen';
 import { TIPO_COPA, urlEscudo } from '@/lib/copas-ligas';
+import type { DuplicadosDeTorneo, JugadorDuplicado, EquipoDuplicado } from '@/lib/convocatorias-duplicados';
+import { duplicadosPorLiga, etiquetaEquipo } from '@/lib/convocatorias-duplicados';
+
+interface DestinoConflicto {
+  categoria: string;
+  color: string;
+}
+
+interface ConflictoSinConvocatoria {
+  idLiga: number;
+  liga: string;
+  idTipoLiga: number;
+  idJugador: number;
+  jugador: string;
+  categoriaOrigen: string;
+  destinos: DestinoConflicto[];
+  sugerida: DestinoConflicto | null;
+}
 
 /**
  * Porcentaje de beca del jugador, normalizado a 0-100. La columna guarda texto
@@ -178,9 +196,27 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
     try {
       const res = await fetch('/api/convocatorias/pendientes', { method: 'POST' });
       const json = await res.json();
-      if (json.success) setFaltantes(json.faltantes ?? []);
+      if (json.success) {
+        setFaltantes(json.faltantes ?? []);
+        setConflictosSinConvocatoria(json.conflictos ?? []);
+        setTemporadaAlertas(Number(json.seasonId) || null);
+      }
     } catch (error) {
       console.error('Error revisando convocatorias pendientes:', error);
+    }
+  };
+
+  const revisarDuplicados = async () => {
+    if (!puedeEditar) return;
+    try {
+      const res = await fetch('/api/convocatorias/duplicados');
+      const json = await res.json();
+      if (json.success) {
+        setDuplicados(json.data ?? []);
+        setTemporadaAlertas(Number(json.seasonId) || null);
+      }
+    } catch (error) {
+      console.error('Error revisando jugadores duplicados:', error);
     }
   };
 
@@ -188,7 +224,10 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
   const fetchConvocatorias = async () => {
     setIsLoading(true);
     try {
+      // El sincronizado de pagos puede descubrir un duplicado nuevo; se revisan en
+      // este orden para que el warning salga en la misma carga.
       await revisarPendientes();
+      await revisarDuplicados();
       const response = await fetch(`/api/convocatorias/summary`);
       const data = await response.json();
       if (data.success) {
@@ -239,6 +278,13 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
   const [ligaAbierta, setLigaAbierta] = useState<number | null>(null);
   /* Pagos de copas y ligas sin convocatoria: se avisan, no se crean solas. */
   const [faltantes, setFaltantes] = useState<Array<{ idLiga: number; liga: string; idTipoLiga?: number; categoria: string; jugadores: number }>>([]);
+  const [conflictosSinConvocatoria, setConflictosSinConvocatoria] = useState<ConflictoSinConvocatoria[]>([]);
+  const [duplicados, setDuplicados] = useState<DuplicadosDeTorneo[]>([]);
+  const [temporadaAlertas, setTemporadaAlertas] = useState<number | null>(null);
+  const [modalDuplicadosLiga, setModalDuplicadosLiga] = useState<number | null>(null);
+  const [modalFaltantesLiga, setModalFaltantesLiga] = useState<number | null>(null);
+  const [destinosElegidos, setDestinosElegidos] = useState<Record<string, string>>({});
+  const [resolviendoAlerta, setResolviendoAlerta] = useState<string | null>(null);
 
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -302,6 +348,94 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
       {},
     ),
   );
+
+  const cantidadDuplicados = duplicadosPorLiga(duplicados);
+  const conflictosPorLiga = conflictosSinConvocatoria.reduce<Record<number, ConflictoSinConvocatoria[]>>(
+    (acc, conflicto) => ({
+      ...acc,
+      [conflicto.idLiga]: [...(acc[conflicto.idLiga] ?? []), conflicto],
+    }),
+    {},
+  );
+  const duplicadosAbiertos = duplicados.find((t) => t.idLiga === modalDuplicadosLiga) ?? null;
+  const faltantesAbiertos = modalFaltantesLiga === null ? [] : (conflictosPorLiga[modalFaltantesLiga] ?? []);
+
+  const claveDestino = (destino: DestinoConflicto): string =>
+    JSON.stringify([destino.categoria, destino.color]);
+  const claveConflicto = (conflicto: Pick<ConflictoSinConvocatoria, 'idLiga' | 'idJugador'>): string =>
+    `${conflicto.idLiga}:${conflicto.idJugador}`;
+
+  const abrirFaltantes = (idLiga: number) => {
+    const lista = conflictosPorLiga[idLiga] ?? [];
+    setDestinosElegidos((actual) => {
+      const siguiente = { ...actual };
+      for (const conflicto of lista) {
+        const clave = claveConflicto(conflicto);
+        if (!siguiente[clave] && conflicto.sugerida) {
+          siguiente[clave] = claveDestino(conflicto.sugerida);
+        }
+      }
+      return siguiente;
+    });
+    setModalFaltantesLiga(idLiga);
+  };
+
+  const resolverDuplicado = async (jugador: JugadorDuplicado, equipo: EquipoDuplicado) => {
+    if (!duplicadosAbiertos || !temporadaAlertas) return;
+    const clave = `duplicado-${jugador.idJugador}`;
+    setResolviendoAlerta(clave);
+    try {
+      const response = await fetch('/api/convocatorias/duplicados/resolver', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          seasonId: temporadaAlertas,
+          leagueId: duplicadosAbiertos.idLiga,
+          playerId: jugador.idJugador,
+          categoria: equipo.categoria,
+          color: equipo.color,
+        }),
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.message || 'No se pudo resolver el duplicado');
+      if (duplicadosAbiertos.jugadores.length === 1) setModalDuplicadosLiga(null);
+      await fetchConvocatorias();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'No se pudo resolver el duplicado');
+    } finally {
+      setResolviendoAlerta(null);
+    }
+  };
+
+  const asignarInvitado = async (conflicto: ConflictoSinConvocatoria) => {
+    if (!temporadaAlertas) return;
+    const seleccion = destinosElegidos[claveConflicto(conflicto)];
+    if (!seleccion) return;
+    const [categoria, color] = JSON.parse(seleccion) as [string, string];
+    const clave = `faltante-${conflicto.idJugador}`;
+    setResolviendoAlerta(clave);
+    try {
+      const response = await fetch('/api/convocatorias/pendientes/resolver', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          seasonId: temporadaAlertas,
+          leagueId: conflicto.idLiga,
+          playerId: conflicto.idJugador,
+          categoria,
+          color,
+        }),
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.message || 'No se pudo asignar al jugador');
+      if (faltantesAbiertos.length === 1) setModalFaltantesLiga(null);
+      await fetchConvocatorias();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'No se pudo asignar al jugador');
+    } finally {
+      setResolviendoAlerta(null);
+    }
+  };
 
   const sortedConvocatorias = [...filteredConvocatorias].sort((a, b) => {
     if (!sortConfig) return 0;
@@ -936,6 +1070,29 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
     }
   };
 
+  const handleBeca = async (player: JugadorConvocatoria, aplicar: boolean) => {
+    if (!selectedConvocatoria) return;
+    try {
+      const response = await fetch('/api/convocatorias/beca', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          seasonId: selectedConvocatoria.IdTemporada,
+          leagueId: selectedConvocatoria.IdLiga,
+          playerId: player.IdJugador,
+          categoria: selectedConvocatoria.Categoria,
+          color: selectedConvocatoria.Color ?? '',
+          aplicar,
+        }),
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.message || 'No se pudo cambiar la beca');
+      await handleNavigateToConvocatoria(selectedConvocatoria);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'No se pudo cambiar la beca');
+    }
+  };
+
   /** Abre el historial completo de pagos del jugador. */
   const abrirHistorialPagos = (player: { IdJugador: number; Jugador: string }) => {
     setPagosTarget({ idJugador: player.IdJugador, jugador: player.Jugador });
@@ -1147,8 +1304,8 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
                       </p>
                       <p className="text-[11px] text-amber-200/70 mt-0.5">
                         {faltantesPorLiga.reduce((n, g) => n + g.categorias.length, 0)} categoría(s) con gente
-                        que ya pagó y todavía no tienen convocatoria en este ciclo. Revísalas y dales de alta
-                        desde la pantalla de alta.
+                        que ya pagó y todavía no tiene convocatoria en este ciclo. Elige a qué categoría
+                        irá cada niño como invitado.
                       </p>
                     </div>
                   </div>
@@ -1156,11 +1313,7 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
                     {faltantesPorLiga.map((g) => (
                       <button
                         key={g.idLiga}
-                        onClick={() =>
-                          router.push(
-                            `/convocatorias/torneo?liga=${g.idLiga}&categorias=${encodeURIComponent(g.categorias.join(','))}`,
-                          )
-                        }
+                        onClick={() => abrirFaltantes(g.idLiga)}
                         title={`Categorías: ${g.categorias.join(', ')}`}
                         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-100 text-xs font-bold hover:bg-amber-500/25 transition-colors"
                       >
@@ -1218,7 +1371,15 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                             {bloque.lista.map((r) => (
-                              <TarjetaCopaLiga key={r.idLiga} resumen={r} onAbrir={() => setLigaAbierta(r.idLiga)} />
+                              <TarjetaCopaLiga
+                                key={r.idLiga}
+                                resumen={r}
+                                onAbrir={() => setLigaAbierta(r.idLiga)}
+                                duplicados={cantidadDuplicados[r.idLiga] ?? 0}
+                                onRevisarDuplicados={() => setModalDuplicadosLiga(r.idLiga)}
+                                sinConvocatoria={conflictosPorLiga[r.idLiga]?.length ?? 0}
+                                onRevisarSinConvocatoria={() => abrirFaltantes(r.idLiga)}
+                              />
                             ))}
                           </div>
                         </section>
@@ -1797,6 +1958,164 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
           </div>
       </main>
 
+      {/* Un niño quedó convocado en dos categorías/equipos del mismo torneo. */}
+      {duplicadosAbiertos && (
+        <div className="fixed inset-0 z-[70] bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-[#0f172a] border border-amber-500/35 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 p-5 border-b border-white/10">
+              <div>
+                <div className="flex items-center gap-2 text-amber-300">
+                  <Info size={18} />
+                  <h3 className="text-lg font-black">Niños en dos categorías</h3>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  {duplicadosAbiertos.liga}: elige la única categoría en la que se quedará cada niño.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalDuplicadosLiga(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
+                aria-label="Cerrar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto max-h-[68vh]">
+              {duplicadosAbiertos.jugadores.map((jugador) => {
+                const cargando = resolviendoAlerta === `duplicado-${jugador.idJugador}`;
+                return (
+                  <div key={jugador.idJugador} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <div className="mb-3">
+                      <p className="font-black text-white">{jugador.jugador}</p>
+                      <p className="text-[11px] text-slate-400">ID {jugador.idJugador} · Selecciona dónde se queda</p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {jugador.equipos.map((equipo) => (
+                        <button
+                          key={`${equipo.categoria}\u0000${equipo.color}`}
+                          type="button"
+                          disabled={cargando || resolviendoAlerta !== null}
+                          onClick={() => resolverDuplicado(jugador, equipo)}
+                          className="text-left rounded-lg border border-amber-500/25 bg-amber-500/10 hover:bg-amber-500/20 p-3 transition-colors disabled:opacity-50"
+                        >
+                          <span className="block text-sm font-black text-amber-100">Dejar en {etiquetaEquipo(equipo)}</span>
+                          <span className="block mt-1 text-[10px] text-amber-200/65">
+                            {equipo.cerrada ? 'Convocatoria cerrada · ' : ''}{moneda(equipo.precio)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    {cargando && <p className="mt-2 text-xs text-amber-300">Guardando decisión…</p>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pagó una copa/liga, pero su categoría natural no tiene convocatoria. */}
+      {modalFaltantesLiga !== null && (
+        <div className="fixed inset-0 z-[70] bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-[#0f172a] border border-amber-500/35 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 p-5 border-b border-white/10">
+              <div>
+                <div className="flex items-center gap-2 text-amber-300">
+                  <Info size={18} />
+                  <h3 className="text-lg font-black">Pagos sin convocatoria</h3>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  {faltantesAbiertos[0]?.liga ?? 'Torneo'} · Confirma la categoría a la que irá cada niño como invitado.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalFaltantesLiga(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
+                aria-label="Cerrar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto max-h-[68vh]">
+              {faltantesAbiertos.length > 0 && faltantesAbiertos.every((c) => c.destinos.length === 0) && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/10 p-4">
+                  <p className="text-xs text-amber-100">
+                    Este torneo aún no tiene una convocatoria abierta que pueda recibir invitados.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => router.push(
+                      `/convocatorias/torneo?liga=${modalFaltantesLiga}&categorias=${encodeURIComponent(
+                        [...new Set(faltantesAbiertos.map((c) => c.categoriaOrigen))].join(','),
+                      )}`,
+                    )}
+                    className="flex-shrink-0 rounded-lg border border-amber-400/40 bg-amber-500/20 px-3 py-2 text-xs font-black text-amber-100 hover:bg-amber-500/30"
+                  >
+                    Crear convocatoria destino
+                  </button>
+                </div>
+              )}
+              {faltantesAbiertos.map((conflicto) => {
+                const cargando = resolviendoAlerta === `faltante-${conflicto.idJugador}`;
+                const seleccion = destinosElegidos[claveConflicto(conflicto)] ?? '';
+                return (
+                  <div key={conflicto.idJugador} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-black text-white">{conflicto.jugador}</p>
+                        <p className="text-[11px] text-slate-400">
+                          ID {conflicto.idJugador} · Categoría actual: {conflicto.categoriaOrigen}
+                        </p>
+                        {conflicto.destinos.length > 0 ? (
+                          <select
+                            value={seleccion}
+                            onChange={(e) => setDestinosElegidos((actual) => ({
+                              ...actual,
+                              [claveConflicto(conflicto)]: e.target.value,
+                            }))}
+                            disabled={cargando || resolviendoAlerta !== null}
+                            className="mt-3 w-full appearance-none rounded-lg border border-white/15 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-400"
+                          >
+                            <option value="">Selecciona una categoría</option>
+                            {conflicto.destinos.map((destino) => {
+                              const sugerida = conflicto.sugerida && claveDestino(conflicto.sugerida) === claveDestino(destino);
+                              return (
+                                <option key={claveDestino(destino)} value={claveDestino(destino)}>
+                                  {destino.categoria}{destino.color ? ` · ${destino.color}` : ''}{sugerida ? ' (sugerida)' : ''}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        ) : (
+                          <p className="mt-3 text-xs text-amber-200">
+                            Este torneo no tiene otra convocatoria abierta. Primero crea una categoría destino.
+                          </p>
+                        )}
+                      </div>
+                      {conflicto.destinos.length > 0 && (
+                        <button
+                          type="button"
+                          disabled={!seleccion || cargando || resolviendoAlerta !== null}
+                          onClick={() => asignarInvitado(conflicto)}
+                          className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-black text-slate-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {cargando ? 'Asignando…' : 'Asignar invitado'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {faltantesAbiertos.length === 0 && (
+                <p className="py-8 text-center text-sm text-slate-400">Este conflicto ya fue resuelto.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Convocatoria Modal */}
       {isEditModalOpen && selectedConvocatoria && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
@@ -2095,6 +2414,7 @@ export default function ConvocatoriasPantalla({ tipo }: { tipo?: TipoTorneo }) {
                   onSort={handlePlayerSort}
                   onConvocar={handleConvocarPlayer}
                   onQuitar={handleQuitarPlayer}
+                  onBeca={handleBeca}
                   onPrecio={handleUpdatePrice}
                   onHistorial={abrirHistorialPagos}
                   onPagosConvocatoria={fetchPlayerPayments}

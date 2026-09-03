@@ -6,17 +6,18 @@ import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import CanchaPlantilla, { nombreCorto } from "@/components/CanchaPlantilla";
 import {
-  AlertCircle, ArrowRightLeft, FileText, Goal, LayoutGrid, Loader2, RotateCcw, Save,
-  Users, Wand2,
+  AlertCircle, ArrowLeft, ArrowRightLeft, FileText, Goal, LayoutGrid, Loader2, Plus,
+  RotateCcw, Save, Search, Users, Wand2,
 } from "lucide-react";
 import TransferirJugador from "@/components/TransferirJugador";
 import AvatarJugador from "@/components/AvatarJugador";
 import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModal";
+import { partirCategoria } from "@/lib/categoria-equipo";
 import {
   aniosDeSede, letraDe, letrasDe, sedesDeEquipos, seleccionHuerfana,
 } from "@/lib/selector-equipo";
 import {
-  COLOR_BECA, acomodoPorOmision, acota, etiquetaBeca,
+  COLOR_BECA, MINIMO_JUGADORES_PLANTILLA, acomodoPorOmision, acota, etiquetaBeca,
   type JugadorPlantilla, type Plantilla,
 } from "@/lib/plantilla-equipo";
 import { exportarPlantillaPdf } from "@/lib/plantilla-export";
@@ -25,35 +26,46 @@ import { guardarEquipoRecordado, leerEquipoRecordado } from "@/lib/equipo-record
 /**
  * Plantilla de Equipos: la hoja del equipo, con su gente y el acomodo en la cancha.
  *
- * Se elige el equipo en dos pasos —primero el año y luego la letra— porque así está
- * escrito el nombre del equipo en la base ('2018X', '2012FC', '2009-2010F') y así lo
- * busca quien lo tiene en la cabeza: primero "los 2018" y después "el X". Un solo
- * desplegable con todos los equipos obligaría a leerlos todos.
+ * ── Dos caras: la portada y el editor ──
  *
- * Y solo se ofrecen los que tienen gente INSCRITA en la temporada elegida: de los 346
- * equipos vigentes del catálogo, en una temporada cualquiera llegan con alguien poco
- * más de cien. Los otros doscientos y pico son grupos de años anteriores que nadie
- * disolvió, y elegir uno solo lleva a una hoja sin nadie que acomodar. Por eso cambiar
- * de temporada vuelve a pedir la lista al servidor en vez de filtrar aquí: la regla de
- * quién está inscrito es la de Inscripciones, y vive allá.
+ * Se entra a retomar una hoja que ya existe mucho más seguido que a empezar una, así que
+ * lo primero que se ve son las que YA están armadas, con cuántos de cada equipo tienen
+ * lugar en la cancha. Antes lo primero eran tres desplegables en blanco, sin ninguna
+ * pista de en cuáles equipos había algo hecho: encontrar la hoja de la semana pasada era
+ * acertarle de memoria. Empezar una nueva sigue estando —lleva al mismo editor con los
+ * desplegables vacíos—, pero ya no es el único camino.
+ *
+ * El equipo se elige en tres pasos —sede, año, letra— porque así está escrito su nombre
+ * en la base ('2018X', '2012FC', '2009-2010F') y así lo busca quien lo tiene en la
+ * cabeza. Un solo desplegable con los cuatrocientos y pico equipos del catálogo obligaría
+ * a leerlos todos.
+ *
+ * ── El equipo es UNO: no hay listas separadas ──
+ *
+ * La hoja enseña a todo el equipo en una sola lista, y a quien no tiene inscripción
+ * pagada en la temporada elegida se le pone un aviso al lado del nombre. Antes venían
+ * partidos en dos pestañas y había que saltar entre ellas para armar una alineación que
+ * en la cancha no está partida: pasa que el niño entrena y juega mientras el pago se
+ * regulariza, y esconderlo en otra pestaña obliga a armar la formación en papel. Lo que
+ * no puede pasar es que se cuele sin que nadie lo note, así que va marcado en la lista,
+ * marcado en el campo, se confirma al meterlo y sale marcado en el PDF. La inscripción
+ * usa la MISMA regla que Inscripciones y la Lista de Jugadores, así que el aviso dice lo
+ * mismo que aquellas pantallas.
+ *
+ * Y solo se ofrecen los equipos de más de `MINIMO_JUGADORES_PLANTILLA` jugadores: a un
+ * grupo de cinco no se le arma una formación, son los restos de uno que se disolvió o una
+ * categoría que apenas abre. El corte lo aplica el servidor —el mismo para la portada y
+ * para el selector—, y cuenta la plantilla completa, que es lo que enseña la hoja.
  *
  * El acomodo se edita en el navegador y se manda completo al guardar, no en cada
  * arrastre: acomodar son quince movimientos seguidos, y una petición por movimiento
  * sería una tormenta de escrituras que además se cruzan entre sí.
  *
- * La cancha es de los INSCRITOS en la temporada elegida —son los que juegan— y los demás
- * viven en su propia pestaña. Desde ahí se les puede meter al campo de todas formas:
- * pasa que el niño entrena y juega mientras el pago se regulariza, y una hoja que no lo
- * pueda representar obliga a armar la alineación en papel. Lo que no puede pasar es que
- * se cuele sin que nadie lo note, así que va marcado en el campo, se confirma al meterlo
- * y se cuenta aparte. La inscripción usa la MISMA regla que Inscripciones y la Lista de
- * Jugadores, así que los números coinciden con los de aquellas pantallas.
- *
  * OJO con una asimetría que es fácil romper: las posiciones son del EQUIPO y no de la
- * temporada (tblEquiposPlantilla no la guarda). Cambiar de temporada mueve nombres entre
- * pestañas, nunca el acomodo. Y como el guardado REEMPLAZA el acomodo completo, se mandan
- * SIEMPRE todas las posiciones: si se omitieran las de los no inscritos, cambiar de
- * temporada y guardar les borraría el lugar sin que nadie lo pida.
+ * temporada (tblEquiposPlantilla no la guarda). Cambiar de temporada mueve los avisos de
+ * inscripción, nunca el acomodo. Y como el guardado REEMPLAZA el acomodo completo, se
+ * mandan SIEMPRE todas las posiciones: si se omitiera alguna, guardar borraría ese lugar
+ * sin que nadie lo pida.
  */
 
 interface EquipoOpcion {
@@ -76,8 +88,17 @@ interface Temporada {
   EsActiva: boolean;
 }
 
-/** Las dos pestañas del listado, partidas por inscripción en la temporada elegida. */
-type Pestania = "inscritos" | "no-inscritos";
+/** Un equipo que ya tiene plantilla armada, como lo lista la portada. */
+interface PlantillaArmada {
+  idEquipo: number;
+  equipo: string;
+  idSede: number | null;
+  sede: string;
+  coach: string | null;
+  jugadores: number;
+  colocados: number;
+  actualizada: string | null;
+}
 
 const SELECT =
   "appearance-none bg-white/5 border border-white/15 text-slate-200 text-xs py-2 pl-3 pr-8 rounded-lg leading-tight focus:outline-none focus:border-blue-500 [color-scheme:dark] disabled:opacity-40";
@@ -109,7 +130,17 @@ export default function PlantillasPage() {
   const [idSede, setIdSede] = useState<number | null>(null);
   const [anio, setAnio] = useState("");
   const [idEquipo, setIdEquipo] = useState<number | null>(null);
-  const [pestania, setPestania] = useState<Pestania>("inscritos");
+  /* La pantalla tiene dos caras: la PORTADA, que lista las hojas ya armadas, y el
+     EDITOR, que abre una.
+
+     La portada es lo primero porque retomar una hoja es lo que se hace casi siempre, y
+     antes eso costaba acertarle a tres desplegables sin ninguna pista de cuáles equipos
+     ya tenían algo hecho. Armar una nueva sigue estando: es el otro camino, no el
+     único. */
+  const [vista, setVista] = useState<"portada" | "editor">("portada");
+  const [armadas, setArmadas] = useState<PlantillaArmada[]>([]);
+  const [cargandoArmadas, setCargandoArmadas] = useState(true);
+  const [buscaEquipo, setBuscaEquipo] = useState("");
   const [transfiriendo, setTransfiriendo] = useState(false);
   /* El historial de pagos: el MISMO modal de Inscripciones, Adeudos y la Lista de
      Jugadores. Se reutiliza en vez de hacer uno propio para que los pagos de un niño se
@@ -168,6 +199,9 @@ export default function PlantillasPage() {
             setIdSede(sedeDirecta);
             setAnio(categoriaDirecta);
             setIdEquipo(idDirecto);
+            /* Venir con un equipo en la URL —desde la canchita del catálogo— ya es
+               haber elegido: pasar por la portada sería preguntar dos veces. */
+            setVista("editor");
           } else {
             const recordado = leerEquipoRecordado();
             const existe = recordado
@@ -202,20 +236,30 @@ export default function PlantillasPage() {
     );
   }, [temporadaId, idSede, anio, idEquipo]);
 
-  /* Los equipos de los selectores, que SÍ dependen de la temporada: solo se ofrecen los
-     que tienen gente inscrita en ella. Por eso se vuelven a pedir al cambiarla, en vez
-     de traer la lista completa una vez y filtrarla aquí: quién está inscrito lo decide
-     una regla que vive en el servidor y que comparten Inscripciones y la Lista de
-     Jugadores, y copiarla al navegador la dejaría a la deriva. */
+  /* Los equipos de los selectores: los que tienen gente de verdad.
+  
+     Se cuenta la PLANTILLA COMPLETA (`conteo=activos`), no los inscritos, porque eso es
+     lo que enseña la hoja desde que dejó de partirse en pestañas: si el número entre
+     paréntesis del selector contara otra cosa que la lista de al lado, habría que
+     explicar cuál de los dos es el bueno.
+  
+     Y se recortan los de cinco o menos (`minimo`): esos no son equipos a los que se les
+     arme una formación. El corte lo aplica el servidor con la misma constante que usa la
+     portada, para que no pueda ofrecer un equipo que aquí no se puede elegir.
+  
+     Se vuelven a pedir al cambiar de temporada porque la lista sigue dependiendo de ella:
+     el pedido lleva la temporada y el servidor decide con reglas que viven allá. */
   useEffect(() => {
     if (!user || !puedeVer || !temporadaId) return;
     let vigente = true;
     (async () => {
       try {
         const directo = equipoDirecto.current;
-        const extra = directo ? `&conInscritos=0&equipoId=${directo}` : "";
+        /* Llegar desde la canchita del catálogo trae un equipo concreto, y ése entra
+           aunque sea chico: el usuario ya dijo cuál quiere. */
+        const extra = directo ? `&conInscritos=0&equipoId=${directo}` : `&minimo=${MINIMO_JUGADORES_PLANTILLA}`;
         const res = await fetch(
-          `/api/administracion-deportiva/equipos?temporadaId=${temporadaId}${extra}`,
+          `/api/administracion-deportiva/equipos?temporadaId=${temporadaId}&conteo=activos${extra}`,
           { cache: "no-store" },
         );
         const json = await res.json();
@@ -237,6 +281,56 @@ export default function PlantillasPage() {
   const listaAlDia = equipos.temporadaId === temporadaId;
 
   // Las tres listas de los desplegables, en cascada. La regla vive en @/lib/selector-equipo.
+  /* Las plantillas que YA están armadas: la portada de la pantalla.
+  
+     No llevan temporada, y es a propósito: las posiciones son del EQUIPO y no de la
+     temporada (tblEquiposPlantilla no la guarda), así que filtrarlas por temporada
+     escondería hojas que existen. */
+  const cargarArmadas = useCallback(async () => {
+    setCargandoArmadas(true);
+    try {
+      const res = await fetch("/api/administracion-deportiva/plantillas/lista", { cache: "no-store" });
+      const json = await res.json();
+      if (json.success) setArmadas(json.data);
+    } catch {
+      /* Una portada vacía no impide armar una nueva, así que no se grita: el error de
+         verdad —el que sí importa— aparece al guardar. */
+    } finally {
+      setCargandoArmadas(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user && puedeVer) cargarArmadas();
+  }, [user, puedeVer, cargarArmadas]);
+
+  /* La búsqueda de la portada corre sobre el nombre del equipo, su sede y su coach:
+     son las tres formas en que alguien identifica una hoja —"los 2018X", "los de
+     Saltillo", "los de Ramírez"— y cuál se le viene a la cabeza no lo decide esta
+     pantalla. */
+  const armadasFiltradas = useMemo(() => {
+    const q = buscaEquipo.trim().toLowerCase();
+    if (!q) return armadas;
+    return armadas.filter((a) =>
+      `${a.equipo} ${a.sede} ${a.coach ?? ""}`.toLowerCase().includes(q),
+    );
+  }, [armadas, buscaEquipo]);
+
+  /**
+   * Abre una hoja de la portada.
+   *
+   * Deja los tres desplegables apuntando a ese equipo —el año sale del propio nombre,
+   * igual que en el selector— para que el editor no aparezca contradiciendo a lo que se
+   * acaba de abrir, y para que desde ahí se pueda saltar a la letra de al lado sin
+   * volver a la portada.
+   */
+  const abrirArmada = (a: PlantillaArmada) => {
+    setIdSede(a.idSede);
+    setAnio(partirCategoria(a.equipo).anio);
+    setIdEquipo(a.idEquipo);
+    setVista("editor");
+  };
+
   const sedes = useMemo(() => sedesDeEquipos(equipos.lista), [equipos]);
   const anios = useMemo(() => aniosDeSede(equipos.lista, idSede), [equipos, idSede]);
   const letras = useMemo(() => letrasDe(equipos.lista, idSede, anio), [equipos, idSede, anio]);
@@ -285,9 +379,9 @@ export default function PlantillasPage() {
   }, []);
 
   /* Cambiar de temporada recarga: quién está inscrito depende de ella, y con ella
-     cambia el reparto entre las dos pestañas. El acomodo NO cambia —las posiciones son
-     del equipo, no de la temporada—, así que lo que se ve moverse son los nombres entre
-     pestañas, no los de la cancha. */
+     cambian los avisos de la lista. El acomodo NO cambia —las posiciones son del equipo,
+     no de la temporada—, así que lo que se ve moverse son los avisos, no los nombres de
+     la cancha. */
   useEffect(() => {
     if (!idEquipo || !temporadaId) { setPlantilla(null); return; }
     /* Con la lista todavía sin actualizar no se sabe si el equipo sigue ofreciéndose en
@@ -322,41 +416,37 @@ export default function PlantillasPage() {
     setSucio(true);
   };
 
-  /* El equipo, partido por inscripción en la temporada elegida.
-  
-     La cancha es de los INSCRITOS por omisión —son los que juegan esta temporada— pero
-     admite a un no inscrito puesto a mano: pasa de verdad, el niño entrena y juega
-     mientras el pago se regulariza, y una hoja que no lo pueda representar obliga a
-     armar la alineación en papel. Lo que NO puede pasar es que se cuele sin que nadie lo
-     note, así que va marcado en el campo, se avisa al meterlo y se cuenta aparte. */
-  const inscritos = useMemo(
-    () => plantilla?.jugadores.filter((j) => j.inscrito) ?? [],
-    [plantilla],
-  );
-  const noInscritos = useMemo(
-    () => plantilla?.jugadores.filter((j) => !j.inscrito) ?? [],
-    [plantilla],
-  );
-  const listado = pestania === "inscritos" ? inscritos : noInscritos;
+  /* El equipo, en UNA sola lista.
+
+     Antes venia partido en dos pestanas por inscripcion, y eso obligaba a saltar entre
+     ellas para armar una alineacion que en la cancha es una sola. Ahora estan todos
+     juntos y al que no esta inscrito se le pone un aviso: la informacion sigue estando,
+     pero no rompe la lista en dos.
+
+     La inscripcion usa la MISMA regla que Inscripciones y la Lista de Jugadores, asi que
+     el aviso dice lo mismo que aquellas pantallas. */
+  const jugadores = useMemo(() => plantilla?.jugadores ?? [], [plantilla]);
+
+  /** Los que no tienen inscripcion pagada en la temporada elegida. Solo se avisan. */
+  const sinInscripcion = useMemo(() => jugadores.filter((j) => !j.inscrito), [jugadores]);
 
   const temporadaNombre =
     temporadas.find((t) => t.IdTemporada === temporadaId)?.Temporada ?? "";
 
-  /* En la cancha está QUIEN TIENE LUGAR, esté inscrito o no. La banca sigue siendo solo
-     de inscritos: al no inscrito se le manda desde su propia pestaña, a propósito, para
-     que meterlo sea un acto deliberado y no un clic más de la fila. */
-  const enCancha = useMemo(
-    () => plantilla?.jugadores.filter((j) => j.x !== null) ?? [],
-    [plantilla],
+  /* En la cancha esta QUIEN TIENE LUGAR; en la banca, el resto del equipo. Ya no hay
+     distincion por inscripcion: el equipo es uno solo. */
+  const enCancha = useMemo(() => jugadores.filter((j) => j.x !== null), [jugadores]);
+  const enBanca = useMemo(() => jugadores.filter((j) => j.x === null), [jugadores]);
+
+  /** Los que estan en el campo sin estar inscritos. Es lo que hay que poder ver de lejos. */
+  const enCanchaSinInscripcion = useMemo(
+    () => enCancha.filter((j) => !j.inscrito),
+    [enCancha],
   );
-  const enBanca = inscritos.filter((j) => j.x === null);
 
-  /** Los que están en el campo sin estar inscritos. Es lo que hay que poder ver de lejos. */
-  const enCanchaSinInscripcion = enCancha.filter((j) => !j.inscrito);
-
-  /** Le busca un lugar libre en la cancha, entre los puestos del acomodo por omisión. */
+  /** Le busca un lugar libre en la cancha, entre los puestos del acomodo por omision. */
   const lugarLibre = (): { x: number; y: number } => {
-    const puestos = acomodoPorOmision(Math.max(inscritos.length, enCancha.length + 1));
+    const puestos = acomodoPorOmision(Math.max(jugadores.length, enCancha.length + 1));
     const ocupados = enCancha.map((j) => ({ x: j.x!, y: j.y! }));
     return (
       puestos.find((p) => !ocupados.some((o) => Math.abs(o.x - p.x) < 6 && Math.abs(o.y - p.y) < 6)) ??
@@ -364,45 +454,33 @@ export default function PlantillasPage() {
     );
   };
 
-  /** Manda a la cancha a alguien de la banca, en el primer lugar libre del acomodo. */
-  const mandarACancha = (idJugador: number) => {
-    if (!plantilla) return;
-    const libre = lugarLibre();
-    cambiaJugador(idJugador, { x: acota(libre.x), y: acota(libre.y) });
-  };
-
   /**
-   * Mete a la cancha a alguien que NO está inscrito.
+   * Manda a la cancha a alguien de la banca.
    *
-   * Se confirma siempre, y no se puede deshacer por accidente: el resto de la aplicación
-   * —Convocatorias, Adeudos, los conteos de Inscripciones— sigue tratándolo como no
-   * inscrito, así que quien lo pone tiene que saber que la hoja va a decir una cosa y el
-   * padrón otra. Es un aviso, no un veto: la decisión es del club.
+   * Si NO esta inscrito se confirma antes: el resto de la aplicacion —Convocatorias,
+   * Adeudos, los conteos de Inscripciones— lo sigue tratando como no inscrito, asi que
+   * quien lo pone tiene que saber que la hoja va a decir una cosa y el padron otra. Es un
+   * aviso, no un veto: la decision es del club.
    */
-  const meterSinInscripcion = (j: JugadorPlantilla) => {
+  const mandarACancha = (j: JugadorPlantilla) => {
     if (!plantilla) return;
-    const aviso =
-      `${j.jugador} NO tiene inscripción pagada en ${temporadaNombre || "esta temporada"}.\n\n` +
-      "Se puede poner en la cancha igual, y va a quedar marcado como tal en la hoja y en el PDF.\n\n" +
-      "¿Meterlo de todas formas?";
-    if (!confirm(aviso)) return;
+    if (!j.inscrito) {
+      const aviso =
+        `${j.jugador} NO tiene inscripcion pagada en ${temporadaNombre || "esta temporada"}.` +
+        "\n\nSe puede poner en la cancha igual, y va a quedar marcado como tal en la hoja y en el PDF." +
+        "\n\n\u00bfMeterlo de todas formas?";
+      if (!confirm(aviso)) return;
+      setAviso(`${j.jugador} entro a la cancha sin inscripcion. Queda marcado en la hoja.`);
+    }
     const libre = lugarLibre();
     cambiaJugador(j.idJugador, { x: acota(libre.x), y: acota(libre.y) });
-    setAviso(`${j.jugador} entró a la cancha sin inscripción. Queda marcado en la hoja.`);
   };
 
-  /**
-   * Reparte por la cancha, de atrás hacia adelante. El punto de partida.
-   *
-   * Toma a los inscritos MÁS los no inscritos que ya estén puestos: si dejara fuera a
-   * estos últimos, el acomodo automático les pasaría otro jugador encima y quedarían dos
-   * nombres montados en el mismo punto.
-   */
+  /** Reparte a TODO el equipo por la cancha, de atras hacia adelante. El punto de partida. */
   const acomodarTodos = () => {
     if (!plantilla) return;
-    const aAcomodar = plantilla.jugadores.filter((j) => j.inscrito || j.x !== null);
-    const puestos = acomodoPorOmision(aAcomodar.length);
-    const lugarDe = new Map(aAcomodar.map((j, i) => [j.idJugador, puestos[i]]));
+    const puestos = acomodoPorOmision(jugadores.length);
+    const lugarDe = new Map(jugadores.map((j, i) => [j.idJugador, puestos[i]]));
     setPlantilla({
       ...plantilla,
       jugadores: plantilla.jugadores.map((j) => {
@@ -413,7 +491,7 @@ export default function PlantillasPage() {
     setSucio(true);
   };
 
-  /** Saca de la cancha a TODOS los que estén puestos, inscritos o no: son los que se ven. */
+  /** Saca de la cancha a todos los que esten puestos. */
   const vaciarCancha = () => {
     if (!plantilla) return;
     setPlantilla({
@@ -453,6 +531,10 @@ export default function PlantillasPage() {
             ? `Guardado. El entrenador se actualizó en ${json.entrenadorPropagado} ficha${json.entrenadorPropagado === 1 ? "" : "s"} de jugador.`
             : "Guardado.",
         );
+        /* Guardar por primera vez estrena una hoja, y la portada la lista. Si no se
+           volviera a pedir, el equipo que se acaba de armar no aparecería ahí hasta
+           recargar la página. */
+        cargarArmadas();
       } else setError(json.message ?? "No se pudo guardar la plantilla");
     } catch {
       setError("Error de conexión al guardar");
@@ -493,11 +575,16 @@ export default function PlantillasPage() {
                     Plantilla de Equipos
                   </h2>
                   <p className="text-xs text-slate-400 mt-1">
-                    El acomodo del equipo en la cancha. Arrastra los nombres para moverlos.
+                    {vista === "portada"
+                      ? "Las hojas que ya están armadas. Abre una para editarla, o empieza otra."
+                      : "El acomodo del equipo en la cancha. Arrastra los nombres para moverlos."}
                   </p>
                 </div>
 
-                <div className="lg:text-right">
+                {/* La temporada no elige qué equipo se ve: decide contra qué se mide la
+                    inscripción de cada jugador. En la portada no mide nada —las hojas no
+                    son de una temporada— y ahí solo sería un desplegable de adorno. */}
+                <div className={`lg:text-right${vista === "portada" ? " hidden" : ""}`}>
                   <label htmlFor="pl-temporada" className={ETIQUETA_SELECT}>Temporada:</label>
                   <select
                     id="pl-temporada"
@@ -516,7 +603,25 @@ export default function PlantillasPage() {
               </div>
 
               {/* El equipo se elige aquí, y a continuación lo que se hace con él. */}
+              {vista === "editor" && (
               <div className="flex flex-wrap items-end gap-2 mt-4">
+                <div>
+                  <span className={ETIQUETA_SELECT}>&nbsp;</span>
+                  <button
+                    onClick={() => {
+                      /* El acomodo vive en el navegador hasta que se aprieta Guardar, así
+                         que salirse del editor con cambios pendientes los tira. Es el
+                         mismo aviso que da el navegador al cerrar la pestaña. */
+                      if (sucio && !confirm("Hay cambios sin guardar en esta plantilla.\n\n¿Salir y perderlos?")) return;
+                      setSucio(false);
+                      setVista("portada");
+                    }}
+                    title="Volver a la lista de plantillas armadas"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300 text-xs font-bold transition-all"
+                  >
+                    <ArrowLeft size={14} /> Plantillas
+                  </button>
+                </div>
                 <div>
                   <label htmlFor="pl-sede" className={ETIQUETA_SELECT}>Sede:</label>
                   <select
@@ -587,14 +692,11 @@ export default function PlantillasPage() {
                     </button>
                     <button
                       onClick={() =>
-                        /* La hoja lleva a los inscritos y a quien se haya puesto en la
-                           cancha sin estarlo: si el PDF omitiera a estos últimos, la hoja
-                           impresa contradiría a la pantalla justo donde ya no se puede
-                           preguntar. Van marcados, no escondidos. */
-                        exportarPlantillaPdf(
-                          { ...plantilla, jugadores: [...inscritos, ...enCanchaSinInscripcion] },
-                          temporadaNombre,
-                        )
+                        /* La hoja impresa lleva al equipo completo, igual que la
+                           pantalla. A quien no está inscrito se le marca, no se le
+                           esconde: si el PDF lo omitiera, contradiría a la pantalla
+                           justo donde ya no se puede preguntar. */
+                        exportarPlantillaPdf(plantilla, temporadaNombre)
                       }
                       className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/30 text-blue-200 text-xs font-bold transition-all"
                     >
@@ -611,6 +713,7 @@ export default function PlantillasPage() {
                   </div>
                 )}
               </div>
+              )}
             </div>
 
             {error && (
@@ -628,7 +731,82 @@ export default function PlantillasPage() {
               </div>
             )}
 
-            {cargando ? (
+            {vista === "portada" ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="search"
+                      value={buscaEquipo}
+                      onChange={(e) => setBuscaEquipo(e.target.value)}
+                      placeholder="Buscar equipo, sede o coach..."
+                      className="w-72 max-w-full pl-9 pr-3 py-2 rounded-lg bg-white/5 border border-white/15 text-slate-100 text-xs placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  {/* Empezar una hoja lleva al MISMO editor, con los desplegables en
+                      blanco. No es otra pantalla: es la misma sin equipo elegido. */}
+                  <button
+                    onClick={() => { setIdEquipo(null); setVista("editor"); }}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all"
+                  >
+                    <Plus size={15} /> Nueva plantilla
+                  </button>
+                </div>
+
+                {cargandoArmadas ? (
+                  <div className="flex flex-col items-center justify-center gap-3 py-24 text-slate-400">
+                    <Loader2 size={30} className="animate-spin text-emerald-400" />
+                    <p className="text-sm font-bold">Cargando las plantillas...</p>
+                  </div>
+                ) : armadasFiltradas.length === 0 ? (
+                  <div className="text-center py-20">
+                    <LayoutGrid size={34} className="mx-auto text-slate-700 mb-3" />
+                    <p className="text-slate-300 font-bold text-sm">
+                      {armadas.length === 0
+                        ? "Todavía no hay ninguna plantilla armada"
+                        : "Ningún equipo coincide con la búsqueda"}
+                    </p>
+                    <p className="text-slate-500 text-xs mt-1">
+                      {armadas.length === 0
+                        ? "Empieza una con «Nueva plantilla»: eliges la sede, la categoría y la letra."
+                        : "Prueba con el año, la letra, la sede o el nombre del coach."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {armadasFiltradas.map((a) => (
+                      <button
+                        key={a.idEquipo}
+                        onClick={() => abrirArmada(a)}
+                        title={`Abrir la plantilla de ${a.equipo}`}
+                        className="text-left p-3.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-emerald-500/40 transition-all"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-white truncate">{a.equipo}</p>
+                            <p className="text-[10px] font-bold text-slate-400 truncate">{a.sede || "Sin sede"}</p>
+                          </div>
+                          {/* Cuántos de los del equipo tienen lugar en la cancha. Es lo
+                              que dice de un vistazo si la hoja está terminada o a medias:
+                              una de 3 de 18 es una que alguien dejó empezada. */}
+                          <span className="flex-shrink-0 px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-black tabular-nums">
+                            {a.colocados}/{a.jugadores}
+                          </span>
+                        </div>
+                        <div className="mt-2.5 flex items-center justify-between gap-2 text-[10px] text-slate-500 font-bold">
+                          <span className="inline-flex items-center gap-1 min-w-0">
+                            <Users size={11} className="flex-shrink-0" />
+                            <span className="truncate">{a.coach || "Sin coach"}</span>
+                          </span>
+                          {a.actualizada && <span className="flex-shrink-0 tabular-nums">{a.actualizada}</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : cargando ? (
               <div className="flex flex-col items-center justify-center gap-3 py-24 text-slate-400">
                 <Loader2 size={30} className="animate-spin text-emerald-400" />
                 <p className="text-sm font-bold">Cargando la plantilla...</p>
@@ -636,47 +814,34 @@ export default function PlantillasPage() {
             ) : !plantilla ? (
               <div className="text-center py-20">
                 <LayoutGrid size={34} className="mx-auto text-slate-700 mb-3" />
-                <p className="text-slate-300 font-bold text-sm">Elige una categoría y su letra</p>
+                <p className="text-slate-300 font-bold text-sm">Elige la sede, la categoría y su letra</p>
                 <p className="text-slate-500 text-xs mt-1">
                   Ahí aparecen los jugadores del equipo y su acomodo en la cancha. Solo se
-                  ofrecen los equipos con jugadores inscritos en la temporada elegida.
+                  ofrecen los equipos de más de {MINIMO_JUGADORES_PLANTILLA} jugadores: a un
+                  grupo más chico no se le arma una formación.
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-5">
                 {/* ── Listado ── */}
                 <div>
-                  {/* Las dos pestañas. El número va en la etiqueta porque es el dato que
-                      se consulta: cuántos hay de cada lado. */}
-                  <div className="flex items-center gap-1 mb-3">
-                    {([
-                      ["inscritos", "Inscritos", inscritos.length],
-                      ["no-inscritos", "No inscritos", noInscritos.length],
-                    ] as const).map(([clave, etiqueta, cuantos]) => (
-                      <button
-                        key={clave}
-                        onClick={() => setPestania(clave)}
-                        aria-pressed={pestania === clave}
-                        className={`px-3 py-2 rounded-lg text-[11px] font-black transition-colors border ${
-                          pestania === clave
-                            ? clave === "inscritos"
-                              ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-200"
-                              : "bg-amber-600/20 border-amber-500/40 text-amber-200"
-                            : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"
-                        }`}
-                      >
-                        {etiqueta} ({cuantos})
-                      </button>
-                    ))}
-                  </div>
-
-                  {pestania === "no-inscritos" && (
-                    <p className="mb-3 text-[10px] text-slate-500 leading-snug">
-                      No tienen inscripción pagada en {temporadaNombre || "la temporada"}. Están en el
-                      equipo y siguen entrenando. Se pueden meter a la cancha con «A la cancha»,
-                      y quedan marcados como no inscritos ahí y en el PDF.
+                  {/* UNA sola lista: el equipo es uno solo. Antes venia partido en dos
+                      pestanas por inscripcion y habia que saltar entre ellas para armar
+                      una alineacion que en la cancha no esta partida. */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">
+                      {jugadores.length} {jugadores.length === 1 ? "jugador" : "jugadores"}
                     </p>
-                  )}
+                    {sinInscripcion.length > 0 && (
+                      <p
+                        title={`Sin inscripción pagada en ${temporadaNombre || "la temporada"}`}
+                        className="inline-flex items-center gap-1.5 text-[10px] font-black px-2 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                      >
+                        <AlertCircle size={11} />
+                        {sinInscripcion.length} sin inscripción
+                      </p>
+                    )}
+                  </div>
 
                   <div className="rounded-2xl border border-white/10 overflow-hidden">
                     <table className="w-full">
@@ -688,15 +853,13 @@ export default function PlantillasPage() {
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Semestre</th>
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Copas</th>
                           <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Ligas</th>
-                          {pestania === "no-inscritos" && (
-                            <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-24">
-                              Cancha
-                            </th>
-                          )}
+                          <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-24">
+                            Cancha
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {listado.map((j, i) => {
+                        {jugadores.map((j, i) => {
                           /* Las tres becas van en su propia columna: son descuentos
                              independientes de la ficha y juntarlas obligaría a inventar
                              cuál de las dos de torneo se enseña. */
@@ -720,9 +883,19 @@ export default function PlantillasPage() {
                                   <AvatarJugador idJugador={j.idJugador} nombre={j.jugador} tieneFoto={j.tieneFoto} fotoVersion={j.fotoVersion} tamano={26} />
                                   <div className="min-w-0">
                                     <span className="text-[11px] font-bold text-slate-100">{j.jugador}</span>
-                                    {pestania === "inscritos" && j.x === null && (
+                                    {j.x === null && (
                                       <span className="ml-1.5 text-[9px] font-black text-slate-500 uppercase">
                                         · sin colocar
+                                      </span>
+                                    )}
+                                    {/* El aviso hace el trabajo que hacía la pestaña: dice
+                                        lo mismo, sin partir al equipo en dos listas. */}
+                                    {!j.inscrito && (
+                                      <span
+                                        title={`No tiene inscripción pagada en ${temporadaNombre || "la temporada"}`}
+                                        className="ml-1.5 inline-flex items-center gap-1 align-middle text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                                      >
+                                        <AlertCircle size={9} /> SIN INSCRIPCIÓN
                                       </span>
                                     )}
                                   </div>
@@ -746,20 +919,26 @@ export default function PlantillasPage() {
                                   {lig.texto}
                                 </span>
                               </td>
-                              {/* Meter a un no inscrito es un acto deliberado: por eso
-                                  tiene su propio botón en lugar de colarse en el clic de
-                                  la fila, que abre el historial de pagos. */}
-                              {pestania === "no-inscritos" && (
-                                <td className="px-2 py-1.5 text-center">
+                              {/* Mandar a la cancha tiene su propio boton y no se cuela
+                                  en el clic de la fila, que abre el historial de pagos. */}
+                              <td className="px-2 py-1.5 text-center">
                                   {j.x === null ? (
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        meterSinInscripcion(j);
+                                        mandarACancha(j);
                                       }}
-                                      title={`Poner a ${j.jugador} en la cancha aunque no esté inscrito`}
-                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-600/20 hover:bg-amber-600/35 border border-amber-500/40 text-amber-200 text-[10px] font-black transition-colors"
+                                      title={
+                                        j.inscrito
+                                          ? `Poner a ${j.jugador} en la cancha`
+                                          : `Poner a ${j.jugador} en la cancha aunque no esté inscrito`
+                                      }
+                                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-black transition-colors ${
+                                        j.inscrito
+                                          ? "bg-emerald-600/20 hover:bg-emerald-600/35 border-emerald-500/40 text-emerald-200"
+                                          : "bg-amber-600/20 hover:bg-amber-600/35 border-amber-500/40 text-amber-200"
+                                      }`}
                                     >
                                       <Goal size={11} /> A la cancha
                                     </button>
@@ -776,19 +955,14 @@ export default function PlantillasPage() {
                                       <RotateCcw size={11} /> Sacar
                                     </button>
                                   )}
-                                </td>
-                              )}
+                              </td>
                             </tr>
                           );
                         })}
-                        {listado.length === 0 && (
+                        {jugadores.length === 0 && (
                           <tr>
-                            <td colSpan={pestania === "no-inscritos" ? 7 : 6} className="px-3 py-8 text-center text-slate-500 text-xs">
-                              {plantilla.jugadores.length === 0
-                                ? "Este equipo no tiene jugadores activos."
-                                : pestania === "inscritos"
-                                  ? "Nadie del equipo tiene inscripción en esta temporada."
-                                  : "Todos los del equipo están inscritos."}
+                            <td colSpan={7} className="px-3 py-8 text-center text-slate-500 text-xs">
+                              Este equipo no tiene jugadores activos.
                             </td>
                           </tr>
                         )}
@@ -832,16 +1006,16 @@ export default function PlantillasPage() {
                     )}
                     {enBanca.length === 0 ? (
                       <p className="text-[10px] text-slate-500">
-                        {inscritos.length === 0
-                          ? "No hay inscritos que acomodar en esta temporada."
-                          : "Todos los inscritos están en la cancha."}
+                        {jugadores.length === 0
+                          ? "Este equipo no tiene jugadores que acomodar."
+                          : "Todo el equipo está en la cancha."}
                       </p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {enBanca.map((j) => (
                           <button
                             key={j.idJugador}
-                            onClick={() => mandarACancha(j.idJugador)}
+                            onClick={() => mandarACancha(j)}
                             title={`Mandar a ${j.jugador} a la cancha`}
                             className="inline-flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-md bg-white/10 hover:bg-emerald-600/30 border border-white/10 hover:border-emerald-500/40 text-[10px] font-bold text-slate-200 transition-colors"
                           >
@@ -950,8 +1124,8 @@ export default function PlantillasPage() {
         onClose={() => setPagosTarget(null)}
         onDataChanged={() => {
           /* Un pago capturado o corregido cambia el adeudo y hasta la inscripción, que
-             es lo que reparte a los jugadores entre las dos pestañas. Se recarga para
-             que la pantalla no se quede diciendo lo de antes. */
+             es lo que decide el aviso al lado del nombre. Se recarga para que la
+             pantalla no se quede diciendo lo de antes. */
           if (idEquipo && temporadaId) cargar(idEquipo, temporadaId);
         }}
       />

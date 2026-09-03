@@ -20,13 +20,21 @@ export const dynamic = 'force-dynamic';
  * competencia, porque los de competencia se arman aparte y no son el grupo con el que
  * el entrenador trabaja.
  *
- * Y solo los que tienen gente INSCRITA en la temporada que se pide. La lista completa
- * son cuatrocientos y pico equipos arrastrados de años anteriores, y la mayoría llega
- * vacía a la temporada de hoy: elegir uno de esos solo lleva a una hoja sin nadie que
- * acomodar. Por eso la temporada es obligatoria —sin ella no se puede saber cuáles
- * siguen vivos— y por eso el conteo que se manda es el de INSCRITOS y no el de la
- * plantilla entera: es el mismo número que después enseña la pestaña de Inscritos, y
- * si aquí dijera otra cosa habría que explicar cuál de los dos es el bueno.
+ * Y solo los que tienen gente en la temporada que se pide. La lista completa son
+ * cuatrocientos y pico equipos arrastrados de años anteriores, y la mayoría llega vacía
+ * a la temporada de hoy: elegir uno de esos solo lleva a una hoja sin nadie que acomodar.
+ * Por eso la temporada es obligatoria: sin ella no se puede saber cuáles siguen vivos.
+ *
+ * ── Qué se cuenta: `conteo` ──
+ *
+ * Por omisión se cuentan los INSCRITOS en la temporada, con la misma regla de
+ * Inscripciones. Es lo que pide Asistencia, donde la lista es la de quien viene a
+ * entrenar de este ciclo.
+ *
+ * Con `conteo=activos` se cuenta la plantilla entera del equipo, inscritos o no. Lo pide
+ * la Plantilla: desde que su hoja dejó de partirse en pestañas, lo que enseña es el
+ * equipo completo, y el número del selector tiene que ser el mismo que después aparece
+ * en la lista. Si dijera otra cosa habría que explicar cuál de los dos es el bueno.
  */
 
 interface FilaEquipo {
@@ -63,6 +71,15 @@ export async function GET(request: Request) {
        nada que acomodar ni a quién pasar lista— y por eso sigue siendo lo que se hace por
        omisión. */
     const conInscritos = params.get('conInscritos') !== '0';
+
+    /* `conteo=activos` cuenta la plantilla entera; ver el comentario de arriba. */
+    const soloInscritos = params.get('conteo') !== 'activos';
+
+    /* Deja fuera a los equipos de `minimo` jugadores o menos. Lo pide la Plantilla, que no
+       arma alineaciones de grupos de cinco: esos son los restos de un grupo que se
+       disolvió, o una categoría que apenas abre. Por omisión no recorta nada. */
+    const minimoCrudo = Number(params.get('minimo'));
+    const minimo = Number.isInteger(minimoCrudo) && minimoCrudo > 0 ? minimoCrudo : 0;
     if (!Number.isInteger(temporadaId) || temporadaId <= 0) {
         return NextResponse.json({ success: false, message: 'Selecciona una temporada.' }, { status: 400 });
     }
@@ -101,12 +118,13 @@ export async function GET(request: Request) {
                          SELECT DISTINCT IdJugador FROM (${MENSUALIDADES_EN_TEMPORADA_SQL}) M
                      ) MEN ON MEN.IdJugador = J.IdJugador
                     WHERE J.Status = 0 AND J.IdEquipo IS NOT NULL
-                      AND ${inscritoEnTemporada('SD')}
+                      ${soloInscritos ? `AND ${inscritoEnTemporada('SD')}` : ''}
                     GROUP BY J.IdEquipo
                ) P ON P.IdEquipo = E.IdEquipo
               WHERE E.Status = 0
                 AND (COALESCE(E.EsCompetencia, 0) = 0${idEquipoDirecto ? ' OR E.IdEquipo = ?' : ''})
                 AND COALESCE(TRIM(E.Equipo), '') <> ''
+                ${minimo > 0 ? `AND COALESCE(P.n, 0) > ${minimo}` : ''}
               ORDER BY S.Sede ASC, E.Equipo ASC`,
             // Un parametro por subconsulta, en el orden en que aparecen: INS, MEN.
             idEquipoDirecto ? [temporadaId, temporadaId, idEquipoDirecto] : [temporadaId, temporadaId],

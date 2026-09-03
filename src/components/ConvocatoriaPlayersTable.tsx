@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, History, Ban, Check, DollarSign, Lock } from "lucide-react";
+import { AlertTriangle, History, Ban, Check, DollarSign, Lock, GraduationCap } from "lucide-react";
 import AvatarJugador from "@/components/AvatarJugador";
 
 /**
@@ -11,6 +11,9 @@ import AvatarJugador from "@/components/AvatarJugador";
  * mensualidades se le pinta la advertencia y se le bloquea el botón de convocar: el
  * mismo criterio que aplica el servidor, aquí solo se adelanta para no hacer viajar
  * al usuario hasta el error.
+ *
+ * La beca del jugador se ve junto a su nombre y es un BOTÓN, no una etiqueta: la beca de
+ * la ficha ya no rebaja el precio sola, se aplica torneo por torneo desde ahí.
  */
 
 export interface JugadorConvocatoria {
@@ -23,6 +26,12 @@ export interface JugadorConvocatoria {
   EsInvitado: number;
   /** Porcentaje de la beca del torneo: BecaCopas en una copa, BecaLigas en una liga. */
   Beca: string | number | null;
+  /**
+   * La beca YA se aplicó al precio de esta convocatoria. No se aplica sola: tener beca
+   * en la ficha no la cobra becado, hay que aplicarla con el botón. Ver
+   * @/lib/convocatorias-becas.
+   */
+  BecaAplicada?: number;
   PagoJugador: number;
   CXC: number;
   /** Tiene inscripción pagada en la temporada. */
@@ -48,6 +57,8 @@ interface Props {
   onSort: (key: string) => void;
   onConvocar: (player: JugadorConvocatoria) => void;
   onQuitar: (player: JugadorConvocatoria) => void;
+  /** Aplica (`aplicar` true) o quita la beca del jugador en esta convocatoria. */
+  onBeca: (player: JugadorConvocatoria, aplicar: boolean) => void;
   onPrecio: (player: JugadorConvocatoria) => void;
   onHistorial: (player: JugadorConvocatoria) => void;
   onPagosConvocatoria: (player: JugadorConvocatoria) => void;
@@ -58,6 +69,15 @@ const money = (n: number) =>
 
 const MANUAL_TITULO =
   "Precio fijado a mano: no lo cambia el precio de la liga. Para devolverlo al automático, captúralo igual al del sistema.";
+
+/* La beca de la ficha del jugador NO se cobra sola. Se convoca al precio de lista y la
+   beca se aplica aquí, torneo por torneo: es una condición general del club y en cada
+   copa o liga se decide si se respeta. El botón dice en cuál de los dos estados está y
+   qué pasa al tocarlo. */
+const BECA_APLICADA_TITULO =
+  "La beca ya está aplicada al precio de esta convocatoria. Tócalo para quitarla y cobrar el precio de lista.";
+const BECA_PENDIENTE_TITULO =
+  "Este jugador tiene beca en su ficha, pero aquí se le está cobrando el precio completo. Tócalo para aplicársela.";
 
 const tituloPrecio = (p: JugadorConvocatoria): string => {
   if (p.PrecioManual === 1) return MANUAL_TITULO;
@@ -109,6 +129,7 @@ export default function ConvocatoriaPlayersTable({
   onSort,
   onConvocar,
   onQuitar,
+  onBeca,
   onPrecio,
   onHistorial,
   onPagosConvocatoria,
@@ -162,6 +183,7 @@ export default function ConvocatoriaPlayersTable({
               const convocado = !!p.EsConvocado;
               const eliminado = !!p.EsEliminado;
               const beca = becaPct(p.Beca);
+              const becaAplicada = p.BecaAplicada === 1;
 
               /* El color de la fila dice el estado de un vistazo: verde dentro,
                  ámbar se puede convocar pero trae adeudo o le falta inscripción,
@@ -203,9 +225,18 @@ export default function ConvocatoriaPlayersTable({
                         {p.Jugador}
                       </span>
                       {beca > 0 && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-100 text-purple-700 border border-purple-200">
-                          BECA {beca}%
-                        </span>
+                        <button
+                          onClick={() => onBeca(p, !becaAplicada)}
+                          title={becaAplicada ? BECA_APLICADA_TITULO : BECA_PENDIENTE_TITULO}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black transition-colors ${
+                            becaAplicada
+                              ? "bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200"
+                              : "bg-white text-amber-700 border border-dashed border-amber-400 hover:bg-amber-50"
+                          }`}
+                        >
+                          <GraduationCap size={11} strokeWidth={2.5} />
+                          {becaAplicada ? `BECA ${beca}%` : `APLICAR BECA ${beca}%`}
+                        </button>
                       )}
                       {p.EsInvitado === 1 && (
                         <span

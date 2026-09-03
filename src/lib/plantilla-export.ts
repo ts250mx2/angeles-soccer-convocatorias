@@ -47,9 +47,10 @@ export async function exportarPlantillaPdf(p: Plantilla, temporada = ''): Promis
     doc.setFontSize(13);
     doc.setTextColor(255, 255, 255);
     doc.text(`ANGELES ${p.equipo}`, anchoHoja - MARGEN, 10, { align: 'right' });
-    /* La temporada va en el membrete porque la hoja solo trae a los INSCRITOS en ella:
-       sin decirlo, dos impresiones del mismo equipo con distinta gente no se podrían
-       distinguir, y la de octubre pasaría por la de agosto. */
+    /* La temporada va en el membrete porque es contra la que se mide la inscripción de
+       cada jugador, y de ahí salen los asteriscos de la hoja: sin decir cuál es, dos
+       impresiones del mismo equipo con distintos marcados no se podrían distinguir, y la
+       de octubre pasaría por la de agosto. */
     doc.setFontSize(8);
     doc.setTextColor(203, 213, 225);
     doc.text(
@@ -65,9 +66,13 @@ export async function exportarPlantillaPdf(p: Plantilla, temporada = ''): Promis
         margin: { left: MARGEN, right: anchoHoja - MARGEN - anchoTabla },
         tableWidth: anchoTabla,
         head: [['E', 'NOMBRE', 'FECHA', 'SEMESTRE', 'COPAS', 'LIGAS']],
+        /* El asterisco del nombre es el MISMO aviso que la pantalla pone al lado y que
+           la cancha pinta en ámbar. Va también en el listado y no solo en el campo: la
+           hoja impresa lleva al equipo completo, y quien la lee sin la pantalla enfrente
+           tiene que poder ver de quién se trata sin buscarlo entre los recuadros. */
         body: p.jugadores.map((j, i) => [
             String(i + 1),
-            j.jugador,
+            j.inscrito ? j.jugador : `* ${j.jugador}`,
             j.fechaNacimiento ?? '',
             etiquetaBeca(j.beca).texto,
             etiquetaBeca(j.becaCopas).texto,
@@ -138,8 +143,9 @@ export async function exportarPlantillaPdf(p: Plantilla, temporada = ''): Promis
     }
 
     /* La leyenda del asterisco solo aparece cuando hay a quién explicarle: una hoja con
-       todos inscritos no tiene por qué cargar una nota que no aplica. */
-    const sinInscripcion = p.jugadores.filter((j) => j.x !== null && !j.inscrito).length;
+       todos inscritos no tiene por qué cargar una nota que no aplica. Cuenta a TODOS los
+       marcados, en la cancha o en el listado, porque el asterisco sale en los dos. */
+    const sinInscripcion = p.jugadores.filter((j) => !j.inscrito).length;
     if (sinInscripcion > 0) {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(6.5);

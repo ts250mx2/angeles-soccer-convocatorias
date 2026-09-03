@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { estadoEnTemporada } from '@/lib/convocatoria-elegibilidad';
 import { joinPrecioManual, preciosManualesDisponibles } from '@/lib/convocatorias-precios';
+import { becasPorBotonDisponibles, joinBecaAplicada } from '@/lib/convocatorias-becas';
 import { sqlBecaDeTorneo } from '@/lib/beca-torneo';
 
 interface FilaJugador {
@@ -10,6 +11,8 @@ interface FilaJugador {
     EsEliminado: number;
     /** 1 cuando el precio se fijó a mano y ningún automatismo lo mueve. */
     PrecioManual: number;
+    /** 1 cuando la beca del jugador ya se aplicó a ESTE renglón (se aplica con botón). */
+    BecaAplicada: number;
 }
 
 export async function GET(request: Request) {
@@ -30,6 +33,9 @@ export async function GET(request: Request) {
         /* El indicador de precio fijado a mano solo existe si la migración 010 ya se
            aplicó; sin ella la pantalla se comporta como antes. */
         const respetaManuales = await preciosManualesDisponibles(pool);
+        /* Y el de beca aplicada, si está la 027. Sin ella la beca se sigue aplicando
+           sola, así que todo becado se reporta como "con beca aplicada". */
+        const conBecas = await becasPorBotonDisponibles(pool);
 
         const selectQuery = `
             SELECT A.IdJugador, B.Jugador, B.Categoria, A.Precio, A.EsConvocado, A.EsEliminado,
@@ -45,6 +51,9 @@ export async function GET(request: Request) {
                    CASE WHEN B.Foto IS NOT NULL AND B.Foto <> '' THEN 1 ELSE 0 END AS TieneFoto,
                    DATE_FORMAT(B.FechaAct, '%Y%m%d%H%i%s') AS FotoVersion,
                    ${respetaManuales ? 'CASE WHEN MAN.IdJugador IS NULL THEN 0 ELSE 1 END' : '0'} AS PrecioManual,
+                   -- La beca de la ficha no se cobra sola: vale para ESTE renglón solo si
+                   -- alguien la aplicó con el botón (ver @/lib/convocatorias-becas).
+                   ${conBecas ? 'CASE WHEN BEC.IdJugador IS NULL THEN 0 ELSE 1 END' : '1'} AS BecaAplicada,
                    CASE WHEN A.EsConvocado = 1 THEN COALESCE(PAGOS.TotalPago, 0) ELSE 0 END AS PagoJugador,
                    CASE WHEN A.EsConvocado = 1 THEN (A.Precio - COALESCE(PAGOS.TotalPago, 0)) ELSE 0 END AS CXC
             FROM tblDetalleConvocatorias A 
@@ -58,6 +67,7 @@ export async function GET(request: Request) {
                 GROUP BY P.IdJugador
             ) PAGOS ON A.IdJugador = PAGOS.IdJugador
             ${respetaManuales ? joinPrecioManual('A') : ''}
+            ${conBecas ? joinBecaAplicada('A') : ''}
             WHERE A.IdTemporada = ? AND A.IdLiga = ? AND A.Categoria = ? AND A.Color = ?
             ORDER BY B.Jugador ASC
         `;

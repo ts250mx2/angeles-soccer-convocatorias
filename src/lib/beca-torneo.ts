@@ -13,6 +13,10 @@ import { TIPO_COPA } from '@/lib/copas-ligas';
  * tienen que elegir IGUAL: si una tomara la beca equivocada, el precio guardado y el que
  * la pantalla dice que debería ser no coincidirían, y el sincronizado los estaría
  * peleando en cada visita. Por eso la elección se escribe una sola vez, aquí.
+ *
+ * Aquí se decide CUÁL beca, no SI se aplica: eso se decide convocatoria por convocatoria
+ * con el botón de la pantalla, y vive en @/lib/convocatorias-becas. Las mismas cuatro
+ * consultas usan el factor de allá, que envuelve al de aquí.
  */
 
 /**

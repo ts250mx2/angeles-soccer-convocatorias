@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { estadoEnTemporada, advertenciaConvocatoria } from '@/lib/convocatoria-elegibilidad';
+import { precioDelSistema } from '@/lib/convocatorias-precios';
 
 /**
  * Invita a un jugador a una convocatoria y lo deja YA CONVOCADO.
@@ -27,15 +28,21 @@ export async function POST(request: Request) {
         const estados = await estadoEnTemporada(Number(seasonId), [Number(playerId)]);
         const advertencia = advertenciaConvocatoria(estados.get(Number(playerId)));
 
-        /* El precio del sistema, el mismo que aplica el botón Convocar. Si la liga no
-           tiene producto capturado, el jugador entra convocado en cero y el precio se
-           ajusta después: bloquear la invitación por un dato del catálogo dejaría al
-           entrenador sin poder armar su equipo. */
-        const [precios] = (await pool.query(
-            'SELECT Precio FROM tblProductos WHERE IdLiga = ?',
-            [leagueId]
-        )) as [Array<{ Precio: number | null }>, unknown];
-        const precio = Number(precios[0]?.Precio) || 0;
+        /* El precio del sistema, por la MISMA función que usa el botón Convocar: precio
+           de lista, sin beca —la beca se aplica después con su botón—. Antes esto tenía
+           su propia consulta y tomaba el primer producto de la liga que apareciera, así
+           que un invitado podía entrar con una tarifa distinta a la del resto.
+
+           Si la liga no tiene producto capturado, el jugador entra convocado en cero y el
+           precio se ajusta después: bloquear la invitación por un dato del catálogo
+           dejaría al entrenador sin poder armar su equipo. */
+        const precio = (await precioDelSistema(pool, {
+            idJugador: playerId,
+            seasonId,
+            leagueId,
+            categoria,
+            color: color ?? '',
+        })) ?? 0;
 
         await pool.query(
             `INSERT INTO tblDetalleConvocatorias

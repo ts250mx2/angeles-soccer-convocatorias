@@ -1,7 +1,7 @@
 import type { Pool, PoolConnection } from 'mysql2/promise';
 import { normalizarEliminatoria, normalizarJornadas } from '@/lib/convocatoria-opciones';
 import { joinPrecioManual, preciosManualesDisponibles } from '@/lib/convocatorias-precios';
-import { sqlFactorBecaDeTorneo } from '@/lib/beca-torneo';
+import { becasPorBotonDisponibles, joinBecaAplicada, sqlFactorBeca } from '@/lib/convocatorias-becas';
 
 /**
  * Alta de una convocatoria, en un solo lugar.
@@ -79,11 +79,15 @@ export async function crearConvocatoria(db: Ejecutor, c: NuevaConvocatoria): Pro
 
 /**
  * Pone el precio de cada convocado al del producto de la liga, con su beca de torneo
- * aplicada: la de copas si es copa, la de ligas si es liga (ver @/lib/beca-torneo).
+ * aplicada SOLO si alguien la aplicó con el botón (ver @/lib/convocatorias-becas).
  *
  * El precio del sistema manda mientras nadie diga lo contrario: antes solo se escribía al
  * convocar, así que un cambio de tarifa o de beca dejaba a los ya convocados con el
  * importe viejo y el saldo salía mal sin que nada lo delatara.
+ *
+ * La beca entra aquí con la MISMA regla que en el resto del cobro. Si este sincronizado
+ * siguiera rebajando a todo becado, el botón de la pantalla no serviría de nada: la
+ * siguiente visita le devolvería la beca al que se la acaban de quitar.
  *
  * NO toca a quien tiene el precio fijado a mano. Un ajuste hecho desde la pantalla deja
  * su marca (ver @/lib/convocatorias-precios) y este sincronizado lo respeta; sin eso, el
@@ -97,6 +101,8 @@ export async function sincronizarPrecios(
     leagueId: number | string,
 ): Promise<number> {
     const respetaManuales = await preciosManualesDisponibles(db);
+    const conBecas = await becasPorBotonDisponibles(db);
+    const precio = `ROUND(PR.Precio * ${sqlFactorBeca('J', 'L', conBecas)}, 2)`;
     const [res] = await db.query(
         `UPDATE tblDetalleConvocatorias D
          INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
@@ -108,10 +114,11 @@ export async function sincronizarPrecios(
              GROUP BY IdLiga
          ) PR ON PR.IdLiga = D.IdLiga
          ${respetaManuales ? joinPrecioManual('D') : ''}
-         SET D.Precio = ROUND(PR.Precio * ${sqlFactorBecaDeTorneo('J', 'L')}, 2)
+         ${conBecas ? joinBecaAplicada('D') : ''}
+         SET D.Precio = ${precio}
          WHERE D.IdTemporada = ? AND D.IdLiga = ? AND D.EsConvocado = 1
            ${respetaManuales ? 'AND MAN.IdJugador IS NULL' : ''}
-           AND D.Precio <> ROUND(PR.Precio * ${sqlFactorBecaDeTorneo('J', 'L')}, 2)`,
+           AND D.Precio <> ${precio}`,
         [leagueId, seasonId, leagueId],
     );
     return (res as { affectedRows?: number }).affectedRows ?? 0;
@@ -123,7 +130,8 @@ export async function sincronizarPrecios(
  * El pago es la decisión: si el niño pagó, está dentro, y tener que marcarlo además a
  * mano solo abre la puerta a que el cobro y la convocatoria digan cosas distintas. Se
  * le pone también el precio del producto, que es lo que la pantalla compara contra lo
- * pagado para sacar el saldo.
+ * pagado para sacar el saldo. Sin beca, salvo que ya se la hayan aplicado con el botón:
+ * pagar no es pedir la beca.
  *
  * No toca a los que están marcados como eliminados: a esos se les sacó a propósito, y
  * un pago viejo no debe regresarlos solos.
@@ -140,6 +148,7 @@ export async function sincronizarPagados(
        cual: un precio manual de 0 (invitado, beca total) es una decisión, y el
        NULLIF de abajo lo leería como "sin precio" y le pondría el del producto. */
     const respetaManuales = await preciosManualesDisponibles(db);
+    const conBecas = await becasPorBotonDisponibles(db);
     const [res] = await db.query(
         `UPDATE tblDetalleConvocatorias D
          INNER JOIN (
@@ -153,10 +162,11 @@ export async function sincronizarPagados(
          INNER JOIN tblJugadores J ON J.IdJugador = D.IdJugador
          INNER JOIN tblLigas L ON L.IdLiga = D.IdLiga
          ${respetaManuales ? joinPrecioManual('D') : ''}
+         ${conBecas ? joinBecaAplicada('D') : ''}
          SET D.EsConvocado = 1,
              D.Precio = ${respetaManuales ? 'IF(MAN.IdJugador IS NOT NULL, D.Precio, ' : ''}COALESCE(
                  NULLIF(D.Precio, 0),
-                 ROUND(PAG.Precio * ${sqlFactorBecaDeTorneo('J', 'L')}, 2),
+                 ROUND(PAG.Precio * ${sqlFactorBeca('J', 'L', conBecas)}, 2),
                  0
              )${respetaManuales ? ')' : ''}
          WHERE D.IdTemporada = ? AND D.IdLiga = ?

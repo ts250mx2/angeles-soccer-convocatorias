@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
-  AlertCircle, CalendarCheck, ChevronLeft, ChevronRight, FileText, Loader2, Save, Printer,
-  Search, X,
+  AlertCircle, ArrowLeft, CalendarCheck, ChevronLeft, ChevronRight, FileText, Loader2,
+  Plus, Printer, Save, Search, Users, X,
 } from "lucide-react";
+import { partirCategoria } from "@/lib/categoria-equipo";
 import {
   aniosDeSede, letraDe, letrasDe, sedesDeEquipos, seleccionHuerfana,
 } from "@/lib/selector-equipo";
@@ -23,7 +24,22 @@ import { guardarEquipoRecordado, leerEquipoRecordado } from "@/lib/equipo-record
 /**
  * Asistencia: la hoja mensual del equipo, la misma que el club llena en papel.
  *
- * El equipo se elige igual que en la Plantilla —temporada, categoría y letra— y por la
+ * ── Dos caras: la portada y la hoja ──
+ *
+ * Lo primero que se ve son los equipos a los que YA se les pasó lista ESE MES, con
+ * cuántos días llevan capturados y cómo va su asistencia. Es el mismo trato que la
+ * Plantilla, y por la misma razón: se entra a seguirle a una lista empezada mucho más
+ * seguido que a abrir una en blanco, y antes eso costaba acertarle a tres desplegables
+ * sin ninguna pista de dónde había algo capturado. Pasar lista a otro equipo sigue
+ * estando: es el otro camino, no el único.
+ *
+ * La diferencia con la Plantilla es el MES. Una hoja de plantilla no es de ninguna
+ * temporada, pero una lista sí es de un mes: la misma pregunta —"¿a quién le falta?"—
+ * tiene otra respuesta en agosto que en septiembre. Por eso el mes manda en las dos
+ * caras: en la portada decide QUÉ equipos aparecen, y en la hoja, cuáles son las
+ * columnas.
+ *
+ * El equipo se elige igual que en la Plantilla —sede, categoría y letra— y por la
  * misma razón: así está escrito el nombre en la base ('2023C') y así lo busca quien lo
  * tiene en la cabeza. El catálogo de equipos es el MISMO endpoint, que ya solo ofrece los
  * que tienen gente inscrita en la temporada.
@@ -43,6 +59,22 @@ interface EquipoOpcion {
   IdSede: number | null;
   Sede: string | null;
   Jugadores: number;
+}
+
+/** Un equipo con lista capturada en el mes, como lo enseña la portada. */
+interface ListaDelMes {
+  idEquipo: number;
+  equipo: string;
+  idSede: number | null;
+  sede: string;
+  profesor: string | null;
+  alumnos: number;
+  diasConLista: number;
+  diasDelMes: number;
+  asistencias: number;
+  faltas: number;
+  pctAsistencia: number | null;
+  actualizada: string | null;
 }
 
 interface Temporada {
@@ -105,9 +137,12 @@ export default function AsistenciaPage() {
   const { user, isInitialized } = useUser();
   const puedeVer = usePuedeVer("/administracion-deportiva/asistencia");
 
-  const [equipos, setEquipos] = useState<{ temporadaId: number; lista: EquipoOpcion[] }>(
-    { temporadaId: 0, lista: [] },
-  );
+  /* La lista de equipos recuerda de qué temporada salió y con qué equipo forzado, para
+     no decidir nada con la lista anterior mientras llega la nueva. Lo del forzado se
+     explica en `abrirLista`. */
+  const [equipos, setEquipos] = useState<
+    { temporadaId: number; forzado: number | null; lista: EquipoOpcion[] }
+  >({ temporadaId: 0, forzado: null, lista: [] });
   const [temporadas, setTemporadas] = useState<Temporada[]>([]);
   const [temporadaId, setTemporadaId] = useState<number | null>(null);
   /* Los tres pasos, en el orden en que se eligen: sede, año y letra. Los mismos que la
@@ -119,6 +154,13 @@ export default function AsistenciaPage() {
   const hoy = new Date();
   const [mes, setMes] = useState(hoy.getMonth() + 1);
   const [anioMes, setAnioMes] = useState(hoy.getFullYear());
+
+  /* Las dos caras de la pantalla. Se arranca en la portada: seguirle a una lista del
+     mes es lo que se hace casi siempre. */
+  const [vista, setVista] = useState<"portada" | "editor">("portada");
+  const [listas, setListas] = useState<ListaDelMes[]>([]);
+  const [cargandoListas, setCargandoListas] = useState(true);
+  const [buscaEquipo, setBuscaEquipo] = useState("");
 
   const [hoja, setHoja] = useState<Hoja | null>(null);
   /** Lo marcado, en memoria. Se manda completo al guardar. */
@@ -186,30 +228,83 @@ export default function AsistenciaPage() {
     );
   }, [temporadaId, idSede, anio, idEquipo]);
 
+  /* El equipo que la portada pidió abrir y que el catálogo no traería por su cuenta.
+
+     Va en un ref porque no se pinta: solo cambia lo que se le pide al servidor. Ver
+     `abrirLista` para por qué hace falta. */
+  const equipoForzado = useRef<number | null>(null);
+  const [recargaEquipos, setRecargaEquipos] = useState(0);
+
   /* Los equipos, que sí dependen de la temporada. Mismo endpoint y mismo trato que la
-     Plantilla: la lista recuerda de qué temporada salió, para no decidir nada con la
-     lista anterior mientras llega la nueva. */
+     Plantilla. */
   useEffect(() => {
     if (!user || !puedeVer || !temporadaId) return;
     let vigente = true;
     (async () => {
       try {
+        const forzado = equipoForzado.current;
+        const extra = forzado ? `&conInscritos=0&equipoId=${forzado}` : "";
         const res = await fetch(
-          `/api/administracion-deportiva/equipos?temporadaId=${temporadaId}`,
+          `/api/administracion-deportiva/equipos?temporadaId=${temporadaId}${extra}`,
           { cache: "no-store" },
         );
         const json = await res.json();
         if (!vigente) return;
-        if (json.success) setEquipos({ temporadaId, lista: json.data });
+        if (json.success) setEquipos({ temporadaId, forzado, lista: json.data });
         else setError(json.message ?? "Error al cargar los equipos");
       } catch {
         if (vigente) setError("Error de conexión");
       }
     })();
     return () => { vigente = false; };
-  }, [user, puedeVer, temporadaId]);
+  }, [user, puedeVer, temporadaId, recargaEquipos]);
 
-  const listaAlDia = equipos.temporadaId === temporadaId;
+  /* La lista que se está viendo ya es la que corresponde a lo que se pidió: la temporada
+     de ahora Y con el equipo forzado dentro. Mientras no lo sea, nadie decide nada con
+     ella —ni soltar la selección, ni traer la hoja—, porque decidiría con la anterior. */
+  const listaAlDia = equipos.temporadaId === temporadaId
+    && equipos.forzado === equipoForzado.current;
+
+  /* Los equipos con lista capturada en el mes: la portada.
+
+     Se vuelve a pedir al cambiar de mes porque el mes ES la lista, no un filtro que se
+     pueda aplicar aquí: agosto y septiembre son dos conjuntos distintos de equipos. */
+  const cargarListas = useCallback(async (a: number, m: number) => {
+    setCargandoListas(true);
+    try {
+      const res = await fetch(
+        `/api/administracion-deportiva/asistencia/lista?anio=${a}&mes=${m}`,
+        { cache: "no-store" },
+      );
+      const json = await res.json();
+      if (json.success) setListas(json.data);
+      else setListas([]);
+    } catch {
+      /* Una portada vacía no impide abrir una hoja nueva, así que no se grita: el error
+         que sí importa —el de guardar— aparece en su momento. */
+      setListas([]);
+    } finally {
+      setCargandoListas(false);
+    }
+  }, []);
+
+  /* Solo mientras se está EN la portada. Estando en la hoja, cambiar de mes no tiene a
+     quién avisarle, y volver a la portada dispara este efecto de todas formas: por eso
+     lo que se acaba de guardar aparece ahí sin que nadie lo vuelva a pedir a mano. */
+  useEffect(() => {
+    if (user && puedeVer && vista === "portada") cargarListas(anioMes, mes);
+  }, [user, puedeVer, vista, anioMes, mes, cargarListas]);
+
+  /* La búsqueda de la portada corre sobre el equipo, su sede y su profe: son las tres
+     formas de identificar una lista —"los 2018X", "los de Saltillo", "los de Ramírez"— y
+     cuál se le viene a la cabeza no lo decide esta pantalla. */
+  const listasFiltradas = useMemo(() => {
+    const q = buscaEquipo.trim().toLowerCase();
+    if (!q) return listas;
+    return listas.filter((l) =>
+      `${l.equipo} ${l.sede} ${l.profesor ?? ""}`.toLowerCase().includes(q),
+    );
+  }, [listas, buscaEquipo]);
 
   // Las tres listas de los desplegables, en cascada. La regla vive en @/lib/selector-equipo.
   const sedes = useMemo(() => sedesDeEquipos(equipos.lista), [equipos]);
@@ -274,12 +369,16 @@ export default function AsistenciaPage() {
     }
   }, []);
 
+  /* La hoja solo se trae estando en ella. La selección recordada del navegador deja un
+     equipo puesto desde el primer render, y sin este candado la portada pediría de fondo
+     una hoja que nadie está mirando. */
   useEffect(() => {
+    if (vista !== "editor") return;
     if (!idEquipo || !temporadaId) { setHoja(null); return; }
     if (!listaAlDia) return;
     if (!equipos.lista.some((e) => e.IdEquipo === idEquipo)) { setHoja(null); return; }
     cargar(idEquipo, temporadaId, anioMes, mes);
-  }, [idEquipo, temporadaId, anioMes, mes, listaAlDia, equipos, cargar]);
+  }, [vista, idEquipo, temporadaId, anioMes, mes, listaAlDia, equipos, cargar]);
 
   /* Avisar antes de salir con la lista sin guardar: vive en el navegador hasta que se
      aprieta Guardar. */
@@ -369,6 +468,41 @@ export default function AsistenciaPage() {
     accion();
   };
 
+  /**
+   * Abre la lista de una tarjeta de la portada.
+   *
+   * Deja los tres desplegables apuntando a ese equipo —el año sale de su propio nombre,
+   * con la misma función que usa el selector— para que la hoja no aparezca contradiciendo
+   * a lo que se acaba de abrir, y para poder saltar a la letra de al lado sin volver.
+   *
+   * ── El equipo forzado ──
+   *
+   * El catálogo del selector solo ofrece equipos con gente INSCRITA en la temporada
+   * elegida, pero la portada lista lo que se capturó en el mes, sin mirar temporadas. Un
+   * equipo puede haber tenido lista en marzo y hoy no tener a nadie inscrito: su tarjeta
+   * existe y el selector no lo trae. Sin esto, abrirla soltaría la selección por huérfana
+   * y la tarjeta parecería no hacer nada. Se vuelve a pedir el catálogo incluyéndolo, y
+   * `listaAlDia` se encarga de que nadie decida nada mientras tanto.
+   */
+  const abrirLista = (l: ListaDelMes) => {
+    if (!equipos.lista.some((e) => e.IdEquipo === l.idEquipo)) {
+      equipoForzado.current = l.idEquipo;
+      setRecargaEquipos((v) => v + 1);
+    }
+    setIdSede(l.idSede);
+    setAnio(partirCategoria(l.equipo).anio);
+    setIdEquipo(l.idEquipo);
+    setVista("editor");
+  };
+
+  /** Vuelve a la portada. Lo capturado sin guardar se pierde, así que se avisa. */
+  const volverAPortada = () => {
+    siNoSePierdeNada(() => {
+      setSucio(false);
+      setVista("portada");
+    });
+  };
+
   const moverMes = (paso: number) => {
     siNoSePierdeNada(() => {
       const d = new Date(anioMes, mes - 1 + paso, 1);
@@ -454,6 +588,53 @@ export default function AsistenciaPage() {
     return out;
   }, [hoja, marcas]);
 
+  /**
+   * El control del mes: flechas, mes y año.
+   *
+   * Se dibuja una sola vez y se usa en las dos caras porque en las dos manda lo mismo —en
+   * la portada decide QUÉ equipos aparecen, en la hoja cuáles son las columnas—, y si
+   * fueran dos controles distintos bastaría con tocar uno para que dijeran cosas
+   * diferentes del mismo mes.
+   */
+  const controlMes = () => (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => moverMes(-1)}
+        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300"
+        title="Mes anterior"
+        aria-label="Mes anterior"
+      >
+        <ChevronLeft size={14} />
+      </button>
+      <select
+        id="as-mes"
+        value={mes}
+        onChange={(e) => siNoSePierdeNada(() => setMes(Number(e.target.value)))}
+        className={SELECT}
+        aria-label="Mes"
+      >
+        {MESES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+      </select>
+      <select
+        value={anioMes}
+        onChange={(e) => siNoSePierdeNada(() => setAnioMes(Number(e.target.value)))}
+        className={SELECT}
+        aria-label="Año"
+      >
+        {[hoy.getFullYear() - 2, hoy.getFullYear() - 1, hoy.getFullYear(), hoy.getFullYear() + 1]
+          .map((a) => <option key={a} value={a}>{a}</option>)}
+      </select>
+      <button
+        onClick={() => moverMes(1)}
+        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300"
+        title="Mes siguiente"
+        aria-label="Mes siguiente"
+      >
+        <ChevronRight size={14} />
+      </button>
+    </div>
+  );
+
   const imprimir = (conMarcas: boolean) => {
     if (!hoja) return;
     exportarAsistenciaPdf(hoja, marcas, { conMarcas });
@@ -487,15 +668,20 @@ export default function AsistenciaPage() {
                     Asistencia
                   </h2>
                   <p className="text-xs text-slate-400 mt-1">
-                    La lista del mes. Toca una celda para ciclar: vino, faltó, sin marcar.
+                    {vista === "portada"
+                      ? "Los equipos a los que ya se les pasó lista este mes. Abre uno para seguirle."
+                      : "La lista del mes. Toca una celda para ciclar: vino, faltó, sin marcar."}
                   </p>
                 </div>
 
                 <div className="flex flex-col items-stretch lg:items-end gap-3 w-full lg:w-auto">
                   {/* La temporada va aparte de los otros selectores, arriba a la
                       derecha: no elige QUE hoja se ve como el equipo o el mes, sino de
-                      donde salen los alumnos inscritos, y se toca una vez y ya. */}
-                  <div className="flex items-center gap-2">
+                      donde salen los alumnos inscritos, y se toca una vez y ya.
+
+                      En la portada no sale: ahi la lista es del MES y no mira temporadas,
+                      asi que seria un desplegable que no cambia nada de lo que se ve. */}
+                  <div className={`flex items-center gap-2${vista === "portada" ? " hidden" : ""}`}>
                     <label
                       htmlFor="as-temporada"
                       className="text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap"
@@ -518,7 +704,7 @@ export default function AsistenciaPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                  {hoja && (
+                  {vista === "editor" && hoja && (
                     <>
                       <button
                         onClick={() => imprimir(false)}
@@ -547,8 +733,22 @@ export default function AsistenciaPage() {
                 </div>
               </div>
 
-              {/* Los selectores, rotulados y en su propio renglón. */}
+              {/* Los selectores, rotulados y en su propio renglón. El equipo solo se
+                  elige en la hoja: en la portada quien manda es el mes, y los tres
+                  desplegables ahí no filtrarían nada. */}
+              {vista === "editor" && (
               <div className="flex flex-wrap items-end gap-2 mt-4">
+                <div>
+                  <span className={ETIQUETA_SELECT}>&nbsp;</span>
+                  <button
+                    onClick={volverAPortada}
+                    title="Volver a las listas del mes"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300 text-xs font-bold transition-all"
+                  >
+                    <ArrowLeft size={14} /> Listas
+                  </button>
+                </div>
+
                 <div>
                   <label htmlFor="as-sede" className={ETIQUETA_SELECT}>Sede:</label>
                   <select
@@ -608,43 +808,10 @@ export default function AsistenciaPage() {
                 {/* El mes, con flechas: se consulta el anterior y el siguiente todo el tiempo. */}
                 <div>
                   <label htmlFor="as-mes" className={ETIQUETA_SELECT}>Mes:</label>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => moverMes(-1)}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300"
-                      title="Mes anterior"
-                      aria-label="Mes anterior"
-                    >
-                      <ChevronLeft size={14} />
-                    </button>
-                    <select
-                      id="as-mes"
-                      value={mes}
-                      onChange={(e) => siNoSePierdeNada(() => setMes(Number(e.target.value)))}
-                      className={SELECT}
-                    >
-                      {MESES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-                    </select>
-                    <select
-                      value={anioMes}
-                      onChange={(e) => siNoSePierdeNada(() => setAnioMes(Number(e.target.value)))}
-                      className={SELECT}
-                      aria-label="Año"
-                    >
-                      {[hoy.getFullYear() - 2, hoy.getFullYear() - 1, hoy.getFullYear(), hoy.getFullYear() + 1]
-                        .map((a) => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                    <button
-                      onClick={() => moverMes(1)}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300"
-                      title="Mes siguiente"
-                      aria-label="Mes siguiente"
-                    >
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
+                  {controlMes()}
                 </div>
               </div>
+              )}
             </div>
 
             {error && (
@@ -659,7 +826,142 @@ export default function AsistenciaPage() {
               </div>
             )}
 
-            {cargando ? (
+            {vista === "portada" ? (
+              <>
+                {/* ── La tarjeta del mes ──
+                    El mes va aquí y no perdido entre desplegables porque es LO que decide
+                    la lista de abajo: cambiarlo no filtra estas tarjetas, las cambia por
+                    otras. Puesto grande, mover la flecha y ver que la lista se renueva es
+                    una sola lectura. */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-4 py-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.07]">
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <p className="text-[9px] font-black text-emerald-400/80 uppercase tracking-widest">Mes</p>
+                      <p className="text-xl font-black text-white leading-tight">
+                        {etiquetaMes(anioMes, mes)}
+                      </p>
+                    </div>
+                    {controlMes()}
+                  </div>
+                  <p className="text-[11px] font-bold text-slate-300">
+                    {cargandoListas
+                      ? "Buscando..."
+                      : listas.length === 0
+                        ? "Ningún equipo con lista este mes"
+                        : `${listas.length} ${listas.length === 1 ? "equipo con lista" : "equipos con lista"}`}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="search"
+                      value={buscaEquipo}
+                      onChange={(e) => setBuscaEquipo(e.target.value)}
+                      placeholder="Buscar equipo, sede o profe..."
+                      className="w-72 max-w-full pl-9 pr-3 py-2 rounded-lg bg-white/5 border border-white/15 text-slate-100 text-xs placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  {/* Pasar lista a otro equipo lleva a la MISMA hoja, con los desplegables
+                      en blanco. No es otra pantalla: es la misma sin equipo elegido. */}
+                  <button
+                    onClick={() => { setIdEquipo(null); setVista("editor"); }}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all"
+                  >
+                    <Plus size={15} /> Pasar lista a otro equipo
+                  </button>
+                </div>
+
+                {cargandoListas ? (
+                  <div className="flex flex-col items-center justify-center gap-3 py-24 text-slate-400">
+                    <Loader2 size={30} className="animate-spin text-emerald-400" />
+                    <p className="text-sm font-bold">Cargando las listas del mes...</p>
+                  </div>
+                ) : listasFiltradas.length === 0 ? (
+                  <div className="text-center py-20">
+                    <CalendarCheck size={34} className="mx-auto text-slate-700 mb-3" />
+                    <p className="text-slate-300 font-bold text-sm">
+                      {listas.length === 0
+                        ? `Nadie ha pasado lista en ${etiquetaMes(anioMes, mes)}`
+                        : "Ningún equipo coincide con la búsqueda"}
+                    </p>
+                    <p className="text-slate-500 text-xs mt-1">
+                      {listas.length === 0
+                        ? "Cambia de mes con las flechas, o empieza una con «Pasar lista a otro equipo»."
+                        : "Prueba con el año, la letra, la sede o el nombre del profe."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {listasFiltradas.map((l) => (
+                      <button
+                        key={l.idEquipo}
+                        onClick={() => abrirLista(l)}
+                        title={`Abrir la lista de ${l.equipo} de ${etiquetaMes(anioMes, mes)}`}
+                        className="text-left p-3.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-emerald-500/40 transition-all"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-white truncate">{l.equipo}</p>
+                            <p className="text-[10px] font-bold text-slate-400 truncate">{l.sede || "Sin sede"}</p>
+                          </div>
+                          {/* El porcentaje de asistencia de lo capturado, con la MISMA
+                              regla del pie de la hoja. Se pinta de color porque es la
+                              cifra que se busca al barrer la portada con la vista. */}
+                          {l.pctAsistencia !== null && (
+                            <span
+                              title={`${l.asistencias} asistencias y ${l.faltas} faltas capturadas`}
+                              className={`flex-shrink-0 px-2 py-1 rounded-lg text-[10px] font-black tabular-nums border ${
+                                l.pctAsistencia >= 80
+                                  ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
+                                  : l.pctAsistencia >= 60
+                                    ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
+                                    : "bg-rose-500/15 border-rose-500/30 text-rose-300"
+                              }`}
+                            >
+                              {l.pctAsistencia}%
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Días con lista sobre los que el equipo entrena en el mes. Es lo
+                            que distingue un mes terminado de uno que alguien empezó y
+                            dejó, y es justo lo que se viene a buscar aquí. */}
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-emerald-500"
+                              style={{
+                                width: `${l.diasDelMes > 0
+                                  ? Math.min(100, Math.round((l.diasConLista / l.diasDelMes) * 100))
+                                  : 100}%`,
+                              }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-black text-slate-300 tabular-nums whitespace-nowrap">
+                            {l.diasDelMes > 0
+                              ? `${l.diasConLista}/${l.diasDelMes} días`
+                              : `${l.diasConLista} ${l.diasConLista === 1 ? "día" : "días"}`}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500 font-bold">
+                          <span className="inline-flex items-center gap-1 min-w-0">
+                            <Users size={11} className="flex-shrink-0" />
+                            <span className="truncate">
+                              {l.alumnos} {l.alumnos === 1 ? "alumno" : "alumnos"}
+                              {l.profesor ? ` · ${l.profesor}` : ""}
+                            </span>
+                          </span>
+                          {l.actualizada && <span className="flex-shrink-0 tabular-nums">{l.actualizada}</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : cargando ? (
               <div className="flex flex-col items-center justify-center gap-3 py-24 text-slate-400">
                 <Loader2 size={30} className="animate-spin text-emerald-400" />
                 <p className="text-sm font-bold">Cargando la lista...</p>
@@ -667,7 +969,7 @@ export default function AsistenciaPage() {
             ) : !hoja ? (
               <div className="text-center py-20">
                 <CalendarCheck size={34} className="mx-auto text-slate-700 mb-3" />
-                <p className="text-slate-300 font-bold text-sm">Elige una categoría y su letra</p>
+                <p className="text-slate-300 font-bold text-sm">Elige la sede, la categoría y su letra</p>
                 <p className="text-slate-500 text-xs mt-1">
                   Solo se ofrecen los equipos con jugadores inscritos en la temporada elegida.
                 </p>

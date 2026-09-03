@@ -16,6 +16,22 @@
  */
 
 /** Un jugador del equipo, con lo que la hoja necesita de él. */
+/**
+ * Debajo de este número de jugadores, un equipo no se alinea.
+ *
+ * Un grupo de cinco o menos no es un equipo al que se le arme una formación: son los
+ * restos de uno que se disolvió, o una categoría que apenas abre. Dejarlos fuera de la
+ * lista es lo que hace que lo que queda sea lo que de verdad se trabaja.
+ *
+ * Cuenta la plantilla COMPLETA —todos los activos del equipo, inscritos o no—, que es lo
+ * mismo que enseña la hoja: desde que las pestañas desaparecieron, el equipo es uno solo.
+ *
+ * Vive aquí y no en cada lado porque lo usan tres: la portada de plantillas armadas, el
+ * selector de "nueva plantilla" y la consulta que lo aplica en SQL. Con el número escrito
+ * en tres lugares, la portada podría ofrecer un equipo que el selector no acepta.
+ */
+export const MINIMO_JUGADORES_PLANTILLA = 5;
+
 export interface JugadorPlantilla {
     idJugador: number;
     jugador: string;
@@ -34,8 +50,8 @@ export interface JugadorPlantilla {
     /**
      * Está inscrito en la temporada elegida, con la MISMA regla que Inscripciones y la
      * Lista de Jugadores: pagó su inscripción o, si es portero, arrancó con una
-     * mensualidad. Depende de la temporada, así que el mismo jugador cambia de pestaña
-     * al cambiarla.
+     * mensualidad. Depende de la temporada, así que al cambiarla el mismo jugador puede
+     * ganar o perder el aviso que lleva al lado del nombre.
      */
     inscrito: boolean;
     /**

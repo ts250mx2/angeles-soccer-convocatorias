@@ -1,15 +1,15 @@
 import type { Pool, PoolConnection } from 'mysql2/promise';
-import { sqlFactorBecaDeTorneo } from '@/lib/beca-torneo';
+import { becasPorBotonDisponibles, sqlFactorBeca, TABLA_BECAS } from '@/lib/convocatorias-becas';
 
 /**
  * Precios de convocatoria fijados a mano.
  *
- * El precio de un convocado sale del producto de la liga con su beca de torneo aplicada
- * —la de copas si es copa, la de ligas si es liga— y
- * la pantalla lo pone al corriente en cada visita (ver `sincronizarPrecios`) para que un
- * cambio de tarifa alcance a las convocatorias vigentes. Ese automatismo pisaba los
- * ajustes manuales: el precio especial de un jugador duraba hasta la siguiente carga de
- * la categoría.
+ * El precio de un convocado sale del producto de la liga —con la beca del jugador solo
+ * si alguien la aplicó con el botón, ver @/lib/convocatorias-becas— y la pantalla lo
+ * pone al corriente en cada visita (ver `sincronizarPrecios`) para que un cambio de
+ * tarifa alcance a las convocatorias vigentes. Ese automatismo pisaba los ajustes
+ * manuales: el precio especial de un jugador duraba hasta la siguiente carga de la
+ * categoría.
  *
  * Aquí vive la memoria de esos ajustes. La regla es una sola y se aplica en todos lados:
  *
@@ -138,29 +138,43 @@ export async function tienePrecioManual(db: Ejecutor, clave: ClavePrecio): Promi
 }
 
 /**
- * Precio que el sistema le pone a este jugador en esta liga: el del producto con su beca
- * de torneo aplicada. `null` cuando la liga no tiene producto con precio.
+ * Precio que el sistema le pone a este jugador en este renglón: el del producto de la
+ * liga, con su beca de torneo aplicada SOLO si alguien la aplicó con el botón (ver
+ * @/lib/convocatorias-becas). `null` cuando la liga no tiene producto con precio.
  *
- * La beca sale de `sqlFactorBecaDeTorneo`, así que una copa se rebaja con BecaCopas y una
- * liga con BecaLigas. De ahí el JOIN contra tblLigas: sin él no se sabría cuál de las dos
- * toca.
+ * Antes la beca se aplicaba siempre, y por eso bastaba con la liga y el jugador. Ahora
+ * la decisión vive en el renglón del detalle, así que hace falta la llave completa: el
+ * mismo jugador puede ir con beca en una copa y completo en otra.
  *
  * Es el mismo cálculo que hace `sincronizarPrecios`, en un solo lugar: si los dos
  * difirieran, un precio "igual al del sistema" quedaría marcado como manual para
  * siempre.
  */
-export async function precioDelSistema(
-    db: Ejecutor,
-    leagueId: number | string,
-    playerId: number | string,
-): Promise<number | null> {
+export async function precioDelSistema(db: Ejecutor, clave: ClavePrecio): Promise<number | null> {
+    const conBecas = await becasPorBotonDisponibles(db);
+
+    /* El MAX va en subconsulta y no en el SELECT de afuera: así no queda una columna sin
+       agrupar junto al agregado, que es lo que rompería con ONLY_FULL_GROUP_BY. */
     const [filas] = (await db.query(
-        `SELECT ROUND(MAX(PR.Precio) * ${sqlFactorBecaDeTorneo('J', 'L')}, 2) AS Precio
-         FROM tblProductos PR
+        `SELECT ROUND(PR.Precio * ${sqlFactorBeca('J', 'L', conBecas)}, 2) AS Precio
+         FROM (
+             SELECT IdLiga, MAX(Precio) AS Precio
+             FROM tblProductos
+             WHERE IdLiga = ? AND IdTipoProducto IN (3, 4)
+             GROUP BY IdLiga
+         ) PR
          INNER JOIN tblLigas L ON L.IdLiga = PR.IdLiga
          CROSS JOIN tblJugadores J
-         WHERE PR.IdLiga = ? AND PR.IdTipoProducto IN (3, 4) AND J.IdJugador = ?`,
-        [leagueId, playerId],
+         ${conBecas ? `LEFT JOIN ${TABLA_BECAS} BEC
+                              ON BEC.IdJugador = J.IdJugador
+                             AND BEC.IdTemporada = ?
+                             AND BEC.IdLiga = PR.IdLiga
+                             AND BEC.Categoria = ?
+                             AND COALESCE(BEC.Color, '') = ?` : ''}
+         WHERE J.IdJugador = ?`,
+        conBecas
+            ? [clave.leagueId, clave.seasonId, clave.categoria, clave.color ?? '', clave.idJugador]
+            : [clave.leagueId, clave.idJugador],
     )) as [Array<{ Precio: number | null }>, unknown];
     const precio = filas[0]?.Precio;
     return precio === undefined || precio === null ? null : Number(precio);
