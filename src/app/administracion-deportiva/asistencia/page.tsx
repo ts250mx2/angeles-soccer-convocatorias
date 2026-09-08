@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
-  AlertCircle, ArrowLeft, CalendarCheck, ChevronLeft, ChevronRight, FileText, Loader2,
-  Plus, Printer, Save, Search, Users, X,
+  AlertCircle, AlertTriangle, ArrowLeft, CalendarCheck, ChevronLeft, ChevronRight, FileText,
+  Loader2, Plus, Printer, Save, Search, Users, X,
 } from "lucide-react";
 import { partirCategoria } from "@/lib/categoria-equipo";
 import {
@@ -116,7 +116,9 @@ const llave = (idJugador: number, fecha: string) => `${idJugador}|${fecha}`;
  * misma separación que hacen Adeudos y la Lista de Jugadores.
  */
 function avisoAdeudo(a: AlumnoHoja): { texto: string; titulo: string; clase: string } | null {
-  if (a.inscrito === false) {
+  /* A clinics y a venta al público no se les exige inscripción: ese modelo no les aplica
+     y marcarlos sería un aviso falso en más de la mitad del club. */
+  if (a.inscrito === false && a.exento !== true) {
     return {
       texto: "SIN INSCRIBIR",
       titulo: "No tiene pagada la inscripción de la temporada.",
@@ -244,8 +246,12 @@ export default function AsistenciaPage() {
       try {
         const forzado = equipoForzado.current;
         const extra = forzado ? `&conInscritos=0&equipoId=${forzado}` : "";
+        /* `conteo=activos` cuenta la plantilla entera, inscritos o no, que es lo que la
+           hoja enseña desde que los no inscritos salen en ella. Con el conteo de solo
+           inscritos, el número del selector no cuadraba con los renglones de la hoja, y
+           un equipo entero sin inscribir ni siquiera aparecía para poder abrirlo. */
         const res = await fetch(
-          `/api/administracion-deportiva/equipos?temporadaId=${temporadaId}${extra}`,
+          `/api/administracion-deportiva/equipos?temporadaId=${temporadaId}&conteo=activos${extra}`,
           { cache: "no-store" },
         );
         const json = await res.json();
@@ -543,6 +549,18 @@ export default function AsistenciaPage() {
     if (!hoja) return 0;
     return hoja.dias.length * hoja.alumnos.length - resumen.registradas;
   }, [hoja, resumen.registradas]);
+
+  /**
+   * Cuántos de la hoja no tienen pagada la inscripción de la temporada.
+   *
+   * Se cuenta sobre la hoja entera y no sobre lo que la búsqueda deja ver: el aviso habla
+   * del equipo, no de lo que uno tecleó. Salen en la lista igual —vienen a entrenar y hay
+   * que pasarles lista—, con su etiqueta en el renglón.
+   */
+  const sinInscribir = useMemo(
+    () => (hoja ? hoja.alumnos.filter((a) => a.inscrito === false && a.exento !== true).length : 0),
+    [hoja],
+  );
 
   /**
    * Los alumnos que se están viendo. La búsqueda solo esconde renglones: NO cambia las
@@ -971,7 +989,8 @@ export default function AsistenciaPage() {
                 <CalendarCheck size={34} className="mx-auto text-slate-700 mb-3" />
                 <p className="text-slate-300 font-bold text-sm">Elige la sede, la categoría y su letra</p>
                 <p className="text-slate-500 text-xs mt-1">
-                  Solo se ofrecen los equipos con jugadores inscritos en la temporada elegida.
+                  Solo se ofrecen los equipos con alumnos en la temporada elegida. La hoja los trae
+                  a todos, inscritos o no.
                 </p>
               </div>
             ) : (
@@ -996,6 +1015,23 @@ export default function AsistenciaPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* Los que vienen a entrenar sin haber pagado la inscripción. Salen en
+                    la hoja —hay que pasarles lista— y se dicen aquí arriba porque es el
+                    momento en que alguien del club los tiene enfrente. */}
+                {sinInscribir > 0 && (
+                  <div className="mb-4 flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
+                    <AlertTriangle size={15} className="text-amber-400 flex-shrink-0 mt-px" />
+                    <p className="text-[11px] font-semibold text-amber-200 leading-relaxed">
+                      {sinInscribir === 1
+                        ? "1 alumno de la hoja no tiene pagada la inscripción de la temporada"
+                        : `${sinInscribir} alumnos de la hoja no tienen pagada la inscripción de la temporada`}
+                      <span className="text-amber-200/70">
+                        {" "}(marcados con <b>SIN INSCRIBIR</b>). Se les pasa lista igual; el aviso también sale en la hoja impresa.
+                      </span>
+                    </p>
+                  </div>
+                )}
 
                 {/* ── Lo que da el mes ──
                     Los porcentajes se miden SOLO sobre lo capturado, nunca sobre las
@@ -1064,7 +1100,11 @@ export default function AsistenciaPage() {
                   </div>
                 ) : hoja.alumnos.length === 0 ? (
                   <div className="text-center py-16 rounded-2xl border border-white/10">
-                    <p className="text-slate-300 font-bold text-sm">Nadie del equipo está inscrito en esta temporada</p>
+                    <p className="text-slate-300 font-bold text-sm">Este equipo no tiene alumnos</p>
+                    <p className="text-slate-500 text-xs mt-1">
+                      La hoja trae a todos los del equipo, inscritos o no, así que no hay a quién
+                      pasarle lista hasta que alguien se dé de alta aquí.
+                    </p>
                   </div>
                 ) : (
                   <>

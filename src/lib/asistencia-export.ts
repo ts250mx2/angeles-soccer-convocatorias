@@ -37,6 +37,8 @@ export interface AlumnoHoja {
     mesesDebe?: number;
     /** false = no se ha inscrito en la temporada; su pendiente es la inscripción. */
     inscrito?: boolean;
+    /** El modelo de inscripción no le aplica (clinics, venta al público): no se le avisa. */
+    exento?: boolean;
 }
 
 export interface HojaAsistencia {
@@ -53,6 +55,19 @@ export interface HojaAsistencia {
 
 /** Renglones en blanco al final, para los que lleguen después de imprimir. */
 const RENGLONES_LIBRES = 5;
+
+/**
+ * Lo que va en la columna OBSERVACION (BECA) de la hoja impresa.
+ *
+ * El aviso de sin inscribir va PRIMERO y en la misma columna donde el profe escribe a
+ * mano: es una observación del alumno, como la beca, y en la cancha se lee del mismo
+ * tirón. La hoja impresa es la que acaba en la carpeta, así que el pendiente tiene que
+ * viajar con ella y no quedarse en la pantalla.
+ */
+const observacionImpresa = (a: AlumnoHoja): string =>
+    [a.inscrito === false && a.exento !== true ? "SIN INSCRIBIR" : "", a.observacion]
+        .filter(Boolean)
+        .join(" · ");
 
 const safeName = (s: string) => s.replace(/[^\w\sáéíóúñÁÉÍÓÚÑ-]/gi, "").replace(/\s+/g, "_").slice(0, 60);
 
@@ -104,7 +119,7 @@ export function exportarAsistenciaPdf(
         ...hoja.alumnos.map((a, i) => [
             String(i + 1),
             a.jugador.toUpperCase(),
-            a.observacion,
+            observacionImpresa(a),
             ...hoja.dias.map((d) =>
                 conMarcas ? (TEXTO_MARCA[marcas.get(`${a.idJugador}|${d.fecha}`) as Marca] ?? "") : "",
             ),

@@ -8,7 +8,7 @@ import { DIAS_SEMANA, horarioDeEquipo, etiquetaBeca } from '@/lib/plantilla-equi
 import { inscritoEnTemporada } from '@/lib/jugador-filtros';
 import { JUGADORES_DE_TEMPORADA_SQL, MENSUALIDADES_EN_TEMPORADA_SQL } from '@/lib/temporada';
 import { diasDelMes, type Marca } from '@/lib/asistencia';
-import { loadSeasonAndPrevious } from '@/lib/adeudos-db';
+import { loadSeasonAndPrevious, SIN_CLINICS } from '@/lib/adeudos-db';
 import { jugadoresConAdeudo } from '@/lib/adeudos-jugadores';
 
 export const dynamic = 'force-dynamic';
@@ -23,9 +23,25 @@ export const dynamic = 'force-dynamic';
  * toques seguidos: una petición por toque sería una tormenta de escrituras que además se
  * cruzan entre sí. Es el mismo trato que la Plantilla le da al acomodo.
  *
- * Los alumnos son los INSCRITOS en la temporada elegida, con la MISMA regla de
- * Inscripciones, de la Lista de Jugadores y de la Plantilla. Que sea la misma regla es lo
- * que hace que el equipo tenga los mismos nombres en las tres pantallas.
+ * ── Quiénes salen en la hoja ──
+ *
+ * TODOS los alumnos activos del equipo, inscritos o no, y a los que no lo están se les
+ * cuelga el aviso.
+ *
+ * Antes salían solo los inscritos en la temporada, y eso dejaba fuera justo a quien más
+ * falta hace ver: el que sigue viniendo a entrenar sin haber pagado la inscripción. Ese
+ * niño está en la cancha —hay que pasarle lista— y su pendiente es precisamente el que
+ * la hoja escondía. Peor todavía: un equipo entero sin inscribir abría una hoja vacía,
+ * como si no existiera nadie.
+ *
+ * Inscrito se decide con `inscritoEnTemporada`, la MISMA regla de Inscripciones, de la
+ * Lista de Jugadores y de la Plantilla. Lo que cambió es qué se hace con ella: antes
+ * filtraba, ahora etiqueta.
+ *
+ * Y no se le exige inscripción a quien no la paga nunca: clinics y venta al público no
+ * manejan ese modelo (`SIN_CLINICS`, la misma exención de Adeudos y de Convocatorias).
+ * Son 640 de los 1,911 alumnos con equipo: sin sacarlos, más de la mitad del club saldría
+ * marcado y el aviso dejaría de leerse. Salen en la hoja igual, solo que sin etiqueta.
  */
 
 interface FilaEquipo {
@@ -45,6 +61,10 @@ interface FilaAlumno {
     BecaLigas: number | null;
     TieneFoto: number;
     FotoVersion: string | null;
+    /** 1 si pagó la inscripción de la temporada (o arrancó, si es portero). */
+    InscritoTemporada: number;
+    /** 1 cuando el modelo de inscripción no le aplica (clinics, venta al público). */
+    Exento: number;
 }
 
 const num = (v: unknown): number => Number(v) || 0;
@@ -95,9 +115,12 @@ export async function GET(request: Request) {
         }
         const e = equipos[0];
 
-        /* Los alumnos de la hoja: los inscritos en la temporada. La beca va con ellos
-           porque la hoja de papel tiene una columna 'OBSERVACION (BECA)' donde se
-           escribe a mano; aquí sale ya impresa cuando el alumno tiene alguna. */
+        /* Los alumnos de la hoja: el equipo completo. `InscritoTemporada` dice quién
+           pagó su inscripción de la temporada; los demás salen igual, marcados.
+
+           La beca va con ellos porque la hoja de papel tiene una columna
+           'OBSERVACION (BECA)' donde se escribe a mano; aquí sale ya impresa cuando el
+           alumno tiene alguna. */
         const [alumnos] = (await pool.query(
             `SELECT J.IdJugador, J.Jugador,
                     COALESCE(J.Beca, 0)      AS Beca,
@@ -107,7 +130,10 @@ export async function GET(request: Request) {
                     -- cuando se pasa lista en la cancha. La imagen la sirve
                     -- /api/jugadores/foto; aqui solo viaja si la hay y cuando cambio.
                     CASE WHEN J.Foto IS NOT NULL AND J.Foto <> '' THEN 1 ELSE 0 END AS TieneFoto,
-                    DATE_FORMAT(J.FechaAct, '%Y%m%d%H%i%s') AS FotoVersion
+                    DATE_FORMAT(J.FechaAct, '%Y%m%d%H%i%s') AS FotoVersion,
+                    CASE WHEN ${inscritoEnTemporada('SD')} THEN 1 ELSE 0 END AS InscritoTemporada,
+                    -- El modelo de inscripción no le aplica: clinics, venta al público.
+                    CASE WHEN ${SIN_CLINICS} THEN 0 ELSE 1 END AS Exento
                FROM tblJugadores J
                LEFT JOIN tblSedes SD ON SD.IdSede = J.IdSede
                LEFT JOIN (
@@ -117,7 +143,8 @@ export async function GET(request: Request) {
                    SELECT DISTINCT IdJugador FROM (${MENSUALIDADES_EN_TEMPORADA_SQL}) M
                ) MEN ON MEN.IdJugador = J.IdJugador
               WHERE J.IdEquipo = ? AND J.Status = 0
-                AND ${inscritoEnTemporada('SD')}
+              -- Alfabético, sin separar a los no inscritos: quien pasa lista busca el
+              -- nombre, y partir la hoja en dos bloques obligaría a buscar dos veces.
               ORDER BY J.Jugador ASC`,
             // Un parametro por subconsulta, en el orden en que aparecen: INS, MEN.
             [p.temporadaId, p.temporadaId, p.idEquipo],
@@ -170,6 +197,12 @@ export async function GET(request: Request) {
                 dias,
                 alumnos: alumnos.map((a) => {
                     const deudor = deudores.get(Number(a.IdJugador));
+                    /* La inscripción sale de la consulta, no del mapa de adeudos: son dos
+                       reglas distintas —adeudos le acepta al portero una inscripción de
+                       cualquier año— y la hoja tiene que decir lo mismo que el selector
+                       de equipos y que la pantalla de Inscripciones. */
+                    const inscrito = Number(a.InscritoTemporada) === 1;
+                    const exento = Number(a.Exento) === 1;
                     return {
                     idJugador: Number(a.IdJugador),
                     jugador: String(a.Jugador ?? '').trim(),
@@ -178,8 +211,9 @@ export async function GET(request: Request) {
                     /* Meses vencidos sin pagar. A quien no se ha inscrito no se le
                        cuentan meses —su pendiente es la inscripcion— y eso se dice
                        aparte con `inscrito`, igual que en la Lista de Jugadores. */
-                    mesesDebe: deudor?.inscrito ? deudor.mesesDebe : 0,
-                    inscrito: deudor ? deudor.inscrito : true,
+                    mesesDebe: inscrito ? (deudor?.mesesDebe ?? 0) : 0,
+                    inscrito,
+                    exento,
                     /* La observación impresa: la beca que tenga, dicha corta. Si no
                        tiene ninguna va vacía, para que quede el espacio en blanco donde
                        el profe escribe a mano ("clase prueba" y demás). */
