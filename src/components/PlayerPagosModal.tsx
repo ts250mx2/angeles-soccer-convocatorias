@@ -5,7 +5,7 @@ import AvatarJugador from "@/components/AvatarJugador";
 import FotoJugador from "@/components/FotoJugador";
 import {
   X, Loader2, AlertCircle, Receipt, FileDown, FileSpreadsheet, CalendarCheck,
-  AlertTriangle, Check, Pencil, User, Camera,
+  AlertTriangle, Check, Pencil, User, Camera, FolderOpen,
 } from "lucide-react";
 import {
   type PagoRow, exportPagosToPdf, exportPagosToExcel, money, fecha, mesLabel,
@@ -13,6 +13,9 @@ import {
 } from "@/lib/inscripciones-export";
 import DatosGeneralesJugador, { texto, type JugadorFicha } from "@/components/DatosGeneralesJugador";
 import PedirFotoJugador from "@/components/PedirFotoJugador";
+import DocumentosJugador from "@/components/DocumentosJugador";
+import { usePuedeVer } from "@/contexts/user-context";
+import { CLAVE_LISTA_JUGADORES } from "@/lib/navegacion";
 
 /** La ficha completa del jugador; la pinta DatosGeneralesJugador. */
 type JugadorInfo = JugadorFicha;
@@ -76,7 +79,12 @@ export default function PlayerPagosModal({
   const [soloTemporada, setSoloTemporada] = useState(true);
   /* Se abre siempre en los pagos: es a lo que se viene la mayoría de las veces.
      Ver el efecto de abajo, que la devuelve ahí al cambiar de jugador. */
-  const [pestana, setPestana] = useState<"pagos" | "generales">("pagos");
+  const [pestana, setPestana] = useState<"pagos" | "generales" | "documentos">("pagos");
+  /* La carpeta se ofrece solo a quien tiene el módulo de la Lista de Jugadores, que es
+     EL MISMO permiso que exige la API de documentos. Este modal lo abren media docena de
+     pantallas —asistencia, convocatorias, adeudos— y sin esta condición un entrenador
+     vería una pestaña que solo le puede contestar 403. */
+  const puedeVerDocumentos = usePuedeVer(CLAVE_LISTA_JUGADORES);
   // Corrección del año de un pago anticipado
   const [editando, setEditando] = useState<number | null>(null);
   const [anioNuevo, setAnioNuevo] = useState("");
@@ -261,6 +269,7 @@ export default function PlayerPagosModal({
   const nombre = jugador?.Jugador ?? target.jugador;
   const canExport = !isLoading && !error && pagos.length > 0;
   const enPagos = pestana === "pagos";
+  const enDocumentos = pestana === "documentos";
   const tieneAlerta = Boolean(texto(jugador?.Alerta));
 
   /**
@@ -436,6 +445,19 @@ export default function PlayerPagosModal({
                   otra pestaña: se avisa desde aquí. */}
               {tieneAlerta && <AlertTriangle size={12} className="text-amber-400" />}
             </button>
+            {/* La carpeta de documentos, aquí y no solo en la Hoja de Registro: para
+                agregarle el acta a un niño no hay por qué abrir el formulario completo
+                de su ficha, con el riesgo de guardar un cambio que nadie quería. */}
+            {puedeVerDocumentos && (
+              <button
+                onClick={() => setPestana("documentos")}
+                className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-black uppercase tracking-widest border-b-2 transition-all ${
+                  enDocumentos ? "border-blue-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                <FolderOpen size={13} /> Documentos
+              </button>
+            )}
           </div>
 
           {/* Alcance + exportación: solo aplican a los pagos */}
@@ -560,9 +582,11 @@ export default function PlayerPagosModal({
           </div>
         )}
 
-        {/* Cuerpo: la ficha o el historial, segun la pestaña */}
+        {/* Cuerpo: los documentos, la ficha o el historial, segun la pestaña */}
         <div className="flex-1 overflow-auto p-5">
-          {!enPagos ? (
+          {enDocumentos ? (
+            <DocumentosJugador idJugador={target.idJugador} />
+          ) : !enPagos ? (
             <DatosGeneralesJugador jugador={jugador} />
           ) : isLoading ? (
             <div className="h-48 flex flex-col items-center justify-center gap-3 text-slate-400">

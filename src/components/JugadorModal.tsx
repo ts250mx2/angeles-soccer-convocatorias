@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle, AlertTriangle, Check, GraduationCap, Loader2, MapPin,
+  AlertCircle, AlertTriangle, Check, FolderOpen, GraduationCap, Loader2, MapPin,
   Save, Search, Users, X,
 } from "lucide-react";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/lib/jugador-form";
 import FotoJugador from "@/components/FotoJugador";
 import PedirFotoJugador from "@/components/PedirFotoJugador";
+import DocumentosJugador from "@/components/DocumentosJugador";
 
 /**
  * La Hoja de Registro: alta y edición de la ficha del jugador.
@@ -20,9 +21,14 @@ import PedirFotoJugador from "@/components/PedirFotoJugador";
  * encuentre los campos donde ya sabe, presentado como el formato de papel que le da
  * nombre: membrete arriba, folio a la derecha y la foto en su recuadro.
  *
- * Lo único que la hoja de papel no tiene es la FOTO, que aquí sí se captura (cámara,
- * arrastrar, pegar o archivo) y se guarda en tblJugadores.Foto. Ver `FotoJugador` y
- * migrations/019-foto-jugador.sql.
+ * Dos cosas que la hoja de papel no tiene y aquí sí:
+ *
+ *   La FOTO, que se captura con la cámara, arrastrando, pegando o desde un archivo, y se
+ *   guarda en tblJugadores.Foto. Ver `FotoJugador` y migrations/019-foto-jugador.sql.
+ *
+ *   La CARPETA DE DOCUMENTOS —acta, CURP, credencial del papá, certificado médico—, que
+ *   solo aparece al editar porque los archivos se cuelgan de un IdJugador que en el alta
+ *   todavía no existe. Ver `DocumentosJugador` y migrations/028-documentos-jugador.sql.
  *
  * Tres cosas se resuelven aquí y no se teclean, porque tecleadas es como se llenó la
  * base de datos que no empatan con ningún catálogo:
@@ -737,6 +743,18 @@ export default function JugadorModal({
                 </div>
               </div>
             </section>
+
+            {/* ── La carpeta de documentos ──
+                Solo al editar: los archivos se cuelgan de un IdJugador y en el alta
+                todavia no existe. Antes de guardar no hay de donde colgarlos, y ofrecer
+                el recuadro para que despues se pierda lo subido seria peor que no
+                ofrecerlo. */}
+            {!esAlta && idJugador !== null && (
+              <section className={SECCION}>
+                <p className={TITULO_SECCION}><FolderOpen size={12} /> Documentos</p>
+                <DocumentosJugador idJugador={idJugador} />
+              </section>
+            )}
 
             {/* ── Observaciones y, al editar, el estatus ── */}
             <section className={SECCION}>
