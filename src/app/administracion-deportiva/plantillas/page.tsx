@@ -457,19 +457,20 @@ export default function PlantillasPage() {
   /**
    * Manda a la cancha a alguien de la banca.
    *
-   * Si NO esta inscrito se confirma antes: el resto de la aplicacion —Convocatorias,
-   * Adeudos, los conteos de Inscripciones— lo sigue tratando como no inscrito, asi que
-   * quien lo pone tiene que saber que la hoja va a decir una cosa y el padron otra. Es un
-   * aviso, no un veto: la decision es del club.
+   * Al que NO esta inscrito se le deja pasar sin preguntar. Antes se confirmaba con un
+   * dialogo del navegador y estorbaba: armar una plantilla son quince toques seguidos, y
+   * en los grupos donde casi nadie se ha inscrito el dialogo saltaba en casi todos. Un
+   * aviso que hay que despachar quince veces se cierra sin leerlo, que es justo lo
+   * contrario de avisar.
+   *
+   * La informacion no se pierde ni se relaja la regla: el jugador queda marcado en la
+   * cancha, en la hoja y en el PDF, y ademas se dice en la barra de avisos de arriba, que
+   * no bloquea y se puede cerrar. El resto de la aplicacion —Convocatorias, Adeudos,
+   * los conteos de Inscripciones— lo sigue tratando como no inscrito.
    */
   const mandarACancha = (j: JugadorPlantilla) => {
     if (!plantilla) return;
     if (!j.inscrito) {
-      const aviso =
-        `${j.jugador} NO tiene inscripcion pagada en ${temporadaNombre || "esta temporada"}.` +
-        "\n\nSe puede poner en la cancha igual, y va a quedar marcado como tal en la hoja y en el PDF." +
-        "\n\n\u00bfMeterlo de todas formas?";
-      if (!confirm(aviso)) return;
       setAviso(`${j.jugador} entro a la cancha sin inscripcion. Queda marcado en la hoja.`);
     }
     const libre = lugarLibre();
