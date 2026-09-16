@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { anthropic } from '@/lib/anthropic';
+import { clienteIA } from '@/lib/ia-cliente';
+import { hlConfigurado } from '@/lib/hl-cliente';
 import { familiaDeMime } from '@/lib/jugador-documentos';
 import { textoParaDescribir } from '@/lib/documento-texto';
 
@@ -26,10 +27,18 @@ import { textoParaDescribir } from '@/lib/documento-texto';
  *   El .heic queda fuera aunque se pueda subir: la API no lo acepta como imagen. Y los
  *   Office viejos (.doc, .xls binario) tampoco se leen. En ambos casos se devuelve null
  *   y la descripción se escribe a mano, que es como estaba antes de todo esto.
+ *
+ * ── El modelo sale de HL Console ──
+ *
+ * La llave y el modelo los pone el agente del portal (ver @/lib/ia-cliente): aquí no hay
+ * ninguna llave ni ningún nombre de modelo escrito.
+ *
+ * Esto pide un agente de CLAUDE. Leer una imagen o un PDF sin convertirlo a texto usa
+ * los bloques `image` y `document` del API de Anthropic, que no existen igual en los
+ * demás proveedores. Si el agente del portal apunta a otro, se avisa y la descripción se
+ * escribe a mano: es preferible a mandar la llamada y que reviente a medias con un error
+ * del proveedor que nadie sabría interpretar.
  */
-
-/** El mismo modelo que ya usa el análisis de adeudos, y por la misma variable. */
-const MODELO = process.env.ANTHROPIC_MODEL_OPUS || 'claude-opus-5';
 
 /** Un renglón: no hay espacio para más en la lista, y de más largo nadie lo lee. */
 const MAX_LARGO = 160;
@@ -61,8 +70,8 @@ export function sePuedeDescribir(mime: string): boolean {
     return String(mime).includes('openxmlformats') || String(mime).includes('ms-excel');
 }
 
-/** ¿Está configurada la llave? Sin ella la función no sirve y conviene decirlo distinto. */
-export const hayLlaveDeIa = (): boolean => !!process.env.ANTHROPIC_API_KEY;
+/** ¿Está configurado HL? Sin eso la función no sirve y conviene decirlo distinto. */
+export const hayLlaveDeIa = (): boolean => hlConfigurado();
 
 /**
  * Describe el documento, o devuelve null si no hay nada legible dentro.
@@ -109,8 +118,16 @@ export async function describeDocumento(
 
     contenido.push({ type: 'text', text: PREGUNTA });
 
-    const respuesta = await anthropic.messages.create({
-        model: MODELO,
+    const cliente = await clienteIA();
+    if (cliente.proveedor !== 'claude') {
+        throw new Error(
+            `El agente de HL está en "${cliente.agente.proveedor}" y leer documentos requiere Claude. ` +
+            'Cámbialo en el portal, o escribe la descripción a mano.',
+        );
+    }
+
+    const respuesta = await cliente.anthropic.messages.create({
+        model: cliente.modelo,
         max_tokens: 512,
         system: SYSTEM,
         messages: [{ role: 'user', content: contenido }],

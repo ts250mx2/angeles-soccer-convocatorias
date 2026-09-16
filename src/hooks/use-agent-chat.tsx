@@ -6,13 +6,12 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
  *  entre el chat flotante y la página completa del agente. */
 const STORAGE_KEY = "agent-chat-messages";
 
-/** Modelo elegido: se recuerda entre sesiones en este navegador. */
-const MODEL_KEY = "agent-chat-model";
-
-export interface ModeloDisponible {
-  key: string;
-  label: string;
-  descripcion: string;
+/** Con qué está corriendo el agente, según HL Console. Solo para enseñarlo. */
+export interface ModeloEnUso {
+  /** Nombre del agente en el portal de HL. */
+  agente: string;
+  proveedor: string;
+  modelo: string;
 }
 
 export interface ChatMessage {
@@ -24,7 +23,7 @@ export interface ChatMessage {
 }
 
 /**
- * Estado del agente: historial, streaming NDJSON y modelo elegido.
+ * Estado del agente: historial, streaming NDJSON y con qué modelo corre.
  *
  * Vive en un contexto ÚNICO montado en DashboardLayout, no en un hook por
  * componente: el chat flotante y la página completa están montados a la vez
@@ -32,40 +31,33 @@ export interface ChatMessage {
  * se desincronizaban —lo que escribías en uno no aparecía en el otro—. Con el
  * contexto son literalmente la misma conversación, el mismo modelo y el mismo
  * indicador de "respondiendo".
+ *
+ * El modelo ya no se ELIGE aquí: lo decide el agente en el portal de HL Console y la
+ * pantalla solo lo enseña. Para cambiarlo se edita el agente en el portal; la app lo
+ * toma sola al vencer su caché, sin tocar el .env ni volver a desplegar.
  */
 function useAgentChatState() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const hydrated = useRef(false);
-  const [modelos, setModelos] = useState<ModeloDisponible[]>([]);
-  const [modelo, setModeloState] = useState<string>("sonnet");
-  // El modelo viaja en cada petición; se lee del ref para no recrear `send`.
-  const modeloRef = useRef(modelo);
-  modeloRef.current = modelo;
+  const [enUso, setEnUso] = useState<ModeloEnUso | null>(null);
 
-  /* Los modelos utilizables los decide el servidor (según qué llaves estén
-     configuradas), así que no se pueden fijar en el cliente. */
+  /* Qué modelo está corriendo lo dice el servidor, que a su vez se lo pregunta a HL.
+     Si HL no contesta se queda en null y la pantalla no pinta el rótulo: el chat tiene
+     que abrirse igual, y el problema se dirá al mandar el primer mensaje. */
   useEffect(() => {
     let vivo = true;
     (async () => {
       try {
         const res = await fetch("/api/agent/modelos");
         const json = await res.json();
-        if (!vivo || !json.success) return;
-        setModelos(json.modelos);
-        const guardado = localStorage.getItem(MODEL_KEY);
-        const valido = json.modelos.some((m: ModeloDisponible) => m.key === guardado);
-        setModeloState(valido && guardado ? guardado : json.porDefecto);
+        if (!vivo || !json.success || !json.configurado) return;
+        setEnUso({ agente: json.agente, proveedor: json.proveedor, modelo: json.modelo });
       } catch {
-        /* sin lista: se usa el modelo por defecto del servidor */
+        /* sin rótulo; el chat funciona igual */
       }
     })();
     return () => { vivo = false; };
-  }, []);
-
-  const setModelo = useCallback((key: string) => {
-    setModeloState(key);
-    try { localStorage.setItem(MODEL_KEY, key); } catch { /* noop */ }
   }, []);
 
   // Rehidrata la conversación previa (al maximizar desde el chat flotante)
@@ -118,7 +110,7 @@ function useAgentChatState() {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, history, model: modeloRef.current }),
+        body: JSON.stringify({ prompt, history }),
       });
 
       if (!res.ok || !res.body) {
@@ -157,7 +149,7 @@ function useAgentChatState() {
     }
   }, []);
 
-  return { messages, busy, send, clear, modelos, modelo, setModelo };
+  return { messages, busy, send, clear, enUso };
 }
 
 type AgentChatValue = ReturnType<typeof useAgentChatState>;

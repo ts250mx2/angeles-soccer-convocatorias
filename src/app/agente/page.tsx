@@ -23,7 +23,7 @@ export default function AgentePage() {
 
   const puedeVer = usePuedeVer("/agente");
 
-  const { messages, busy, send, clear, modelos, modelo, setModelo } = useAgentChat();
+  const { messages, busy, send, clear, enUso } = useAgentChat();
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -64,25 +64,15 @@ export default function AgentePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Selector de modelo: solo aparece si el servidor ofrece más de uno.
-                Cambiarlo no borra la conversación: el historial se le manda igual. */}
-            {modelos.length > 1 ? (
-              <select
-                value={modelo}
-                onChange={(e) => setModelo(e.target.value)}
-                disabled={busy}
-                title={modelos.find((m) => m.key === modelo)?.descripcion}
-                className="appearance-none px-3 py-1.5 pr-8 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-200 outline-none cursor-pointer hover:bg-white/10 focus:border-blue-500/60 transition-all disabled:opacity-50 disabled:cursor-not-allowed [color-scheme:dark]"
+            {/* Con qué modelo corre el agente. No se elige desde aquí: lo decide el
+                agente configurado en el portal de HL Console, que es también donde se
+                rota la llave. La app lo toma al vencer su caché. */}
+            {enUso && (
+              <span
+                title={`Agente "${enUso.agente}" en HL Console · proveedor ${enUso.proveedor}. Para cambiar de modelo, edítalo en el portal.`}
+                className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-300"
               >
-                {modelos.map((m) => (
-                  <option key={m.key} value={m.key} className="bg-slate-900 text-white">
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-300">
-                {modelos[0]?.label ?? "Sonnet 5"}
+                {enUso.modelo}
               </span>
             )}
             {messages.length > 0 && (

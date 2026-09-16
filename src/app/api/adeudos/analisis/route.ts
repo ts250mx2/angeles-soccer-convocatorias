@@ -1,12 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { anthropic } from '@/lib/anthropic';
+import { clienteIA } from '@/lib/ia-cliente';
 
 export const dynamic = 'force-dynamic';
 // El análisis con Opus 5 (esfuerzo alto) puede tardar; damos margen amplio.
 export const maxDuration = 300;
 
 /** Modelo del análisis profundo: Claude Opus 5 (lo pidió el usuario). */
-const MODEL_ANALISIS = process.env.ANTHROPIC_MODEL_OPUS || 'claude-opus-5';
+/* El modelo ya no se escribe aquí: lo pone el agente de HL Console. Ver @/lib/ia-cliente.
+   Este análisis usa `thinking` y `effort`, que son del API de Anthropic, así que pide un
+   agente de Claude; con otro proveedor se avisa en vez de reventar a media llamada. */
 
 const MESES = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -226,8 +228,21 @@ Entrega un análisis profundo y estructurado que incluya:
 
         // Streaming del lado del servidor para evitar timeouts en peticiones largas;
         // recolectamos el mensaje final y lo devolvemos completo al cliente.
-        const stream = anthropic.messages.stream({
-            model: MODEL_ANALISIS,
+        const cliente = await clienteIA();
+        if (cliente.proveedor !== 'claude') {
+            return Response.json(
+                {
+                    success: false,
+                    message:
+                        `El agente de HL está en "${cliente.agente.proveedor}" y este análisis requiere Claude. ` +
+                        'Cámbialo en el portal de HL Console.',
+                },
+                { status: 503 },
+            );
+        }
+
+        const stream = cliente.anthropic.messages.stream({
+            model: cliente.modelo,
             max_tokens: 16000,
             system: SYSTEM_PROMPT,
             messages: [{ role: 'user', content: userPrompt }],
@@ -264,7 +279,7 @@ Entrega un análisis profundo y estructurado que incluya:
         console.error('[adeudos/analisis] error:', e);
         const message =
             e instanceof Anthropic.AuthenticationError
-                ? 'La llave de Anthropic (ANTHROPIC_API_KEY) es inválida o falta.'
+                ? 'HL Console rechazó la credencial de la aplicación (HL_API_KEY) o la llave del agente no sirve.'
                 : e instanceof Anthropic.RateLimitError
                     ? 'Demasiadas solicitudes al modelo. Intenta de nuevo en unos segundos.'
                     : e?.message || 'Ocurrió un error inesperado al generar el análisis.';

@@ -34,7 +34,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
     if (!hayLlaveDeIa()) {
         return NextResponse.json(
-            { success: false, message: 'No hay llave de IA configurada en el servidor (ANTHROPIC_API_KEY).' },
+            { success: false, message: 'Falta configurar HL Console en el servidor (HL_URL, HL_API_KEY y HL_AGENTE).' },
             { status: 503 },
         );
     }

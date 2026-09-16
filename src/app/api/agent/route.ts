@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { anthropic, openai, resolveModel, type ModelConfig } from '@/lib/anthropic';
+import { clienteIA, esProveedorCambiado, IAConfigError, type ClienteAnthropic, type ClienteOpenAI } from '@/lib/ia-cliente';
+import { hlConfigurado, limpiarCacheAgente, HlClienteError } from '@/lib/hl-cliente';
 import { manualComoTexto } from '@/lib/manual-contenido';
 import { MARCA_SUGERENCIAS } from '@/lib/agent-sugerencias';
 import { assertReadOnly } from '@/lib/sql-sandbox';
@@ -252,20 +253,25 @@ async function runQuery(sql: string): Promise<{ ok: boolean; text: string }> {
 
 /** Bucle de herramientas con Anthropic (bloques tool_use / tool_result). */
 async function correrAnthropic(
-    send: Emitir, system: string, prompt: string, historial: IncomingTurn[], config: ModelConfig,
+    send: Emitir, system: string, prompt: string, historial: IncomingTurn[], cliente: ClienteAnthropic,
 ) {
     const messages: Anthropic.MessageParam[] = historial.map((t) => ({ role: t.role, content: t.content }));
     messages.push({ role: 'user', content: prompt });
 
     for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-        const mstream = anthropic.messages.stream({
-            model: config.id,
+        const mstream = cliente.anthropic.messages.stream({
+            /* El modelo lo vuelve a fijar el proxy de HL con el del agente; va el que HL
+               reportó para que la bitácora y la pantalla digan lo mismo. */
+            model: cliente.modelo,
             max_tokens: 16000,
             system,
             tools: TOOLS,
             messages,
             thinking: { type: 'adaptive' },
-            output_config: { effort: config.effort },
+            /* 'medium' era lo que traía el modelo por omisión de la lista vieja. El
+               esfuerzo no viaja en el agente de HL —ahí solo hay proveedor y modelo—,
+               así que se queda escrito aquí. */
+            output_config: { effort: 'medium' },
         } as Anthropic.MessageCreateParamsStreaming);
 
         for await (const event of mstream) {
@@ -316,7 +322,7 @@ async function correrAnthropic(
  * reenviarse tal cual para no perder el hilo entre vueltas.
  */
 async function correrOpenAI(
-    send: Emitir, system: string, prompt: string, historial: IncomingTurn[], config: ModelConfig,
+    send: Emitir, system: string, prompt: string, historial: IncomingTurn[], cliente: ClienteOpenAI,
 ) {
     const input: OpenAI.Responses.ResponseInputItem[] = [
         ...historial.map((t) => ({ role: t.role, content: t.content })),
@@ -324,8 +330,8 @@ async function correrOpenAI(
     ];
 
     for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-        const stream = await openai.responses.create({
-            model: config.id,
+        const stream = await cliente.openai.responses.create({
+            model: cliente.modelo,
             instructions: system,
             input,
             tools: TOOLS_OPENAI,
@@ -393,12 +399,12 @@ export async function POST(req: Request) {
         return Response.json({ error: 'Falta el mensaje (prompt)' }, { status: 400 });
     }
 
-    const { config } = resolveModel(body?.model);
-
-    // La llave que hace falta depende del modelo elegido, no siempre la de Anthropic.
-    if (!process.env[config.envLlave]) {
+    /* Ya no se elige modelo desde la pantalla: lo decide el agente en HL Console. El
+       `model` que mande el cliente se ignora a propósito —si alguien lo sigue mandando,
+       no debe poder cambiar con qué modelo corre el agente—. */
+    if (!hlConfigurado()) {
         return Response.json(
-            { error: `Falta configurar ${config.envLlave} en el archivo .env del servidor para usar ${config.label}.` },
+            { error: 'Faltan HL_URL, HL_API_KEY o HL_AGENTE en el archivo .env del servidor.' },
             { status: 500 },
         );
     }
@@ -417,24 +423,46 @@ export async function POST(req: Request) {
                 }
             };
 
-            try {
-                if (config.proveedor === 'openai') {
-                    await correrOpenAI(send, system, prompt, historial, config);
+            /* Un turno completo con el proveedor que HL diga en este momento. */
+            const turno = async () => {
+                const cliente = await clienteIA();
+                if (cliente.proveedor === 'openai') {
+                    await correrOpenAI(send, system, prompt, historial, cliente);
                 } else {
-                    await correrAnthropic(send, system, prompt, historial, config);
+                    await correrAnthropic(send, system, prompt, historial, cliente);
+                }
+            };
+
+            try {
+                try {
+                    await turno();
+                } catch (e: unknown) {
+                    /* HL avisa con un 422 cuando el agente cambió de proveedor mientras
+                       teníamos el anterior en caché: la llamada salió con el SDK
+                       equivocado y HL no la reenvió. Se tira el caché y se repite una
+                       vez, ya con el SDK que toca. Reintentar sin esto daría 422 para
+                       siempre hasta que venciera HL_TTL_MIN. */
+                    if (!esProveedorCambiado(e)) throw e;
+                    console.warn('[agent] el agente de HL cambió de proveedor; se repite el turno.');
+                    limpiarCacheAgente();
+                    await turno();
                 }
                 send({ type: 'done' });
-            } catch (e: any) {
+            } catch (e: unknown) {
                 console.error('[agent] error:', e);
                 const autenticacion =
                     e instanceof Anthropic.AuthenticationError || e instanceof OpenAI.AuthenticationError;
                 const limite =
                     e instanceof Anthropic.RateLimitError || e instanceof OpenAI.RateLimitError;
+                /* La llave ya no vive aquí: un 401 significa que HL rechazó la
+                   credencial de la app o que la llave del agente está mal en el portal. */
                 const message = autenticacion
-                    ? `La llave ${config.envLlave} es inválida o falta.`
+                    ? 'HL Console rechazó la credencial de la aplicación (HL_API_KEY) o la llave del agente no sirve.'
                     : limite
                         ? 'Demasiadas solicitudes. Intenta de nuevo en unos segundos.'
-                        : e?.message || 'Ocurrió un error inesperado.';
+                        : e instanceof HlClienteError || e instanceof IAConfigError
+                            ? e.message
+                            : (e as { message?: string })?.message || 'Ocurrió un error inesperado.';
                 send({ type: 'error', message });
             } finally {
                 controller.close();

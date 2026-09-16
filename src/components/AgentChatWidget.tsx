@@ -23,7 +23,7 @@ export default function AgentChatWidget() {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { messages, busy, send, clear, modelos, modelo, setModelo } = useAgentChat();
+  const { messages, busy, send, clear, enUso } = useAgentChat();
 
   useEffect(() => {
     if (open) {
@@ -59,22 +59,15 @@ export default function AgentChatWidget() {
               </div>
             </div>
             <div className="flex items-center gap-1">
-              {/* Mismo selector que la página: el estado es compartido, así que
-                  cambiarlo aquí lo cambia allá y al revés. */}
-              {modelos.length > 1 && (
-                <select
-                  value={modelo}
-                  onChange={(e) => setModelo(e.target.value)}
-                  disabled={busy}
-                  title={modelos.find((m) => m.key === modelo)?.descripcion}
-                  className="appearance-none max-w-[110px] px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300 outline-none cursor-pointer hover:bg-white/10 focus:border-blue-500/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed [color-scheme:dark]"
+              {/* Con qué modelo corre. Ya no se elige aquí: lo decide el agente en el
+                  portal de HL Console. */}
+              {enUso && (
+                <span
+                  title={`Agente "${enUso.agente}" en HL Console · ${enUso.proveedor}. Para cambiarlo, edítalo en el portal.`}
+                  className="max-w-[110px] truncate px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300"
                 >
-                  {modelos.map((m) => (
-                    <option key={m.key} value={m.key} className="bg-slate-900 text-white">
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
+                  {enUso.modelo}
+                </span>
               )}
               {messages.length > 0 && (
                 <button onClick={clear} disabled={busy} title="Limpiar"
