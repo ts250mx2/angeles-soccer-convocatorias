@@ -9,7 +9,7 @@ interface GoliAvatarProps {
 export default function GoliAvatar({ size = 40, className = "", priority = false }: GoliAvatarProps) {
   return (
     <span
-      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-b from-sky-300/25 to-blue-700/25 ring-1 ring-white/15 ${className}`}
+      className={`relative inline-flex shrink-0 items-center justify-center overflow-visible ${className}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
@@ -19,7 +19,7 @@ export default function GoliAvatar({ size = 40, className = "", priority = false
         width={size * 2}
         height={size * 2}
         priority={priority}
-        className="h-[118%] w-[118%] max-w-none object-contain object-top"
+        className="h-full w-full max-w-none object-contain drop-shadow-[0_10px_10px_rgba(0,0,0,0.5)] [filter:drop-shadow(0_2px_1px_rgba(255,255,255,0.22))_drop-shadow(0_10px_9px_rgba(15,23,42,0.72))]"
       />
     </span>
   );

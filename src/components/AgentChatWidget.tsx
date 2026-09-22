@@ -152,13 +152,13 @@ export default function AgentChatWidget() {
       <button
         onClick={() => setOpen((o) => !o)}
         title={open ? "Cerrar agente" : "Abrir agente"}
-        className={`ml-auto flex items-center justify-center w-14 h-14 rounded-full shadow-2xl border transition-all hover:scale-105 active:scale-95 ${
+        className={`relative ml-auto flex items-center justify-center transition-all hover:scale-110 active:scale-95 ${
           open
-            ? "bg-white/10 border-white/20 text-slate-300 hover:text-white"
-            : "bg-blue-600 border-blue-500 text-white shadow-blue-600/40"
+            ? "w-14 h-14 rounded-full bg-white/10 border border-white/20 text-slate-300 shadow-2xl hover:text-white"
+            : "w-20 h-20 text-white"
         }`}
       >
-        {open ? <X size={22} /> : <GoliAvatar size={54} />}
+        {open ? <X size={22} /> : <GoliAvatar size={80} />}
         {!open && busy && (
           <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#0f172a] animate-pulse" />
         )}
