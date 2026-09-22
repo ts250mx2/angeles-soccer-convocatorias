@@ -6,8 +6,9 @@ import { useUser, usePuedeVer } from "@/contexts/user-context";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import AgentAnswer from "@/components/AgentAnswer";
+import GoliAvatar from "@/components/GoliAvatar";
 import {
-  Bot, Send, Loader2, AlertCircle, User as UserIcon, Trash2,
+  Send, Loader2, AlertCircle, User as UserIcon, Trash2,
 } from "lucide-react";
 
 const SUGERENCIAS = [
@@ -55,12 +56,10 @@ export default function AgentePage() {
         {/* ── Header ── */}
         <div className="bg-white/5 backdrop-blur-xl border-b border-white/10 px-6 py-4 flex justify-between items-center gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2.5 rounded-xl bg-blue-500/15 border border-blue-500/25">
-              <Bot size={20} className="text-blue-300" />
-            </div>
+            <GoliAvatar size={46} priority />
             <div className="min-w-0">
-              <h1 className="text-xl font-black">Agente Inteligente</h1>
-              <p className="text-xs text-blue-300 mt-0.5 truncate">Pregunta lo que sea sobre todos los módulos</p>
+              <h1 className="text-xl font-black">Goli</h1>
+              <p className="text-xs text-blue-300 mt-0.5 truncate">El asistente inteligente de Ángeles Soccer</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -90,10 +89,10 @@ export default function AgentePage() {
           <div className="max-w-3xl mx-auto space-y-5">
             {messages.length === 0 && (
               <div className="py-12 text-center">
-                <div className="inline-flex p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 mb-4">
-                  <Bot size={32} className="text-blue-400" />
+                <div className="mb-4 flex justify-center">
+                  <GoliAvatar size={132} />
                 </div>
-                <h2 className="text-lg font-black text-white">¿En qué te ayudo?</h2>
+                <h2 className="text-lg font-black text-white">¡Hola! Soy Goli, ¿en qué te ayudo?</h2>
                 <p className="text-sm text-slate-400 mt-1 mb-6">
                   Consulto la base de datos en vivo para responderte.
                 </p>
@@ -111,9 +110,7 @@ export default function AgentePage() {
             {messages.map((m, i) => (
               <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}>
                 {m.role === "assistant" && (
-                  <div className="w-8 h-8 rounded-lg bg-blue-500/15 border border-blue-500/25 flex items-center justify-center flex-shrink-0">
-                    <Bot size={16} className="text-blue-300" />
-                  </div>
+                  <GoliAvatar size={32} />
                 )}
                 <div className={`min-w-0 ${m.role === "user" ? "max-w-[85%]" : "flex-1"}`}>
                   {/* El agente sigue consultando la base; el SQL no se muestra. */}

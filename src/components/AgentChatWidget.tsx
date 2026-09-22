@@ -5,8 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useUser, usePuedeVer } from "@/contexts/user-context";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import AgentAnswer from "@/components/AgentAnswer";
+import GoliAvatar from "@/components/GoliAvatar";
 import {
-  Bot, Send, Loader2, AlertCircle, X, Minus, Trash2, Maximize2,
+  Send, Loader2, AlertCircle, X, Minus, Trash2, Maximize2,
 } from "lucide-react";
 
 /**
@@ -50,12 +51,10 @@ export default function AgentChatWidget() {
           {/* Header */}
           <div className="flex items-center justify-between gap-2 px-4 py-3 bg-white/5 border-b border-white/10">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="p-1.5 rounded-lg bg-blue-500/15 border border-blue-500/25">
-                <Bot size={15} className="text-blue-300" />
-              </div>
+              <GoliAvatar size={34} priority />
               <div className="min-w-0">
-                <p className="text-sm font-black text-white leading-tight">Agente Inteligente</p>
-                <p className="text-[10px] text-slate-500 truncate">Consulta la base en vivo</p>
+                <p className="text-sm font-black text-white leading-tight">Goli</p>
+                <p className="text-[10px] text-slate-500 truncate">Asistente de Ángeles Soccer</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -92,7 +91,8 @@ export default function AgentChatWidget() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
             {messages.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-center gap-2 px-4">
-                <Bot size={28} className="text-blue-400/60" />
+                <GoliAvatar size={72} />
+                <p className="text-sm font-black text-white">¡Hola! Soy Goli</p>
                 <p className="text-xs text-slate-400">
                   Pregúntame sobre inscripciones, adeudos, caja, ventas o copas.
                 </p>
@@ -158,7 +158,7 @@ export default function AgentChatWidget() {
             : "bg-blue-600 border-blue-500 text-white shadow-blue-600/40"
         }`}
       >
-        {open ? <X size={22} /> : <Bot size={24} />}
+        {open ? <X size={22} /> : <GoliAvatar size={54} />}
         {!open && busy && (
           <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#0f172a] animate-pulse" />
         )}
