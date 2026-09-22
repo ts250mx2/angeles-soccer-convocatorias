@@ -1,7 +1,8 @@
 import jsPDF from 'jspdf';
 import { presentarPdf } from '@/lib/pdf-preview';
 import autoTable from 'jspdf-autotable';
-import { etiquetaBeca, type Plantilla, type TonoBeca } from '@/lib/plantilla-equipo';
+import { etiquetaBeca, sinAlta, type Plantilla, type TonoBeca } from '@/lib/plantilla-equipo';
+import { nombreEquipo } from '@/lib/categoria-equipo';
 
 /**
  * La hoja de plantilla, en PDF y en horizontal: el listado a la izquierda y la cancha a
@@ -15,6 +16,14 @@ import { etiquetaBeca, type Plantilla, type TonoBeca } from '@/lib/plantilla-equ
  *
  * Las posiciones vienen en porcentaje, así que pasarlas al papel es una regla de tres
  * contra el rectángulo de la cancha. Es la misma razón por la que se guardan así.
+ *
+ * ── Los dos avisos, y por qué van escritos y no solo coloreados ──
+ *
+ * En la hoja caben dos clases de marcados: el que no tiene inscripción pagada (*, ámbar)
+ * y el que TODAVÍA NO ESTÁ DADO DE ALTA (**, rojo) porque es un preregistro. Esta hoja
+ * es la que acaba impresa y pegada en el pizarrón, muchas veces en blanco y negro, así
+ * que el color solo no basta: los dos llevan su símbolo delante del nombre y su renglón
+ * de leyenda al pie. En la pantalla siempre se puede preguntar; en el papel, no.
  */
 
 /** Colores de la beca, en RGB, iguales a los de la pantalla. */
@@ -46,17 +55,18 @@ export async function exportarPlantillaPdf(p: Plantilla, temporada = ''): Promis
 
     doc.setFontSize(13);
     doc.setTextColor(255, 255, 255);
-    doc.text(`ANGELES ${p.equipo}`, anchoHoja - MARGEN, 10, { align: 'right' });
+    /* CLUB + SEDE + CATEGORIA: el nombre completo del equipo, el mismo que se lee en
+       la pantalla. Ver @/lib/categoria-equipo. */
+    doc.text(nombreEquipo(p.sede, p.equipo), anchoHoja - MARGEN, 10, { align: 'right' });
     /* La temporada va en el membrete porque es contra la que se mide la inscripción de
        cada jugador, y de ahí salen los asteriscos de la hoja: sin decir cuál es, dos
        impresiones del mismo equipo con distintos marcados no se podrían distinguir, y la
        de octubre pasaría por la de agosto. */
     doc.setFontSize(8);
     doc.setTextColor(203, 213, 225);
-    doc.text(
-        [p.sede, temporada].filter(Boolean).join('  ·  '),
-        anchoHoja - MARGEN, 15, { align: 'right' },
-    );
+    /* Aqui ya solo la temporada: la sede pasó a formar parte del nombre del equipo, en
+       el renglon de arriba, y repetirla haria dudar de si son dos cosas distintas. */
+    doc.text(temporada, anchoHoja - MARGEN, 15, { align: 'right' });
 
     // ── Listado, a la izquierda ──
     const anchoTabla = anchoHoja * 0.42;
@@ -72,11 +82,14 @@ export async function exportarPlantillaPdf(p: Plantilla, temporada = ''): Promis
            tiene que poder ver de quién se trata sin buscarlo entre los recuadros. */
         body: p.jugadores.map((j, i) => [
             String(i + 1),
-            j.inscrito ? j.jugador : `* ${j.jugador}`,
+            sinAlta(j) ? `** ${j.jugador}` : j.inscrito ? j.jugador : `* ${j.jugador}`,
             j.fechaNacimiento ?? '',
-            etiquetaBeca(j.beca).texto,
-            etiquetaBeca(j.becaCopas).texto,
-            etiquetaBeca(j.becaLigas).texto,
+            /* El preregistro no tiene ficha, así que no tiene becas que imprimir: las
+               tres columnas van vacías en vez de decir "PAGA", que afirmaría que no
+               tiene descuento cuando lo que pasa es que nadie se lo ha asignado. */
+            sinAlta(j) ? '' : etiquetaBeca(j.beca).texto,
+            sinAlta(j) ? '' : etiquetaBeca(j.becaCopas).texto,
+            sinAlta(j) ? '' : etiquetaBeca(j.becaLigas).texto,
         ]),
         styles: { fontSize: 6.5, cellPadding: 1.1, lineColor: [148, 163, 184], lineWidth: 0.1 },
         headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 6, fontStyle: 'bold' },
@@ -90,8 +103,16 @@ export async function exportarPlantillaPdf(p: Plantilla, temporada = ''): Promis
         /* Las tres columnas de beca se pintan del color que les toca, que es lo que hace
            legible la hoja de un vistazo: el rojo del 100% salta sin tener que leerla. */
         didParseCell: (datos) => {
-            if (datos.section !== 'body' || datos.column.index < 3) return;
+            if (datos.section !== 'body') return;
             const jugador = p.jugadores[datos.row.index];
+            /* El renglón del que no está dado de alta va en rojo de punta a punta: es la
+               fila entera la que no corresponde a un jugador del sistema. */
+            if (sinAlta(jugador)) {
+                datos.cell.styles.textColor = [159, 18, 57];
+                if (datos.column.index === 1) datos.cell.styles.fontStyle = 'bold';
+                return;
+            }
+            if (datos.column.index < 3) return;
             const pct = [jugador.beca, jugador.becaCopas, jugador.becaLigas][datos.column.index - 3];
             const { tono } = etiquetaBeca(pct);
             datos.cell.styles.fillColor = RGB_BECA[tono];
@@ -138,24 +159,41 @@ export async function exportarPlantillaPdf(p: Plantilla, temporada = ''): Promis
             izq + (j.x / 100) * anchoCancha,
             arriba + 14 + (j.y / 100) * altoCancha,
             `${j.dorsal ? `${j.dorsal} · ` : ''}${nombreCortoPdf(j.jugador)}`,
-            j.inscrito,
+            sinAlta(j) ? 'sin-alta' : j.inscrito ? 'normal' : 'sin-inscripcion',
         );
     }
 
-    /* La leyenda del asterisco solo aparece cuando hay a quién explicarle: una hoja con
-       todos inscritos no tiene por qué cargar una nota que no aplica. Cuenta a TODOS los
-       marcados, en la cancha o en el listado, porque el asterisco sale en los dos. */
-    const sinInscripcion = p.jugadores.filter((j) => !j.inscrito).length;
-    if (sinInscripcion > 0) {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
-        doc.setTextColor(146, 64, 14);
-        doc.text(
-            `* ${sinInscripcion} ${sinInscripcion === 1 ? 'jugador sin inscripcion' : 'jugadores sin inscripcion'} en ${temporada || 'la temporada'}`,
-            izq,
-            altoHoja - MARGEN + 1,
-        );
+    /* Las leyendas solo aparecen cuando hay a quién explicarles: una hoja sin marcados
+       no tiene por qué cargar notas que no aplican. Cuentan a TODOS los marcados, en la
+       cancha o en el listado, porque el símbolo sale en los dos.
+
+       La de los preregistros va arriba y en rojo: es la más fuerte de las dos, porque no
+       habla de un pago pendiente sino de alguien que el sistema todavía no conoce. */
+    const marcados: Array<{ texto: string; color: [number, number, number] }> = [];
+
+    const sinDarDeAlta = p.jugadores.filter(sinAlta).length;
+    if (sinDarDeAlta > 0) {
+        marcados.push({
+            texto: `** ${sinDarDeAlta} ${sinDarDeAlta === 1 ? 'preregistro AUN SIN DAR DE ALTA' : 'preregistros AUN SIN DAR DE ALTA'}: el alta la hace el sistema de escritorio`,
+            color: [159, 18, 57],
+        });
     }
+
+    const sinInscripcion = p.jugadores.filter((j) => !sinAlta(j) && !j.inscrito).length;
+    if (sinInscripcion > 0) {
+        marcados.push({
+            texto: `* ${sinInscripcion} ${sinInscripcion === 1 ? 'jugador sin inscripcion' : 'jugadores sin inscripcion'} en ${temporada || 'la temporada'}`,
+            color: [146, 64, 14],
+        });
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    marcados.forEach(({ texto, color }, i) => {
+        doc.setTextColor(...color);
+        // De abajo hacia arriba, para que la última quede pegada al borde de la hoja.
+        doc.text(texto, izq, altoHoja - MARGEN + 1 - (marcados.length - 1 - i) * 3.2);
+    });
 
     presentarPdf(doc, `Plantilla_${p.equipo || 'equipo'}.pdf`);
 }
@@ -189,29 +227,49 @@ function dibujaCancha(doc: jsPDF, x: number, y: number, ancho: number, alto: num
     }
 }
 
+/** Cómo sale un nombre en la cancha impresa. */
+type MarcaNombre = 'normal' | 'sin-inscripcion' | 'sin-alta';
+
+/* Cada estado con sus colores y su símbolo. En una tabla y no en ternarios encadenados
+   porque son tres estados por cuatro propiedades: encadenados, agregar el cuarto obliga
+   a tocar cuatro expresiones y que las cuatro queden de acuerdo. */
+const MARCAS: Record<MarcaNombre, {
+    simbolo: string;
+    fondo: [number, number, number];
+    borde: [number, number, number];
+    tinta: [number, number, number];
+    grosor: number;
+}> = {
+    normal: {
+        simbolo: '', fondo: [255, 255, 255], borde: [15, 23, 42], tinta: [15, 23, 42], grosor: 0.3,
+    },
+    'sin-inscripcion': {
+        simbolo: '* ', fondo: [254, 243, 199], borde: [217, 119, 6], tinta: [146, 64, 14], grosor: 0.5,
+    },
+    'sin-alta': {
+        simbolo: '** ', fondo: [255, 228, 230], borde: [225, 29, 72], tinta: [159, 18, 57], grosor: 0.7,
+    },
+};
+
 /**
  * Un nombre en su recuadro, centrado en el punto.
  *
- * El de quien NO está inscrito sale en ámbar y con un asterisco. La hoja impresa es la
- * que acaba en el pizarrón y en la mano del profe, así que es justo donde el aviso tiene
- * que sobrevivir: en la pantalla siempre se puede preguntar, en el papel no.
+ * El de quien NO está inscrito sale en ámbar con un asterisco, y el del preregistro que
+ * todavía NO ESTÁ DADO DE ALTA en rojo con dos. La hoja impresa es la que acaba en el
+ * pizarrón y en la mano del profe, así que es justo donde el aviso tiene que sobrevivir:
+ * en la pantalla siempre se puede preguntar, en el papel no.
  */
-function dibujaNombre(doc: jsPDF, cx: number, cy: number, texto: string, inscrito: boolean): void {
-    const etiqueta = inscrito ? texto : `* ${texto}`;
+function dibujaNombre(doc: jsPDF, cx: number, cy: number, texto: string, marca: MarcaNombre): void {
+    const { simbolo, fondo, borde, tinta, grosor } = MARCAS[marca];
+    const etiqueta = `${simbolo}${texto}`;
     doc.setFontSize(6);
     doc.setFont('helvetica', 'bold');
     const ancho = doc.getTextWidth(etiqueta) + 3;
     const alto = 4.5;
 
-    /* Cada color en su variable y no en un ternario dentro del spread: el ternario da
-       una union de tuplas que TypeScript no deja esparcir. */
-    const fondo: [number, number, number] = inscrito ? [255, 255, 255] : [254, 243, 199];
-    const borde: [number, number, number] = inscrito ? [15, 23, 42] : [217, 119, 6];
-    const tinta: [number, number, number] = inscrito ? [15, 23, 42] : [146, 64, 14];
-
     doc.setFillColor(...fondo);
     doc.setDrawColor(...borde);
-    doc.setLineWidth(inscrito ? 0.3 : 0.5);
+    doc.setLineWidth(grosor);
     doc.roundedRect(cx - ancho / 2, cy - alto / 2, ancho, alto, 0.6, 0.6, 'FD');
 
     doc.setTextColor(...tinta);

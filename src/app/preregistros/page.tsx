@@ -10,7 +10,7 @@ import { presentarPdf } from "@/lib/pdf-preview";
 import autoTable from "jspdf-autotable";
 import {
   UserPlus, Search, RefreshCw, Calendar, X, MapPin, Layers, AlertCircle,
-  FileSpreadsheet, FileText, Copy, Phone,
+  FileSpreadsheet, FileText, Copy, Phone, Trash2, Loader2,
 } from "lucide-react";
 import type { FilaPreregistro, Vinculo } from "@/lib/preregistros";
 import { esConvertido } from "@/lib/preregistros";
@@ -79,6 +79,10 @@ export default function PreregistrosPage() {
   const [pendingHasta, setPendingHasta] = useState("");
 
   const [detalle, setDetalle] = useState<FilaPreregistro | null>(null);
+  /** El preregistro que se esta borrando, para bloquear su boton mientras tanto. */
+  const [borrando, setBorrando] = useState<number | null>(null);
+  /** Lo que acaba de pasar. Un borrado no deja rastro en pantalla si no se dice. */
+  const [aviso, setAviso] = useState<string | null>(null);
 
   useEffect(() => {
     if (isInitialized && !user) router.push("/login");
@@ -100,6 +104,45 @@ export default function PreregistrosPage() {
       setError("Error de conexión");
     } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  /**
+   * Borra un preregistro y lo quita de la lista sin volver a pedirla.
+   *
+   * Se pregunta siempre y con el nombre dentro: la tabla es densa, las filas se parecen
+   * y el boton queda a un centimetro del que abre la ficha. El borrado es definitivo
+   * —ver el DELETE de la API—, asi que la unica proteccion posible es esta.
+   *
+   * La fila se quita en el navegador en vez de recargar las cuatro mil filas del cruce:
+   * lo unico que cambia es que una dejo de estar.
+   */
+  const borrar = useCallback(async (fila: FilaPreregistro) => {
+    const convertido = fila.Jugador
+      ? `
+
+OJO: este preregistro ya aparece como ${fila.Jugador.Jugador} en la plantilla. Borrarlo NO da de baja al jugador.`
+      : "";
+    if (!confirm(`¿Borrar el preregistro de ${fila.JugadorPre}?
+
+No se puede deshacer.${convertido}`)) return;
+
+    setBorrando(fila.IdJugadorPre);
+    setError(null);
+    try {
+      const res = await fetch(`/api/preregistros/${fila.IdJugadorPre}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!json.success) {
+        setError(json.message ?? "No se pudo borrar el preregistro");
+        return;
+      }
+      setFilas((previas) => previas.filter((f) => f.IdJugadorPre !== fila.IdJugadorPre));
+      setDetalle((abierto) => (abierto?.IdJugadorPre === fila.IdJugadorPre ? null : abierto));
+      setAviso(json.message ?? `Se borró el preregistro de ${fila.JugadorPre}.`);
+    } catch {
+      setError("Error de conexión al borrar");
+    } finally {
+      setBorrando(null);
     }
   }, []);
 
@@ -329,6 +372,15 @@ export default function PreregistrosPage() {
             </div>
           )}
 
+          {/* Un borrado no deja rastro en la pantalla: la fila simplemente ya no esta.
+              Sin este aviso no habria forma de comprobar que se fue el que se queria. */}
+          {aviso && (
+            <div className="flex items-start justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 rounded-xl px-4 py-3 text-sm font-bold">
+              <span>{aviso}</span>
+              <button onClick={() => setAviso(null)} className="text-emerald-300/70 hover:text-emerald-100">✕</button>
+            </div>
+          )}
+
           {/* INDICADORES — cada uno filtra la tabla por su tipo de relación */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <button
@@ -465,6 +517,7 @@ export default function PreregistrosPage() {
                       <th className="px-5 py-4">Contacto</th>
                       <th className="px-5 py-4">Relación</th>
                       <th className="px-5 py-4">Jugador en la plantilla</th>
+                      <th className="px-5 py-4 w-10"><span className="sr-only">Borrar</span></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 text-slate-300">
@@ -529,6 +582,20 @@ export default function PreregistrosPage() {
                           ) : (
                             <span className="text-xs text-slate-600">Sin coincidencias</span>
                           )}
+                        </td>
+                        {/* Borrar no se cuela en el clic de la fila, que abre la ficha. */}
+                        <td className="px-5 py-3.5 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); borrar(f); }}
+                            disabled={borrando !== null}
+                            title={`Borrar el preregistro de ${f.JugadorPre}`}
+                            className="inline-flex items-center justify-center p-1.5 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-500/15 transition-colors disabled:opacity-40"
+                          >
+                            {borrando === f.IdJugadorPre
+                              ? <Loader2 size={14} className="animate-spin" />
+                              : <Trash2 size={14} />}
+                          </button>
                         </td>
                       </tr>
                     ))}

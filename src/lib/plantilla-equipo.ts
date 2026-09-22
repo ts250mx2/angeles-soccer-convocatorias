@@ -32,8 +32,33 @@
  */
 export const MINIMO_JUGADORES_PLANTILLA = 5;
 
+/**
+ * De donde sale quien aparece en la hoja.
+ *
+ * La cancha admite dos clases de gente: los que ya estan dados de alta en tblJugadores y
+ * los PREREGISTROS, que todavia no. Se acomodan igual porque en el campo ya estan —el
+ * nino llega a entrenar desde el primer dia, y el alta formal la hace el escritorio
+ * despues—, pero no son lo mismo y la hoja no puede fingir que si: al preregistrado se
+ * le marca en rojo en la lista, en el campo y en el PDF.
+ */
+export type OrigenJugador = 'jugador' | 'preregistro';
+
 export interface JugadorPlantilla {
-    idJugador: number;
+    /**
+     * Identidad dentro de la hoja: 'J-<id>' para quien ya es jugador, 'P-<id>' para un
+     * preregistro.
+     *
+     * Hace falta porque los dos numeros viven en tablas distintas y se repiten entre si:
+     * el jugador 45 y el preregistro 45 no tienen nada que ver. Con el id pelado
+     * compartirian llave de React, casilla del acomodo y destino del arrastre, y mover a
+     * uno movería al otro.
+     */
+    clave: string;
+    origen: OrigenJugador;
+    /** tblJugadores.IdJugador. `null` mientras sea un preregistro sin alta. */
+    idJugador: number | null;
+    /** tblJugadoresPre.IdJugadorPre. `null` cuando ya es jugador. */
+    idJugadorPre: number | null;
     jugador: string;
     /** 'dd/mm/aaaa', como se lee en la hoja. */
     fechaNacimiento: string | null;
@@ -70,9 +95,16 @@ export interface JugadorPlantilla {
     fotoVersion: string | null;
 }
 
-/** URL de la foto del jugador, o null si no tiene. */
+/** Las dos llaves de la hoja. Ver `JugadorPlantilla.clave`. */
+export const claveDeJugador = (idJugador: number): string => `J-${idJugador}`;
+export const claveDePreregistro = (idJugadorPre: number): string => `P-${idJugadorPre}`;
+
+/** Todavia no esta dado de alta en tblJugadores: es un preregistro puesto en la cancha. */
+export const sinAlta = (j: Pick<JugadorPlantilla, 'origen'>): boolean => j.origen === 'preregistro';
+
+/** URL de la foto del jugador, o null si no tiene. Un preregistro nunca la tiene. */
 export const urlFotoJugador = (j: Pick<JugadorPlantilla, 'idJugador' | 'tieneFoto' | 'fotoVersion'>): string | null =>
-    j.tieneFoto ? `/api/jugadores/foto/${j.idJugador}?v=${j.fotoVersion ?? '0'}` : null;
+    j.tieneFoto && j.idJugador ? `/api/jugadores/foto/${j.idJugador}?v=${j.fotoVersion ?? '0'}` : null;
 
 /** Iniciales para el hueco de quien todavía no tiene foto. */
 export const inicialesDe = (nombre: string): string =>

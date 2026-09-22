@@ -20,6 +20,7 @@ export const dynamic = 'force-dynamic';
 const PREREGISTROS_SQL = `
     SELECT P.IdJugadorPre,
            P.JugadorPre,
+           P.Categoria,
            DATE_FORMAT(P.FechaNacimiento, '%Y-%m-%d')     AS FechaNacimiento,
            TIMESTAMPDIFF(YEAR, P.FechaNacimiento, CURDATE()) AS Edad,
            P.Genero, P.GeneroDesc, P.CURP, P.ContactoEmergencia,

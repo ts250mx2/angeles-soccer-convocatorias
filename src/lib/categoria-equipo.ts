@@ -59,3 +59,32 @@ export const anioDeCategoria = (categoria: string | null | undefined): string =>
 /** Solo el equipo, para filtrar y ordenar. */
 export const equipoDeCategoria = (categoria: string | null | undefined): string =>
     partirCategoria(categoria).equipo;
+
+/* ── El nombre con el que se anuncia un equipo ── */
+
+/** El club, que encabeza el nombre de todos sus equipos. */
+const CLUB = 'ANGELES';
+
+/**
+ * El nombre completo de un equipo: CLUB + SEDE + CATEGORIA. `ANGELES SALTILLO 2018X`.
+ *
+ * La categoria sola no nombra a nadie: la MISMA existe en varias sedes —hay un 2018X en
+ * Saltillo y otro en Monterrey— y en un papel que sale de la pantalla y acaba en el
+ * pizarron de una cancha no hay forma de preguntar de cual de los dos se trata. La sede
+ * es lo que lo vuelve un nombre y no una coincidencia.
+ *
+ * Va en mayusculas y en un solo lugar porque es nomenclatura, no maquetacion: si cada
+ * hoja la armara por su cuenta, dos impresiones del mismo equipo acabarian llamandolo
+ * distinto. Las partes vacias se caen solas, asi que un equipo sin sede capturada sigue
+ * saliendo con lo que si se sabe de el en vez de con un hueco.
+ */
+export function nombreEquipo(
+    sede: string | null | undefined,
+    categoria: string | null | undefined,
+): string {
+    return [CLUB, sede, categoria]
+        .map((parte) => String(parte ?? '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .toUpperCase();
+}

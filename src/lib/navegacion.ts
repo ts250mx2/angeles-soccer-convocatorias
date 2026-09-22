@@ -266,7 +266,7 @@ export const NAV_ITEMS: NavItem[] = [
         /* El grupo es solo rótulo: la clave del permiso es el href de su hijo
            ('/administracion-deportiva/plantillas'), que NO cambia. Por eso renombrarlo
            no toca tblPerfilPaginas ni le quita el módulo a nadie. */
-        label: 'Admon Deportiva',
+        label: 'Dirección Deportiva',
         icono: 'Shirt',
         children: [
             {
@@ -323,12 +323,6 @@ export const NAV_ITEMS: NavItem[] = [
                 label: 'Ventas Canceladas',
                 href: '/ventas/canceladas',
                 icono: 'Ban',
-                adminOnly: true,
-            },
-            {
-                label: 'Cortes de Caja',
-                href: '/caja',
-                icono: 'Receipt',
                 adminOnly: true,
             },
             {
@@ -441,8 +435,15 @@ export interface PaginaCatalogo {
 }
 
 /**
- * Todos los módulos con ruta, aplanados. Se deduplica por clave porque el menú repite
- * a propósito algún módulo en dos grupos (Cortes de Caja aparece en Caja y en Ventas).
+ * Todos los módulos con ruta, aplanados.
+ *
+ * Se deduplica por clave: hoy ningún módulo se repite en dos grupos —'Cortes de Caja'
+ * apuntaba a /caja desde Ventas y era la misma pantalla que 'Control de Caja', así que
+ * se quitó—, pero el menú puede volver a repetir uno y dos entradas con el mismo href
+ * serían dos módulos distintos en la pantalla de Perfiles para un solo permiso.
+ *
+ * Gana la PRIMERA aparición, que es la que le pone el nombre y el grupo al módulo en
+ * Perfiles: por eso el orden de NAV_ITEMS importa aunque el menú se vea igual.
  */
 export const PAGINAS: PaginaCatalogo[] = (() => {
     const out: PaginaCatalogo[] = [];

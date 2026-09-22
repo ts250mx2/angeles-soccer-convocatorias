@@ -2,7 +2,7 @@
 
 import {
   X, User, Users, MapPin, Home, Link2, CalendarDays, Phone, Mail, School,
-  UserCheck, UserPlus, HeartHandshake, HelpCircle, Copy, Sparkles,
+  UserCheck, UserPlus, HeartHandshake, HelpCircle, Copy, Sparkles, Shirt,
 } from "lucide-react";
 import type { FilaPreregistro, JugadorRelacionado, Vinculo } from "@/lib/preregistros";
 
@@ -101,6 +101,13 @@ export default function PreregistroDetalle({
             <p className="text-xs text-slate-400 mt-0.5">
               {fila.Sede ?? "Sin sede"} · Recibido {fechaHora(fila.FechaAlta)}
             </p>
+            {/* El equipo al que se apunto. Solo lo traen los capturados desde Plantilla
+                de Equipos; los del QR publico llegan sin equipo y no ensenan nada. */}
+            {fila.Categoria && (
+              <p className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[10px] font-black">
+                <Shirt size={11} /> {fila.Categoria}
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}

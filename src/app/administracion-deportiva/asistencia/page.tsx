@@ -8,7 +8,7 @@ import {
   AlertCircle, AlertTriangle, ArrowLeft, CalendarCheck, ChevronLeft, ChevronRight, FileText,
   Loader2, Plus, Printer, Save, Search, Users, X,
 } from "lucide-react";
-import { partirCategoria } from "@/lib/categoria-equipo";
+import { nombreEquipo, partirCategoria } from "@/lib/categoria-equipo";
 import {
   aniosDeSede, letraDe, letrasDe, sedesDeEquipos, seleccionHuerfana,
 } from "@/lib/selector-equipo";
@@ -998,8 +998,10 @@ export default function AsistenciaPage() {
                 {/* El encabezado de la hoja, como en el papel */}
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
+                    {/* CLUB + SEDE + CATEGORIA, la misma nomenclatura que la hoja de
+                        Plantilla. Ver @/lib/categoria-equipo. */}
                     <p className="text-lg font-black text-white leading-tight">
-                      {hoja.sede || "SIN SEDE"} · {hoja.equipo}
+                      {nombreEquipo(hoja.sede, hoja.equipo)}
                     </p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       {hoja.horario || "HORARIO SIN CAPTURAR"} · PROF: {hoja.profesor || "SIN ASIGNAR"}

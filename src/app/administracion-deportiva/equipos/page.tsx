@@ -184,7 +184,7 @@ export default function EquiposPage() {
             <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-blue-300">
-                  <Shirt size={15} /> Administración deportiva
+                  <Shirt size={15} /> Dirección deportiva
                 </div>
                 <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Equipos por sede</h1>
                 <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">

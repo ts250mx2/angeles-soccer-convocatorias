@@ -7,17 +7,18 @@ import DashboardLayout from "@/components/DashboardLayout";
 import CanchaPlantilla, { nombreCorto } from "@/components/CanchaPlantilla";
 import {
   AlertCircle, ArrowLeft, ArrowRightLeft, FileText, Goal, LayoutGrid, Loader2, Plus,
-  RotateCcw, Save, Search, Users, Wand2,
+  RotateCcw, Save, Search, Trash2, UserPlus, Users, Wand2,
 } from "lucide-react";
 import TransferirJugador from "@/components/TransferirJugador";
+import PreregistroJugador from "@/components/PreregistroJugador";
 import AvatarJugador from "@/components/AvatarJugador";
 import PlayerPagosModal, { type PagosTarget } from "@/components/PlayerPagosModal";
-import { partirCategoria } from "@/lib/categoria-equipo";
+import { nombreEquipo, partirCategoria } from "@/lib/categoria-equipo";
 import {
   aniosDeSede, letraDe, letrasDe, sedesDeEquipos, seleccionHuerfana,
 } from "@/lib/selector-equipo";
 import {
-  COLOR_BECA, MINIMO_JUGADORES_PLANTILLA, acomodoPorOmision, acota, etiquetaBeca,
+  COLOR_BECA, MINIMO_JUGADORES_PLANTILLA, acomodoPorOmision, acota, etiquetaBeca, sinAlta,
   type JugadorPlantilla, type Plantilla,
 } from "@/lib/plantilla-equipo";
 import { exportarPlantillaPdf } from "@/lib/plantilla-export";
@@ -142,6 +143,12 @@ export default function PlantillasPage() {
   const [cargandoArmadas, setCargandoArmadas] = useState(true);
   const [buscaEquipo, setBuscaEquipo] = useState("");
   const [transfiriendo, setTransfiriendo] = useState(false);
+  /* Capturar un preregistro sin salir de la hoja: la recepcion tiene al nino
+     enfrente y mandarlo a escanear el QR de la sede seria un rodeo. Ver
+     @/components/PreregistroJugador. */
+  const [preregistrando, setPreregistrando] = useState(false);
+  /** El preregistro que se esta borrando, para bloquear su boton mientras tanto. */
+  const [borrando, setBorrando] = useState<number | null>(null);
   /* El historial de pagos: el MISMO modal de Inscripciones, Adeudos y la Lista de
      Jugadores. Se reutiliza en vez de hacer uno propio para que los pagos de un niño se
      vean y se corrijan igual desde donde se abran. */
@@ -401,15 +408,15 @@ export default function PlantillasPage() {
     return () => window.removeEventListener("beforeunload", alSalir);
   }, [sucio]);
 
-  /** Cambia a un jugador de la plantilla que está en pantalla. */
-  const cambiaJugador = (idJugador: number, cambio: Partial<JugadorPlantilla>) => {
+  /** Cambia a alguien de la plantilla que está en pantalla. Se identifica por `clave`. */
+  const cambiaJugador = (clave: string, cambio: Partial<JugadorPlantilla>) => {
     setPlantilla((prev) =>
       prev === null
         ? prev
         : {
             ...prev,
             jugadores: prev.jugadores.map((j) =>
-              j.idJugador === idJugador ? { ...j, ...cambio } : j,
+              j.clave === clave ? { ...j, ...cambio } : j,
             ),
           },
     );
@@ -427,8 +434,18 @@ export default function PlantillasPage() {
      el aviso dice lo mismo que aquellas pantallas. */
   const jugadores = useMemo(() => plantilla?.jugadores ?? [], [plantilla]);
 
-  /** Los que no tienen inscripcion pagada en la temporada elegida. Solo se avisan. */
-  const sinInscripcion = useMemo(() => jugadores.filter((j) => !j.inscrito), [jugadores]);
+  /* Los que no tienen inscripcion pagada en la temporada elegida. Solo se avisan.
+
+     Los preregistros quedan fuera de esta cuenta: no es que no hayan pagado, es que
+     todavia no existen como jugadores. Mezclarlos inflaria el numero de morosos con
+     gente a la que nadie le ha podido cobrar. */
+  const sinInscripcion = useMemo(
+    () => jugadores.filter((j) => !sinAlta(j) && !j.inscrito),
+    [jugadores],
+  );
+
+  /** Los preregistros: entrenan con el equipo pero todavia no estan dados de alta. */
+  const sinDarDeAlta = useMemo(() => jugadores.filter(sinAlta), [jugadores]);
 
   const temporadaNombre =
     temporadas.find((t) => t.IdTemporada === temporadaId)?.Temporada ?? "";
@@ -440,9 +457,12 @@ export default function PlantillasPage() {
 
   /** Los que estan en el campo sin estar inscritos. Es lo que hay que poder ver de lejos. */
   const enCanchaSinInscripcion = useMemo(
-    () => enCancha.filter((j) => !j.inscrito),
+    () => enCancha.filter((j) => !sinAlta(j) && !j.inscrito),
     [enCancha],
   );
+
+  /** Los que estan en el campo sin estar dados de alta. El aviso mas fuerte de la hoja. */
+  const enCanchaSinAlta = useMemo(() => enCancha.filter(sinAlta), [enCancha]);
 
   /** Le busca un lugar libre en la cancha, entre los puestos del acomodo por omision. */
   const lugarLibre = (): { x: number; y: number } => {
@@ -470,22 +490,59 @@ export default function PlantillasPage() {
    */
   const mandarACancha = (j: JugadorPlantilla) => {
     if (!plantilla) return;
-    if (!j.inscrito) {
+    if (sinAlta(j)) {
+      setAviso(`${j.jugador} entro a la cancha SIN estar dado de alta: es un preregistro. Queda marcado en rojo en la hoja.`);
+    } else if (!j.inscrito) {
       setAviso(`${j.jugador} entro a la cancha sin inscripcion. Queda marcado en la hoja.`);
     }
     const libre = lugarLibre();
-    cambiaJugador(j.idJugador, { x: acota(libre.x), y: acota(libre.y) });
+    cambiaJugador(j.clave, { x: acota(libre.x), y: acota(libre.y) });
+  };
+
+  /**
+   * Borra un preregistro de la lista del equipo.
+   *
+   * Solo aplica a los preregistros: un jugador dado de alta no se borra desde aqui —su
+   * baja es otra cosa y la hace el escritorio—, y por eso el boton solo existe en esas
+   * filas. Es definitivo, asi que se pregunta con el nombre dentro.
+   *
+   * Al terminar se recarga la hoja en vez de quitar la fila a mano: el borrado tambien
+   * le quita su lugar en la cancha, y volver a pedirla es lo que garantiza que lo que se
+   * ve sea lo que quedo guardado.
+   */
+  const borrarPreregistro = async (j: JugadorPlantilla) => {
+    if (j.idJugadorPre === null) return;
+    if (!confirm(`¿Borrar el preregistro de ${j.jugador}?
+
+No se puede deshacer, y si esta en la cancha tambien pierde su lugar.`)) return;
+
+    setBorrando(j.idJugadorPre);
+    setError(null);
+    try {
+      const res = await fetch(`/api/preregistros/${j.idJugadorPre}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!json.success) {
+        setError(json.message ?? "No se pudo borrar el preregistro");
+        return;
+      }
+      setAviso(json.message ?? `Se borro el preregistro de ${j.jugador}.`);
+      if (idEquipo && temporadaId) await cargar(idEquipo, temporadaId);
+    } catch {
+      setError("Error de conexion al borrar");
+    } finally {
+      setBorrando(null);
+    }
   };
 
   /** Reparte a TODO el equipo por la cancha, de atras hacia adelante. El punto de partida. */
   const acomodarTodos = () => {
     if (!plantilla) return;
     const puestos = acomodoPorOmision(jugadores.length);
-    const lugarDe = new Map(jugadores.map((j, i) => [j.idJugador, puestos[i]]));
+    const lugarDe = new Map(jugadores.map((j, i) => [j.clave, puestos[i]]));
     setPlantilla({
       ...plantilla,
       jugadores: plantilla.jugadores.map((j) => {
-        const lugar = lugarDe.get(j.idJugador);
+        const lugar = lugarDe.get(j.clave);
         return lugar ? { ...j, x: acota(lugar.x), y: acota(lugar.y) } : j;
       }),
     });
@@ -518,8 +575,13 @@ export default function PlantillasPage() {
              reemplaza el acomodo completo, así que omitir a los no inscritos borraría
              su lugar en silencio. Ver el comentario del POST en la API. */
           posiciones: plantilla.jugadores
-            .filter((j) => j.x !== null && j.y !== null)
+            .filter((j) => j.idJugador !== null && j.x !== null && j.y !== null)
             .map((j) => ({ idJugador: j.idJugador, x: j.x, y: j.y })),
+          /* Los preregistros van en su propia lista: su id sale de otra tabla y se pisa
+             con el de los jugadores. Ver el POST en la API. */
+          posicionesPre: plantilla.jugadores
+            .filter((j) => j.idJugadorPre !== null && j.x !== null && j.y !== null)
+            .map((j) => ({ idJugadorPre: j.idJugadorPre, x: j.x, y: j.y })),
         }),
       });
       const json = await res.json();
@@ -691,6 +753,22 @@ export default function PlantillasPage() {
                     >
                       <ArrowRightLeft size={14} /> Traer jugador
                     </button>
+                    {/* Dar de alta a quien todavia NO esta en la academia. Va pegado a
+                        "Traer jugador" porque los dos contestan lo mismo —falta gente en
+                        este equipo—; la diferencia es que aquel ya esta adentro y este
+                        apenas llega.
+
+                        El boton dice "Nuevo jugador" porque es lo que quien captura esta
+                        haciendo, pero lo que se graba es un PREREGISTRO: el alta formal
+                        la sigue haciendo el escritorio. El modal lo dice en su subtitulo,
+                        para que el nombre del boton no prometa de mas. */}
+                    <button
+                      onClick={() => setPreregistrando(true)}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/30 text-sky-200 text-xs font-bold transition-all"
+                      title={`Capturar a un nuevo jugador para ${plantilla.equipo}`}
+                    >
+                      <UserPlus size={14} /> Nuevo jugador
+                    </button>
                     <button
                       onClick={() =>
                         /* La hoja impresa lleva al equipo completo, igual que la
@@ -833,15 +911,28 @@ export default function PlantillasPage() {
                     <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">
                       {jugadores.length} {jugadores.length === 1 ? "jugador" : "jugadores"}
                     </p>
-                    {sinInscripcion.length > 0 && (
-                      <p
-                        title={`Sin inscripción pagada en ${temporadaNombre || "la temporada"}`}
-                        className="inline-flex items-center gap-1.5 text-[10px] font-black px-2 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30"
-                      >
-                        <AlertCircle size={11} />
-                        {sinInscripcion.length} sin inscripción
-                      </p>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* El aviso rojo va primero: que alguien no exista todavía como
+                          jugador pesa más que un pago pendiente. */}
+                      {sinDarDeAlta.length > 0 && (
+                        <p
+                          title="Preregistros: entrenan con el equipo, pero el alta como jugador la hace el sistema de escritorio"
+                          className="inline-flex items-center gap-1.5 text-[10px] font-black px-2 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                        >
+                          <AlertCircle size={11} />
+                          {sinDarDeAlta.length} sin dar de alta
+                        </p>
+                      )}
+                      {sinInscripcion.length > 0 && (
+                        <p
+                          title={`Sin inscripción pagada en ${temporadaNombre || "la temporada"}`}
+                          className="inline-flex items-center gap-1.5 text-[10px] font-black px-2 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                        >
+                          <AlertCircle size={11} />
+                          {sinInscripcion.length} sin inscripción
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="rounded-2xl border border-white/10 overflow-hidden">
@@ -867,13 +958,28 @@ export default function PlantillasPage() {
                           const sem = etiquetaBeca(j.beca);
                           const cop = etiquetaBeca(j.becaCopas);
                           const lig = etiquetaBeca(j.becaLigas);
+                          /* Un preregistro no tiene ficha, así que no tiene pagos que
+                             abrir ni becas que enseñar: la fila deja de ser clicable en
+                             vez de abrir un historial vacío que haría dudar de si el
+                             niño pagó o si la pantalla falló. */
+                          const noEstaDeAlta = sinAlta(j);
                           return (
                             <tr
-                              key={j.idJugador}
-                              onClick={() => setPagosTarget({ idJugador: j.idJugador, jugador: j.jugador })}
-                              title={`Ver el historial de pagos de ${j.jugador}`}
-                              className={`border-b border-white/5 last:border-b-0 cursor-pointer hover:bg-white/[0.08] transition-colors ${
-                                j.x === null ? "bg-white/[0.01]" : "bg-white/[0.04]"
+                              key={j.clave}
+                              onClick={
+                                noEstaDeAlta || j.idJugador === null
+                                  ? undefined
+                                  : () => setPagosTarget({ idJugador: j.idJugador as number, jugador: j.jugador })
+                              }
+                              title={
+                                noEstaDeAlta
+                                  ? `${j.jugador} todavía no está dado de alta: es un preregistro y no tiene historial de pagos`
+                                  : `Ver el historial de pagos de ${j.jugador}`
+                              }
+                              className={`border-b border-white/5 last:border-b-0 transition-colors ${
+                                noEstaDeAlta
+                                  ? "bg-rose-500/[0.07] hover:bg-rose-500/[0.12]"
+                                  : `cursor-pointer hover:bg-white/[0.08] ${j.x === null ? "bg-white/[0.01]" : "bg-white/[0.04]"}`
                               }`}
                             >
                               <td className="px-2 py-1.5 text-center text-[10px] font-mono text-slate-500 tabular-nums">
@@ -881,17 +987,28 @@ export default function PlantillasPage() {
                               </td>
                               <td className="px-2 py-1.5">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <AvatarJugador idJugador={j.idJugador} nombre={j.jugador} tieneFoto={j.tieneFoto} fotoVersion={j.fotoVersion} tamano={26} />
+                                  <AvatarJugador idJugador={j.idJugador ?? 0} nombre={j.jugador} tieneFoto={j.tieneFoto} fotoVersion={j.fotoVersion} tamano={26} />
                                   <div className="min-w-0">
-                                    <span className="text-[11px] font-bold text-slate-100">{j.jugador}</span>
+                                    <span className={`text-[11px] font-bold ${noEstaDeAlta ? "text-rose-200" : "text-slate-100"}`}>{j.jugador}</span>
                                     {j.x === null && (
                                       <span className="ml-1.5 text-[9px] font-black text-slate-500 uppercase">
                                         · sin colocar
                                       </span>
                                     )}
+                                    {/* Todavía no existe como jugador. Es el aviso más
+                                        fuerte de la hoja y por eso va en rojo: los demás
+                                        hablan de pagos, éste de que la ficha no existe. */}
+                                    {noEstaDeAlta && (
+                                      <span
+                                        title="Preregistro: el alta como jugador la hace el sistema de escritorio"
+                                        className="ml-1.5 inline-flex items-center gap-1 align-middle text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                      >
+                                        <AlertCircle size={9} /> AÚN NO DADO DE ALTA
+                                      </span>
+                                    )}
                                     {/* El aviso hace el trabajo que hacía la pestaña: dice
                                         lo mismo, sin partir al equipo en dos listas. */}
-                                    {!j.inscrito && (
+                                    {!noEstaDeAlta && !j.inscrito && (
                                       <span
                                         title={`No tiene inscripción pagada en ${temporadaNombre || "la temporada"}`}
                                         className="ml-1.5 inline-flex items-center gap-1 align-middle text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30"
@@ -905,24 +1022,37 @@ export default function PlantillasPage() {
                               <td className="px-2 py-1.5 text-center text-[10px] text-slate-400 tabular-nums whitespace-nowrap">
                                 {j.fechaNacimiento ?? "—"}
                               </td>
-                              <td className="px-1 py-1.5 text-center">
-                                <span className={`inline-block w-full px-1.5 py-0.5 rounded text-[9px] font-black ${COLOR_BECA[sem.tono]}`}>
-                                  {sem.texto}
-                                </span>
-                              </td>
-                              <td className="px-1 py-1.5 text-center">
-                                <span className={`inline-block w-full px-1.5 py-0.5 rounded text-[9px] font-black ${COLOR_BECA[cop.tono]}`}>
-                                  {cop.texto}
-                                </span>
-                              </td>
-                              <td className="px-1 py-1.5 text-center">
-                                <span className={`inline-block w-full px-1.5 py-0.5 rounded text-[9px] font-black ${COLOR_BECA[lig.tono]}`}>
-                                  {lig.texto}
-                                </span>
-                              </td>
+                              {/* Las becas viven en la ficha del jugador. Un preregistro
+                                  no la tiene, así que sus columnas van en blanco: pintarle
+                                  "PAGA" sería afirmar que no tiene descuento cuando lo que
+                                  pasa es que todavía nadie se lo ha podido asignar. */}
+                              {noEstaDeAlta ? (
+                                <td colSpan={3} className="px-1 py-1.5 text-center text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                  Sin ficha
+                                </td>
+                              ) : (
+                                <>
+                                  <td className="px-1 py-1.5 text-center">
+                                    <span className={`inline-block w-full px-1.5 py-0.5 rounded text-[9px] font-black ${COLOR_BECA[sem.tono]}`}>
+                                      {sem.texto}
+                                    </span>
+                                  </td>
+                                  <td className="px-1 py-1.5 text-center">
+                                    <span className={`inline-block w-full px-1.5 py-0.5 rounded text-[9px] font-black ${COLOR_BECA[cop.tono]}`}>
+                                      {cop.texto}
+                                    </span>
+                                  </td>
+                                  <td className="px-1 py-1.5 text-center">
+                                    <span className={`inline-block w-full px-1.5 py-0.5 rounded text-[9px] font-black ${COLOR_BECA[lig.tono]}`}>
+                                      {lig.texto}
+                                    </span>
+                                  </td>
+                                </>
+                              )}
                               {/* Mandar a la cancha tiene su propio boton y no se cuela
                                   en el clic de la fila, que abre el historial de pagos. */}
-                              <td className="px-2 py-1.5 text-center">
+                              <td className="px-2 py-1.5">
+                                <div className="flex items-center justify-center gap-1">
                                   {j.x === null ? (
                                     <button
                                       type="button"
@@ -931,14 +1061,18 @@ export default function PlantillasPage() {
                                         mandarACancha(j);
                                       }}
                                       title={
-                                        j.inscrito
-                                          ? `Poner a ${j.jugador} en la cancha`
-                                          : `Poner a ${j.jugador} en la cancha aunque no esté inscrito`
+                                        noEstaDeAlta
+                                          ? `Poner a ${j.jugador} en la cancha aunque todavía no esté dado de alta`
+                                          : j.inscrito
+                                            ? `Poner a ${j.jugador} en la cancha`
+                                            : `Poner a ${j.jugador} en la cancha aunque no esté inscrito`
                                       }
                                       className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-black transition-colors ${
-                                        j.inscrito
-                                          ? "bg-emerald-600/20 hover:bg-emerald-600/35 border-emerald-500/40 text-emerald-200"
-                                          : "bg-amber-600/20 hover:bg-amber-600/35 border-amber-500/40 text-amber-200"
+                                        noEstaDeAlta
+                                          ? "bg-rose-600/20 hover:bg-rose-600/35 border-rose-500/40 text-rose-200"
+                                          : j.inscrito
+                                            ? "bg-emerald-600/20 hover:bg-emerald-600/35 border-emerald-500/40 text-emerald-200"
+                                            : "bg-amber-600/20 hover:bg-amber-600/35 border-amber-500/40 text-amber-200"
                                       }`}
                                     >
                                       <Goal size={11} /> A la cancha
@@ -948,7 +1082,7 @@ export default function PlantillasPage() {
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        cambiaJugador(j.idJugador, { x: null, y: null });
+                                        cambiaJugador(j.clave, { x: null, y: null });
                                       }}
                                       title={`Sacar a ${j.jugador} de la cancha`}
                                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/10 hover:bg-rose-600/30 border border-white/15 hover:border-rose-500/40 text-slate-300 text-[10px] font-bold transition-colors"
@@ -956,6 +1090,26 @@ export default function PlantillasPage() {
                                       <RotateCcw size={11} /> Sacar
                                     </button>
                                   )}
+                                  {/* Borrar solo existe para los preregistros: la baja de
+                                      un jugador dado de alta es otra cosa y la hace el
+                                      escritorio, no esta pantalla. */}
+                                  {noEstaDeAlta && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        borrarPreregistro(j);
+                                      }}
+                                      disabled={borrando !== null}
+                                      title={`Borrar el preregistro de ${j.jugador}`}
+                                      className="inline-flex items-center justify-center p-1 rounded-md text-slate-500 hover:text-rose-300 hover:bg-rose-500/20 transition-colors disabled:opacity-40"
+                                    >
+                                      {borrando === j.idJugadorPre
+                                        ? <Loader2 size={11} className="animate-spin" />
+                                        : <Trash2 size={11} />}
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -995,6 +1149,17 @@ export default function PlantillasPage() {
                         </button>
                       </div>
                     </div>
+                    {enCanchaSinAlta.length > 0 && (
+                      <p className="mb-2 text-[10px] font-black text-rose-300 leading-snug flex items-start gap-1.5">
+                        <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+                        <span>
+                          {enCanchaSinAlta.length === 1 ? "Hay 1 jugador" : `Hay ${enCanchaSinAlta.length} jugadores`} en
+                          la cancha que TODAVÍA NO ESTÁN DADOS DE ALTA:{" "}
+                          {enCanchaSinAlta.map((j) => nombreCorto(j.jugador)).join(", ")}.
+                          Son preregistros; el alta la hace el sistema de escritorio.
+                        </span>
+                      </p>
+                    )}
                     {enCanchaSinInscripcion.length > 0 && (
                       <p className="mb-2 text-[10px] font-bold text-amber-300 leading-snug flex items-start gap-1.5">
                         <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
@@ -1015,12 +1180,20 @@ export default function PlantillasPage() {
                       <div className="flex flex-wrap gap-1.5">
                         {enBanca.map((j) => (
                           <button
-                            key={j.idJugador}
+                            key={j.clave}
                             onClick={() => mandarACancha(j)}
-                            title={`Mandar a ${j.jugador} a la cancha`}
-                            className="inline-flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-md bg-white/10 hover:bg-emerald-600/30 border border-white/10 hover:border-emerald-500/40 text-[10px] font-bold text-slate-200 transition-colors"
+                            title={
+                              sinAlta(j)
+                                ? `Mandar a ${j.jugador} a la cancha — todavía no está dado de alta`
+                                : `Mandar a ${j.jugador} a la cancha`
+                            }
+                            className={`inline-flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-md border text-[10px] font-bold transition-colors ${
+                              sinAlta(j)
+                                ? "bg-rose-500/15 hover:bg-rose-600/30 border-rose-500/40 text-rose-200"
+                                : "bg-white/10 hover:bg-emerald-600/30 border-white/10 hover:border-emerald-500/40 text-slate-200"
+                            }`}
                           >
-                            <AvatarJugador idJugador={j.idJugador} nombre={j.jugador} tieneFoto={j.tieneFoto} fotoVersion={j.fotoVersion} tamano={18} />
+                            <AvatarJugador idJugador={j.idJugador ?? 0} nombre={j.jugador} tieneFoto={j.tieneFoto} fotoVersion={j.fotoVersion} tamano={18} />
                             {nombreCorto(j.jugador)}
                           </button>
                         ))}
@@ -1045,8 +1218,10 @@ export default function PlantillasPage() {
                 {/* ── Cancha ── */}
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
+                    {/* CLUB + SEDE + CATEGORIA. La categoria sola no nombra a nadie:
+                        la misma existe en varias sedes. Ver @/lib/categoria-equipo. */}
                     <p className="text-sm font-black text-white">
-                      ANGELES {plantilla.equipo}
+                      {nombreEquipo(plantilla.sede, plantilla.equipo)}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
                       <label className="flex items-center gap-1.5">
@@ -1100,13 +1275,18 @@ export default function PlantillasPage() {
                   </div>
 
                   <CanchaPlantilla
-                    onAbrir={(j) => setPagosTarget({ idJugador: j.idJugador, jugador: j.jugador })}
+                    /* Un preregistro no tiene ficha ni pagos: el clic no abre nada en vez
+                       de enseñar un historial vacío. */
+                    onAbrir={(j) => {
+                      if (sinAlta(j) || j.idJugador === null) return;
+                      setPagosTarget({ idJugador: j.idJugador, jugador: j.jugador });
+                    }}
                     jugadores={plantilla.jugadores}
                     dt={plantilla.dt}
                     auxiliar={plantilla.auxiliar}
                     bloqueada={guardando}
-                    onMover={(id, x, y) => cambiaJugador(id, { x, y })}
-                    onQuitar={(id) => cambiaJugador(id, { x: null, y: null })}
+                    onMover={(clave, x, y) => cambiaJugador(clave, { x, y })}
+                    onQuitar={(clave) => cambiaJugador(clave, { x: null, y: null })}
                   />
                 </div>
               </div>
@@ -1141,6 +1321,20 @@ export default function PlantillasPage() {
             setAviso(mensaje);
             if (idEquipo && temporadaId) await cargar(idEquipo, temporadaId);
           }}
+        />
+      )}
+
+      {/* Preregistro capturado en la recepcion. Se queda con la sede y la categoria del
+          equipo abierto, y al terminar NO se recarga la hoja: un preregistro no es un
+          jugador —el alta formal la sigue haciendo el escritorio—, asi que la plantilla
+          que se esta viendo no cambia. */}
+      {preregistrando && plantilla && (
+        <PreregistroJugador
+          idEquipo={plantilla.idEquipo}
+          equipo={plantilla.equipo}
+          sede={plantilla.sede}
+          onCerrar={() => setPreregistrando(false)}
+          onGuardado={setAviso}
         />
       )}
     </DashboardLayout>

@@ -41,6 +41,12 @@ export type Vinculo = 'vinculado' | 'mismo-nombre' | 'probable' | 'familiar' | '
 export interface PreregistroRaw {
     IdJugadorPre: number;
     JugadorPre: string | null;
+    /**
+     * El equipo al que se apunta, escrito como `tblJugadores.Categoria` ('2018X').
+     * Solo la traen los capturados desde Plantilla de Equipos: quien llega por el QR
+     * publico todavia no esta asignado a ninguno y viene en null.
+     */
+    Categoria: string | null;
     /** 'YYYY-MM-DD': la consulta la formatea para que el navegador no la desplace. */
     FechaNacimiento: string | null;
     Edad: number | null;

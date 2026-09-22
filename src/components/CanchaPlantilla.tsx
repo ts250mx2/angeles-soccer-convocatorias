@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { AlertCircle, X } from "lucide-react";
-import { acota, type JugadorPlantilla } from "@/lib/plantilla-equipo";
+import { acota, sinAlta, type JugadorPlantilla } from "@/lib/plantilla-equipo";
 import AvatarJugador from "@/components/AvatarJugador";
 
 /**
@@ -17,6 +17,16 @@ import AvatarJugador from "@/components/AvatarJugador";
  * ratón —los entrenadores acomodan esto en tablet—, no arrastra la imagen fantasma que
  * el navegador dibuja por su cuenta, y con `setPointerCapture` el nombre sigue al dedo
  * aunque se salga del recuadro, en vez de quedarse pegado a media cancha.
+ *
+ * En el campo caben dos clases de gente: los jugadores dados de alta y los PREREGISTROS,
+ * que entrenan pero todavia no existen en tblJugadores. El preregistrado va en ROJO y
+ * con su aviso escrito dentro del recuadro, no solo con un color: la hoja se imprime y
+ * se pega en el pizarron, y ahi un borde de distinto tono no le dice nada a quien no
+ * estuvo cuando se acomodo. Por eso tampoco se confunde con el ambar del que no tiene
+ * inscripcion pagada: a aquel le falta un pago, a este le falta existir.
+ *
+ * Todo se referencia por `clave` ('J-12', 'P-12') y nunca por el id pelado: los dos
+ * numeros salen de tablas distintas y se repiten entre si.
  */
 
 /** Lo que la cancha necesita saber de un jugador ya colocado. */
@@ -24,10 +34,10 @@ type Colocado = JugadorPlantilla & { x: number; y: number };
 
 interface Props {
   jugadores: JugadorPlantilla[];
-  /** Mueve a un jugador a un punto de la cancha (en porcentaje). */
-  onMover: (idJugador: number, x: number, y: number) => void;
+  /** Mueve a alguien a un punto de la cancha (en porcentaje). Se identifica por `clave`. */
+  onMover: (clave: string, x: number, y: number) => void;
   /** Lo saca de la cancha y lo regresa a la banca. */
-  onQuitar: (idJugador: number) => void;
+  onQuitar: (clave: string) => void;
   /** Abre el historial de pagos. Se dispara con un clic que NO fue un arrastre. */
   onAbrir: (jugador: JugadorPlantilla) => void;
   dt: string | null;
@@ -52,7 +62,7 @@ export default function CanchaPlantilla({
   bloqueada = false,
 }: Props) {
   const cancha = useRef<HTMLDivElement>(null);
-  const [arrastrando, setArrastrando] = useState<number | null>(null);
+  const [arrastrando, setArrastrando] = useState<string | null>(null);
   /* Dónde empezó el gesto y si llegó a moverse. Es lo que separa "arrastré el nombre"
      de "le di clic para ver sus pagos": sin el umbral, el temblor normal de la mano al
      hacer clic contaría como arrastre y el historial no abriría nunca. */
@@ -72,28 +82,28 @@ export default function CanchaPlantilla({
     };
   }, []);
 
-  const alBajar = (e: React.PointerEvent, idJugador: number) => {
+  const alBajar = (e: React.PointerEvent, clave: string) => {
     if (bloqueada) return;
     // El botón de quitar vive dentro del nombre; sin esto, cerrarlo arrastraría.
     if ((e.target as HTMLElement).closest("[data-quitar]")) return;
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     gesto.current = { x: e.clientX, y: e.clientY, movio: false };
-    setArrastrando(idJugador);
+    setArrastrando(clave);
   };
 
   /** Cuánto hay que mover el dedo para que cuente como arrastre y no como clic. */
   const UMBRAL = 5;
 
-  const alMover = (e: React.PointerEvent, idJugador: number) => {
-    if (arrastrando !== idJugador) return;
+  const alMover = (e: React.PointerEvent, clave: string) => {
+    if (arrastrando !== clave) return;
     const inicio = gesto.current;
     if (inicio && !inicio.movio) {
       if (Math.abs(e.clientX - inicio.x) < UMBRAL && Math.abs(e.clientY - inicio.y) < UMBRAL) return;
       inicio.movio = true;
     }
     const p = aPorcentaje(e);
-    if (p) onMover(idJugador, p.x, p.y);
+    if (p) onMover(clave, p.x, p.y);
   };
 
   const alSoltar = (e: React.PointerEvent, j: JugadorPlantilla) => {
@@ -148,50 +158,72 @@ export default function CanchaPlantilla({
         <div className="absolute left-1/2 bottom-[2%] h-[6%] w-[24%] -translate-x-1/2 border-2 border-b-0 border-white/70" />
 
         {colocados.map((j) => {
-          const activo = arrastrando === j.idJugador;
+          const activo = arrastrando === j.clave;
+          /* Sin alta manda sobre sin inscripción: a quien no existe como jugador no se
+             le puede reclamar un pago, así que encimarle los dos avisos solo taparía el
+             que importa. */
+          const noEstaDeAlta = sinAlta(j);
           return (
             <div
-              key={j.idJugador}
-              onPointerDown={(e) => alBajar(e, j.idJugador)}
-              onPointerMove={(e) => alMover(e, j.idJugador)}
+              key={j.clave}
+              onPointerDown={(e) => alBajar(e, j.clave)}
+              onPointerMove={(e) => alMover(e, j.clave)}
               onPointerUp={(e) => alSoltar(e, j)}
               onPointerCancel={(e) => alSoltar(e, j)}
               style={{ left: `${j.x}%`, top: `${j.y}%`, touchAction: "none" }}
               className={`absolute -translate-x-1/2 -translate-y-1/2 group ${
                 bloqueada ? "cursor-default" : activo ? "cursor-grabbing z-20" : "cursor-grab z-10"
               }`}
-              title={`${j.jugador}${j.inscrito ? "" : " — SIN INSCRIPCIÓN"} — clic para ver sus pagos, arrastra para moverlo`}
+              title={
+                noEstaDeAlta
+                  ? `${j.jugador} — AÚN NO ESTÁ DADO DE ALTA: es un preregistro, el alta la hace el sistema de escritorio. Arrastra para moverlo`
+                  : `${j.jugador}${j.inscrito ? "" : " — SIN INSCRIPCIÓN"} — clic para ver sus pagos, arrastra para moverlo`
+              }
             >
-              {/* El borde ámbar marca al que está en el campo SIN inscripción. Se puso a
-                  mano y a propósito, pero la hoja tiene que decirlo: quien la lea después
-                  —o la imprima— no tiene por qué acordarse de quién era. */}
+              {/* Rojo para el que todavía no está dado de alta, ámbar para el jugador sin
+                  inscripción pagada. Los dos van escritos y no solo coloreados: la hoja
+                  se imprime, y quien la lee después no tiene por qué acordarse de quién
+                  era cada recuadro. */}
               <div
                 className={`relative flex items-center rounded-md border-2 bg-white px-2 py-1 shadow-md transition-shadow ${
                   activo
                     ? "border-blue-500 shadow-xl"
-                    : j.inscrito
-                      ? "border-slate-800"
-                      : "border-amber-500 bg-amber-50"
+                    : noEstaDeAlta
+                      ? "border-rose-600 bg-rose-50"
+                      : j.inscrito
+                        ? "border-slate-800"
+                        : "border-amber-500 bg-amber-50"
                 }`}
               >
-                {!j.inscrito && (
+                {(noEstaDeAlta || !j.inscrito) && (
                   <AlertCircle
                     size={12}
-                    className="text-amber-600 mr-1 flex-shrink-0"
-                    aria-label="Sin inscripción"
+                    className={`mr-1 flex-shrink-0 ${noEstaDeAlta ? "text-rose-600" : "text-amber-600"}`}
+                    aria-label={noEstaDeAlta ? "Aún no está dado de alta" : "Sin inscripción"}
                   />
                 )}
                 <AvatarJugador
-                  idJugador={j.idJugador}
+                  idJugador={j.idJugador ?? 0}
                   nombre={j.jugador}
                   tieneFoto={j.tieneFoto}
                   fotoVersion={j.fotoVersion}
                   tamano={22}
                   className="mr-1.5 -ml-1"
                 />
-                <span className="whitespace-nowrap text-[10px] md:text-[11px] font-black text-slate-900 uppercase leading-none">
+                <span
+                  className={`whitespace-nowrap text-[10px] md:text-[11px] font-black uppercase leading-none ${
+                    noEstaDeAlta ? "text-rose-800" : "text-slate-900"
+                  }`}
+                >
                   {j.dorsal ? `${j.dorsal} · ` : ""}{nombreCorto(j.jugador)}
                 </span>
+                {/* El aviso, con todas sus letras y dentro del recuadro: es lo único que
+                    sobrevive a una impresión en blanco y negro. */}
+                {noEstaDeAlta && (
+                  <span className="ml-1.5 flex-shrink-0 rounded bg-rose-600 px-1 py-0.5 text-[8px] font-black uppercase leading-none tracking-wide text-white">
+                    Sin alta
+                  </span>
+                )}
                 {/* Un punto rojo si debe. Es la única marca que cabe en la cancha, y con
                     el título se lee cuántos meses sin abrir nada. */}
                 {j.mesesDebe > 0 && (
@@ -204,7 +236,7 @@ export default function CanchaPlantilla({
                   <button
                     type="button"
                     data-quitar
-                    onClick={() => onQuitar(j.idJugador)}
+                    onClick={() => onQuitar(j.clave)}
                     title="Quitar de la cancha"
                     className="absolute -top-2 -right-2 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-rose-600 text-white shadow"
                   >

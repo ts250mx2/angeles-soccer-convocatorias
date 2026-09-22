@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { pool } from '@/lib/db';
 import { CLAVE_PLANTILLAS } from '@/lib/navegacion';
 import { requierePagina } from '@/lib/permisos';
-import { DIAS_SEMANA, horarioDeEquipo, type JugadorPlantilla, type Plantilla } from '@/lib/plantilla-equipo';
+import {
+    DIAS_SEMANA, claveDeJugador, claveDePreregistro, horarioDeEquipo,
+    type JugadorPlantilla, type Plantilla,
+} from '@/lib/plantilla-equipo';
+import { normalizaNombre } from '@/lib/preregistros';
 import { inscritoEnTemporada } from '@/lib/jugador-filtros';
 import { loadSeasonAndPrevious } from '@/lib/adeudos-db';
 import { jugadoresConAdeudo } from '@/lib/adeudos-jugadores';
@@ -36,9 +40,20 @@ interface FilaJugador {
     FotoVersion: string | null;
 }
 
+/** Un preregistro del equipo, con su lugar en la cancha si ya se lo dieron. */
+interface FilaPre {
+    IdJugadorPre: number;
+    JugadorPre: string | null;
+    FechaNacimiento: string | null;
+    Dorsal: string | null;
+    X: string | number | null;
+    Y: string | number | null;
+}
+
 interface FilaEquipo {
     IdEquipo: number;
     Equipo: string | null;
+    IdSede: number | null;
     Sede: string | null;
     DT: string | null;
     IdEntrenador: number | null;
@@ -48,6 +63,84 @@ interface FilaEquipo {
 }
 
 const num = (v: unknown): number => Number(v) || 0;
+
+/**
+ * Los preregistros que apuntan a ESTE equipo y todavia no son jugadores.
+ *
+ * El vinculo es (Categoria, IdSede): la categoria del preregistro se escribe con el
+ * nombre completo del equipo, igual que tblJugadores.Categoria. Solo la traen los
+ * capturados desde esta pantalla; los que llegan por el QR publico de la sede no tienen
+ * equipo todavia y por eso no salen en ninguna hoja, que es lo correcto.
+ *
+ * `IdJugador = 0` deja fuera a los que el escritorio ya sello como convertidos. El resto
+ * de las conversiones no vienen selladas —pasa en casi todas, ver @/lib/preregistros—,
+ * asi que ademas se descarta por nombre contra la plantilla del equipo: sin eso, el nino
+ * que ya fue dado de alta aparecería dos veces en su propia hoja, una como jugador y
+ * otra como preregistro.
+ *
+ * Si la tabla del acomodo todavia no existe, se devuelve la lista vacia en vez de
+ * reventar: la pantalla tiene que seguir abriendo mientras la migracion no se aplica.
+ */
+async function preregistrosDelEquipo(
+    idEquipo: number,
+    categoria: string,
+    idSede: number | null,
+    yaSonJugadores: Set<string>,
+): Promise<JugadorPlantilla[]> {
+    if (!categoria || !idSede) return [];
+
+    let filas: FilaPre[];
+    try {
+        const [resultado] = (await pool.query(
+            `SELECT P.IdJugadorPre, P.JugadorPre,
+                    DATE_FORMAT(P.FechaNacimiento, '%d/%m/%Y') AS FechaNacimiento,
+                    P.Dorsal,
+                    PL.X, PL.Y
+               FROM tblJugadoresPre P
+               LEFT JOIN tblEquiposPlantillaPre PL
+                      ON PL.IdEquipo = ? AND PL.IdJugadorPre = P.IdJugadorPre
+              WHERE P.Categoria = ? AND P.IdSede = ?
+                AND COALESCE(P.IdJugador, 0) = 0
+                AND COALESCE(P.Status, 0) = 0
+              ORDER BY P.JugadorPre ASC`,
+            [idEquipo, categoria, idSede],
+        )) as [FilaPre[], unknown];
+        filas = resultado;
+    } catch (error) {
+        if ((error as { code?: string })?.code === 'ER_NO_SUCH_TABLE') {
+            console.warn('[plantilla] Falta tblEquiposPlantillaPre: aplica migrations/029-plantilla-preregistros.sql.');
+            return [];
+        }
+        throw error;
+    }
+
+    return filas
+        .filter((f) => !yaSonJugadores.has(normalizaNombre(f.JugadorPre)))
+        .map((f) => ({
+            clave: claveDePreregistro(Number(f.IdJugadorPre)),
+            origen: 'preregistro' as const,
+            idJugador: null,
+            idJugadorPre: Number(f.IdJugadorPre),
+            jugador: String(f.JugadorPre ?? '').trim(),
+            fechaNacimiento: f.FechaNacimiento,
+            dorsal: String(f.Dorsal ?? '').trim() || null,
+            /* Las becas son de la ficha del jugador, y un preregistro no tiene ficha.
+               Van en cero, que `etiquetaBeca` lee como "paga": la hoja no puede inventar
+               un descuento que nadie ha autorizado. */
+            beca: 0,
+            becaCopas: 0,
+            becaLigas: 0,
+            x: f.X === null ? null : num(f.X),
+            y: f.Y === null ? null : num(f.Y),
+            /* No esta inscrito porque no existe como jugador: lo que le falta no es el
+               pago sino el alta, y eso lo dice `origen`. La pantalla marca primero la
+               falta de alta para no encimar dos avisos sobre la misma persona. */
+            inscrito: false,
+            mesesDebe: 0,
+            tieneFoto: false,
+            fotoVersion: null,
+        }));
+}
 
 export async function GET(request: Request) {
     const guardia = await requierePagina(CLAVE_PLANTILLAS);
@@ -68,7 +161,7 @@ export async function GET(request: Request) {
 
         const columnasDias = DIAS_SEMANA.map(([col]) => `E.${col}`).join(', ');
         const [equipos] = (await pool.query(
-            `SELECT E.IdEquipo, E.Equipo, S.Sede,
+            `SELECT E.IdEquipo, E.Equipo, E.IdSede, S.Sede,
                     DT.Usuario  AS DT,
                     E.IdEntrenador,
                     E.IdAuxiliar,
@@ -138,8 +231,11 @@ export async function GET(request: Request) {
             ? await jugadoresConAdeudo(temporadas.actual, filas.map((f) => Number(f.IdJugador)))
             : new Map();
 
-        const jugadores: JugadorPlantilla[] = filas.map((f) => ({
+        const deAlta: JugadorPlantilla[] = filas.map((f) => ({
+            clave: claveDeJugador(Number(f.IdJugador)),
+            origen: 'jugador' as const,
             idJugador: Number(f.IdJugador),
+            idJugadorPre: null,
             jugador: String(f.Jugador ?? '').trim(),
             fechaNacimiento: f.FechaNacimiento,
             dorsal: String(f.Dorsal ?? '').trim() || null,
@@ -159,6 +255,17 @@ export async function GET(request: Request) {
             tieneFoto: Number(f.TieneFoto) === 1,
             fotoVersion: f.FotoVersion,
         }));
+
+        /* Los preregistros van DESPUES de la plantilla y no mezclados por nombre: son
+           otra cosa —gente que entrena pero todavia no esta dada de alta— y la
+           numeracion de la izquierda tiene que seguir siendo la del equipo de verdad. */
+        const sinAlta = await preregistrosDelEquipo(
+            idEquipo,
+            String(e.Equipo ?? '').trim(),
+            e.IdSede === null ? null : Number(e.IdSede),
+            new Set(deAlta.map((j) => normalizaNombre(j.jugador))),
+        );
+        const jugadores = [...deAlta, ...sinAlta];
 
         const plantilla: Plantilla = {
             idEquipo: Number(e.IdEquipo),
@@ -191,6 +298,16 @@ const posicionSchema = z.object({
     y: z.coerce.number().min(0).max(100),
 });
 
+/* Un preregistro colocado. Va en su propia lista y no mezclado con los jugadores porque
+   los dos numeros viven en tablas distintas y se repiten entre si: un solo arreglo
+   obligaria a un discriminador que, si alguna vez llegara mal, movería al jugador 45 al
+   lugar del preregistro 45. Separados, eso no se puede escribir. */
+const posicionPreSchema = z.object({
+    idJugadorPre: z.coerce.number().int().positive(),
+    x: z.coerce.number().min(0).max(100),
+    y: z.coerce.number().min(0).max(100),
+});
+
 const guardarSchema = z.object({
     idEquipo: z.coerce.number().int().positive(),
     /**
@@ -200,6 +317,8 @@ const guardarSchema = z.object({
      * temporada elegida, aunque no los esté pintando. Ver el comentario de abajo.
      */
     posiciones: z.array(posicionSchema).max(60),
+    /** Igual que `posiciones`, para los preregistros que todavia no son jugadores. */
+    posicionesPre: z.array(posicionPreSchema).max(60).optional().default([]),
     /** El auxiliar técnico. `null` lo quita. */
     idAuxiliar: z.coerce.number().int().positive().nullable().optional(),
     /** El director técnico. `null` lo quita. */
@@ -228,6 +347,50 @@ const guardarSchema = z.object({
  * silencio el lugar de los demás —un acomodo perdido sin que nadie lo haya pedido—. Las
  * posiciones son del EQUIPO, no de la temporada.
  */
+/**
+ * Reemplaza el acomodo de los PREREGISTROS del equipo y devuelve cuantos quedaron.
+ *
+ * Igual que con los jugadores, solo se aceptan los que hoy apuntan a ese equipo: una
+ * pantalla abierta desde hace rato podria querer colocar a alguien que ya fue dado de
+ * alta —y que por lo tanto ya esta en la hoja como jugador— o que se movio de categoria.
+ *
+ * Si la tabla no existe todavia, se dice que falta la migracion en vez de tragarse el
+ * error: a diferencia de la lectura, aqui callar significaria perder lo que el usuario
+ * acaba de acomodar sin que nada se lo advierta.
+ */
+async function guardaPreregistros(
+    idEquipo: number,
+    posiciones: Array<{ idJugadorPre: number; x: number; y: number }>,
+): Promise<number> {
+    const [equipos] = (await pool.query(
+        'SELECT Equipo, IdSede FROM tblEquipos WHERE IdEquipo = ?',
+        [idEquipo],
+    )) as [Array<{ Equipo: string | null; IdSede: number | null }>, unknown];
+    const equipo = equipos[0];
+
+    let permitidos = new Set<number>();
+    if (equipo?.Equipo && equipo.IdSede) {
+        const [suyos] = (await pool.query(
+            `SELECT IdJugadorPre FROM tblJugadoresPre
+              WHERE Categoria = ? AND IdSede = ?
+                AND COALESCE(IdJugador, 0) = 0 AND COALESCE(Status, 0) = 0`,
+            [String(equipo.Equipo).trim(), equipo.IdSede],
+        )) as [Array<{ IdJugadorPre: number }>, unknown];
+        permitidos = new Set(suyos.map((r) => Number(r.IdJugadorPre)));
+    }
+
+    const validas = posiciones.filter((p) => permitidos.has(p.idJugadorPre));
+
+    await pool.query('DELETE FROM tblEquiposPlantillaPre WHERE IdEquipo = ?', [idEquipo]);
+    if (validas.length > 0) {
+        await pool.query(
+            'INSERT INTO tblEquiposPlantillaPre (IdEquipo, IdJugadorPre, X, Y, FechaAct) VALUES ?',
+            [validas.map((p) => [idEquipo, p.idJugadorPre, p.x, p.y, new Date()])],
+        );
+    }
+    return validas.length;
+}
+
 export async function POST(request: Request) {
     const guardia = await requierePagina(CLAVE_PLANTILLAS);
     if (!guardia.ok) {
@@ -257,6 +420,11 @@ export async function POST(request: Request) {
                 [validas.map((p) => [datos.idEquipo, p.idJugador, p.x, p.y, new Date()])],
             );
         }
+
+        /* Los preregistros colocados, con la misma mecanica y en su propia tabla: se
+           reemplaza el acomodo completo, asi que el DELETE va siempre —tambien cuando la
+           lista llega vacia, que es como se saca de la cancha al ultimo que quedaba—. */
+        const colocadosPre = await guardaPreregistros(datos.idEquipo, datos.posicionesPre);
 
         if (datos.idAuxiliar !== undefined) {
             await pool.query('UPDATE tblEquipos SET IdAuxiliar = ? WHERE IdEquipo = ?', [
@@ -297,12 +465,19 @@ export async function POST(request: Request) {
         return NextResponse.json({
             success: true,
             colocados: validas.length,
+            colocadosPre,
             ajenos,
             entrenadorPropagado,
         });
     } catch (error) {
         if (error instanceof z.ZodError) {
             return NextResponse.json({ success: false, message: error.issues[0].message }, { status: 400 });
+        }
+        if ((error as { code?: string })?.code === 'ER_NO_SUCH_TABLE') {
+            return NextResponse.json(
+                { success: false, message: 'Falta aplicar migrations/029-plantilla-preregistros.sql en la base de datos.' },
+                { status: 503 },
+            );
         }
         console.error('Error al guardar la plantilla del equipo:', error);
         return NextResponse.json(
